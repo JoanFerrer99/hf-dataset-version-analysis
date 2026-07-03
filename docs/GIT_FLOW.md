@@ -16,10 +16,9 @@ main (v1.0, v1.1...)      ← PRODUCCIÓ (estable)
 
 ---
 
-## 📌 Branques Permanents
+## Branques Permanents
 
 ### **main**
-- **Propòsit**: Codi en producció, sempre estable i deployable
 - **Source**: Merge de `release/` o `hotfix/`
 - **Protecció**: ✅ Require PR + approvals
 - **Tags**: Versionat (v1.0.0, v1.1.0...)
@@ -33,9 +32,8 @@ git tag -a v1.0.0
 ```
 
 ### **develop**
-- **Propòsit**: Branca principal de desenvolupament, on s'integren features
 - **Source**: Merge de `feature/` branches
-- **Protecció**: ✅ Require PR + approvals
+- **Protecció**: Require PR + approvals
 - **Deployment**: Auto-deploy a entorn de staging
 - **Política**: `git merge --no-ff` per claritat
 
@@ -47,10 +45,9 @@ git merge --no-ff feature/random-sampling-unbiased
 
 ---
 
-## 📌 Branques Temporals
+## Branques Temporals
 
 ### **feature/\***
-- **Propòsit**: Desenvolupar noves funcionalitats o millores
 - **Origen**: Branch des de `develop`
 - **Naming**: `feature/descriptive-name` o `feature/TASK-123-description`
 - **Merger**: PR a `develop`, revisat per otro developer
@@ -75,7 +72,6 @@ git push origin --delete feature/random-sampling-unbiased
 ```
 
 ### **release/\***
-- **Propòsit**: Preparar versió estable, corregir bugs de release
 - **Origen**: Branch des de `develop`
 - **Naming**: `release/v1.0.0` o `release/vX.Y.Z`
 - **Merger**: PR a `main` + merge back a `develop`
@@ -123,7 +119,7 @@ git push origin hotfix/critical-memory-leak
 
 ---
 
-## 🏷️ Versioning & Tags
+## Versioning & Tags
 
 Usem **Semantic Versioning**: `vMAJOR.MINOR.PATCH`
 
@@ -142,46 +138,27 @@ git tag -a v1.0.0 -m "Release version 1.0.0"
 git push origin v1.0.0
 ```
 
----
+## Commit Style
 
-## 📋 Conventional Commits
-
-Millora claritat dels commits per a commits i changelogs automàtics:
-
-```
-<type>(<scope>): <subject>
-
-<body>
-
-<footer>
-```
-
-### Types:
-- **feat**: Nova funcionalitat
-- **fix**: Bug fix
-- **docs**: Només documentació
-- **style**: Format, linting (sense canvis lògics)
-- **refactor**: Codi restructurat (sense funcionalitat nova)
-- **perf**: Millora de performance
-- **test**: Test addition/changes
-- **chore**: Actualitzacions de deps, setup, etc.
-
-### Exemples:
+Format curt i clar:
 ```bash
-git commit -m "feat(sampling): implement reservoir algorithm"
-git commit -m "fix(parsing): handle null references correctly"
-git commit -m "docs(readme): update installation instructions"
-git commit -m "refactor(data): extract classification logic"
+git commit -m "feat: add random sampling"
+git commit -m "fix: handle token missing"
+git commit -m "docs: update quickstart"
+git commit -m "chore: clean ignored outputs"
 ```
 
-Breaking changes (afegir `!`):
-```bash
-git commit -m "feat(api)!: remove deprecated dataset format"
-```
+Tipus bàsics:
+- `feat`
+- `fix`
+- `docs`
+- `refactor`
+- `test`
+- `chore`
 
 ---
 
-## 🚀 Workflow Típic (Dia a Dia)
+## Workflow
 
 ### Acabar nova funcionalitat i mergejar a develop:
 ```bash
@@ -195,7 +172,7 @@ git checkout -b feature/new-awesome-feature
 
 # 3. Commit amb mensatge apropiat
 git add .
-git commit -m "feat(module): implement awesome feature"
+git commit -m "feat: implement awesome feature"
 
 # 4. Push
 git push origin feature/new-awesome-feature
@@ -269,27 +246,3 @@ git push origin develop
 git branch -d hotfix/critical-bug-fix
 git push origin --delete hotfix/critical-bug-fix
 ```
-
----
-
-## 📊 Estado Actual (2026-06-18)
-
-### Branques Existents:
-```
-✅ main              - v1.0.0 (estable, producció)
-✅ develop           - Integració en curs
-✅ feature/random-sampling-unbiased  - MERGED a develop (v1.0.0-dev)
-```
-
-### Primer Release (v1.0.0):
-- ✅ Feature integrada i testejada a develop
-- ⏳ Release planning (pendent)
-- ⏳ Merge a main + tag v1.0.0 (pendent)
-
----
-
-## 🔗 Références
-
-- [Git Flow Original](https://nvie.com/posts/a-successful-git-branching-model/)
-- [Conventional Commits](https://www.conventionalcommits.org/)
-- [Semantic Versioning](https://semver.org/)
