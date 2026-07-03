@@ -13,8 +13,7 @@ Estratègia per detectar "versions reals":
 Output: data/eligibility_report.csv + data/funnel_summary.json
 
 Estratègia de detecció de "versions reals":
-  - Criteri A (versionat explícit): el repo té >= 2 tags de Git
-  - Criteri B (commits substantius): >= 2 commits que toquen fitxers
+  - El repositori té >= 2 tags de Git
     que NO són purament documentals (README, llicències, metadades)
  
 Ús:
@@ -101,7 +100,9 @@ def iter_all_datasets(page_size: int = 500):
     Genera datasets un a un (generator) per no carregar tot a memòria.
     """
     try:
-        for dataset in api.list_datasets(limit=page_size):
+        # IMPORTANT: no posem `limit=page_size` perquè això només retornaria
+        # els primers datasets. Amb `limit=None` iterem tota la població real.
+        for dataset in api.list_datasets(limit=None):
             yield dataset
     except Exception as exc:
         log.error(f"Error iterant datasets: {exc}")
@@ -152,11 +153,8 @@ def reservoir_sample_datasets(
 # ---------------------------------------------------------------------------
  
 def classify_dataset(dataset_id: str) -> dict:
-    """
-    Determina si un dataset és elegible: >= 2 punts de canvi rellevants.
- 
-    Criteri A: >= 2 tags de Git (versionat explícit, com en el paper dels LLM).
-    Criteri B: >= 2 commits amb títol no documental (heurística de fallback).
+    """ 
+    Criteri: >= 2 tags de Git (versionat explícit, com en el paper dels LLM).
  
     Retorna un diccionari amb tots els camps per al CSV final.
     """
@@ -187,24 +185,6 @@ def classify_dataset(dataset_id: str) -> dict:
  
         result["num_commits_total"] = len(commits)
  
-        substantive_count = 0
-        for commit in commits[:30]:
-            title = (commit.title or commit.message or "").lower()
-            is_documental = any(kw in title for kw in NON_SUBSTANTIVE_TITLE_KEYWORDS)
-            if title and not is_documental:
-                substantive_count += 1
- 
-        result["num_commits_substantive"] = substantive_count
- 
-        if result["num_tags"] >= 2:
-            result["eligible"] = True
-            result["eligibility_reason"] = "tags>=2"
-        elif substantive_count >= 2:
-            result["eligible"] = True
-            result["eligibility_reason"] = "substantive_commits>=2"
-        else:
-            result["eligibility_reason"] = "insufficient_changes"
- 
     except Exception as exc:
         result["error"] = str(exc)[:120]
  
@@ -225,7 +205,7 @@ def classify_dataset_safe(args: tuple) -> dict | None:
 # Fase 3: Escriptura de resultats
 # ---------------------------------------------------------------------------
  
-def write_results(rows: list[dict], sample_size: int) -> tuple[str, str]:
+def write_results(rows: list[dict], sample_size: int, total_scanned: int) -> tuple[str, str, dict]:
     """Escriu el CSV i el JSON de resultats. Retorna les rutes dels fitxers."""
     df = pd.DataFrame(rows)
  
@@ -239,7 +219,9 @@ def write_results(rows: list[dict], sample_size: int) -> tuple[str, str]:
         "timestamp": datetime.now().isoformat(),
         "sampling_method": "reservoir_sampling_R_Vitter_uniform_no_bias",
         "authentication": "HF_TOKEN",
+        "eligibility_definition": "multiple_versions_only (tags>=2)",
         "sample_size": total,
+        "population_scanned": total_scanned,
         "with_any_tag": int(df["has_tags"].sum()),
         "with_2plus_tags": int((df["num_tags"] >= 2).sum()),
         "eligible_total": eligible,
@@ -250,6 +232,7 @@ def write_results(rows: list[dict], sample_size: int) -> tuple[str, str]:
         "ineligible": int((df["eligibility_reason"] == "insufficient_changes").sum()),
         "errors": int((df["error"] != "").sum()),
         "eligible_proportion": round(eligible / total, 4) if total else 0,
+        "estimated_eligible_in_population": int(round((eligible / total) * total_scanned)) if total else 0,
     }
  
     json_path = os.path.join(OUTPUT_DIR, f"funnel_summary_{sample_size}.json")
@@ -291,7 +274,7 @@ def run_funnel(sample_size: int, max_scanned: int | None, num_threads: int) -> N
  
     # --- Fase 3: Resultats ---
     log.info("FASE 3: Escrivint resultats...")
-    csv_path, json_path, summary = write_results(rows, sample_size)
+    csv_path, json_path, summary = write_results(rows, sample_size, total_scanned)
  
     # Imprimir resum final
     print(f"\n{'='*65}")
@@ -316,7 +299,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--sample-size", "-n",
         type=int,
-        default=500,
+        default=1000,
         help="Nombre de datasets a incloure a la mostra final (reservoir size).",
     )
     parser.add_argument(
