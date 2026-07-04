@@ -4,8 +4,8 @@ Anàlisi de la població de datasets de HuggingFace per determinar l'elegibilita
 DOS MODES D'EXECUCIÓ:
 
   MODE 1 — Mostreig (per defecte):
-    Reservoir sampling (algorisme R de Vitter) sobre TOTA la població.
-    Objectiu: estimar la proporció d'elegibles sense processar tothom.
+    Reservoir sampling (algorisme R de Vitter) sobre TOTA la població
+    Objectiu: estimar la proporció d'elegibles sense processar tothom
 
     python random_sample_analysis.py --sample-size 1000 --threads 4 --seed 42
 
