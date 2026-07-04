@@ -14,7 +14,7 @@ Output: data/eligibility_report.csv + data/funnel_summary.json
 
 Estratègia de detecció de "versions reals":
   - El repositori té >= 2 tags de Git
-    que NO són purament documentals (README, llicències, metadades)
+  - El repositori té >= 2 commits substancials, és a dir, commits que NO són purament documentals (README, llicències, metadades)
  
 Ús:
   python random_sample_analysis.py --sample-size 500 --threads 4
@@ -241,12 +241,28 @@ def classify_dataset_safe(args: tuple) -> dict | None:
 # ---------------------------------------------------------------------------
 # Fase 3: Escriptura de resultats
 # ---------------------------------------------------------------------------
- 
-def write_results(rows: list[dict], sample_size: int, total_scanned: int) -> tuple[str, str, dict]:
+
+def get_next_run_id(output_dir: str, sample_size: int) -> int:
+    max_id = 0
+    prefix = f"funnel_summary_{sample_size}_"
+
+    for filename in os.listdir(output_dir):
+        if filename.startswith(prefix) and filename.endswith(".json"):
+            try:
+                id_str = filename[len(prefix):-5]
+                current_id = int(id_str)
+                if current_id > max_id:
+                    max_id = current_id
+            except ValueError:
+                pass
+                
+    return max_id + 1
+
+def write_results(rows: list[dict], run_id: int, sample_size: int, total_scanned: int) -> tuple[str, str, dict]:
     """Escriu el CSV i el JSON de resultats. Retorna les rutes dels fitxers."""
     df = pd.DataFrame(rows)
  
-    csv_path = os.path.join(OUTPUT_DIR, f"eligibility_report_{sample_size}.csv")
+    csv_path = os.path.join(OUTPUT_DIR, f"eligibility_report_{sample_size}_{run_id}.csv")
     df.to_csv(csv_path, index=False, encoding="utf-8")
  
     total = len(rows)
@@ -262,17 +278,20 @@ def write_results(rows: list[dict], sample_size: int, total_scanned: int) -> tup
         "with_any_tag": int((df["num_tags"] > 0).sum()),
         "with_2plus_tags": int((df["num_tags"] >= 2).sum()),
         "eligible_total": eligible,
-        "eligible_via_tags": int((df["eligibility_reason"] == "tags>=2").sum()),
+        "eligible_via_tags": int((df["eligibility_reason"] == "Criteri A: tags>=2").sum()),
         "eligible_via_commits": int(
-            (df["eligibility_reason"] == "substantive_commits>=2").sum()
+            (df["eligibility_reason"] == "Criteri B: substantive_commits>=2").sum()
         ),
         "ineligible": int((df["eligibility_reason"] == "insufficient_changes").sum()),
         "errors": int((df["error"] != "").sum()),
         "eligible_proportion": round(eligible / total, 4) if total else 0,
         "estimated_eligible_in_population": int(round((eligible / total) * total_scanned)) if total else 0,
     }
- 
-    json_path = os.path.join(OUTPUT_DIR, f"funnel_summary_{sample_size}.json")
+
+    #com obtenir cada prova en un nom de json diferent?
+    # per exemple, si fem 3 proves amb sample_size=1000, que cada prova generi un json diferent amb el nom funnel_summary_1000_1.json, funnel_summary_1000_2.json, funnel_summary_1000_3.json
+        
+    json_path = os.path.join(OUTPUT_DIR, f"funnel_summary_{sample_size}_{run_id}.json")
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
  
@@ -311,7 +330,8 @@ def run_funnel(sample_size: int, max_scanned: int | None, num_threads: int) -> N
  
     # --- Fase 3: Resultats ---
     log.info("FASE 3: Escrivint resultats...")
-    csv_path, json_path, summary = write_results(rows, sample_size, total_scanned)
+    run_id = get_next_run_id(OUTPUT_DIR, sample_size)
+    csv_path, json_path, summary = write_results(rows, run_id, sample_size, total_scanned)
  
     # Imprimir resum final
     print(f"\n{'='*65}")
@@ -375,4 +395,3 @@ if __name__ == "__main__":
         max_scanned=args.max_scanned,
         num_threads=args.threads,
     )
- 
