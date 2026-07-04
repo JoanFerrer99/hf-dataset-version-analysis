@@ -14,13 +14,14 @@ Per estimacio principal, no passis `--max-scanned` (escaneig complet de la pobla
 
 ## Criteri d'elegibilitat
 
-- Elegible nomes si `num_versions_detected >= 2`
-- `num_versions_detected` es calcula com `num_tags + num_branches` (refs Git del dataset)
+Un dataset és **elegible** si té **2 o més versions genuïnes**, detectades per:
+- **Tags/refs versionades** (explícites): p.e., `v1.0`, `v2.0`, etc.
+- **Commits substantius** (implícits): canvis reals al dataset, sense ser només actualizacions de README o metadata.
 
 ## Sortida
 
-- `data/eligibility_report_N.csv`
-- `data/funnel_summary_N.json`
+- `data/eligibility_report_N_version.csv`
+- `data/funnel_summary_N_version.json`
 
 ## Variables utils
 
