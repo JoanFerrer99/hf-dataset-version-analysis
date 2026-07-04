@@ -154,15 +154,17 @@ def reservoir_sample_datasets(
  
 def classify_dataset(dataset_id: str) -> dict:
     """ 
-    Criteri: >= 2 tags de Git (versionat explícit, com en el paper dels LLM).
+    Criteri A: >= 2 tags de Git (versionat explícit, com en el paper dels LLM).
+    Criteri B: >= 2 commits substancials (canvis reals de dataset, no purament documentals).
+
+    ELs commits del criteri B es consideren substancials si el títol del commit no conté paraules clau de pur manteniment/documentació.
  
     Retorna un diccionari amb tots els camps per al CSV final.
     """
     result = {
         "dataset_id": dataset_id,
-        "has_tags": False,
         "num_tags": 0,
-        "num_commits_total": 0,
+        "num_branches": 0,
         "num_commits_substantive": 0,
         "eligible": False,
         "eligibility_reason": "",
@@ -172,24 +174,59 @@ def classify_dataset(dataset_id: str) -> dict:
     try:
         refs = list_repo_refs(repo_id=dataset_id, repo_type="dataset", token=HF_TOKEN)
         tags = refs.tags if refs.tags else []
-        result["has_tags"] = len(tags) > 0
+        branches = refs.branches if refs.branches else []
         result["num_tags"] = len(tags)
- 
-        commits = []
-        for commit in list_repo_commits(
-            repo_id=dataset_id, repo_type="dataset", token=HF_TOKEN
-        ):
-            commits.append(commit)
-            if len(commits) >= 50:
-                break
- 
-        result["num_commits_total"] = len(commits)
+        result["num_branches"] = len(branches)
+
+        if len(tags) >= 2:
+            result["eligible"] = True
+            result["eligibility_reason"] = "Criteri A: tags>=2"
+            return result
+        
+        commits_scanned = 0
+        num_commits_substantive = 0
+        
+        for commit in list_repo_commits(repo_id=dataset_id, repo_type="dataset", token=HF_TOKEN):
+            commits_scanned += 1
+            
+            ##cal comprovar que hi hagi almenys 2 branches, ja que si només hi ha 1 branch, no podem considerar els commits com a "versions reals"
+            ##si existeixen almenys 2 branches, podem considerar els commits substancials com a "versions reals"
+
+            if len(branches) >= 2:
+                if is_substantive_commit(commit.title):
+                    num_commits_substantive += 1
+                    
+                if num_commits_substantive >= 2:
+                    result["eligible"] = True
+                    result["eligibility_reason"] = "Criteri B: substantive_commits>=2"
+                    result["num_commits_substantive"] = num_commits_substantive
+                    return result
+                    
+                if commits_scanned >= 50:
+                    break
+                
+        result["num_commits_substantive"] = num_commits_substantive
  
     except Exception as exc:
         result["error"] = str(exc)[:120]
  
     return result
- 
+
+def is_substantive_commit(commit_title: str) -> bool:
+    """
+    Avalua si un commit és substancial.
+    Retorna False si el títol conté paraules clau de pur manteniment/documentació.
+    """
+    if not commit_title:
+        return False
+        
+    title_lower = commit_title.lower()
+    
+    for keyword in NON_SUBSTANTIVE_TITLE_KEYWORDS:
+        if keyword in title_lower:
+            return False
+            
+    return True 
  
 def classify_dataset_safe(args: tuple) -> dict | None:
     """Wrapper segur per a execució paral·lela amb ThreadPoolExecutor."""
@@ -219,10 +256,10 @@ def write_results(rows: list[dict], sample_size: int, total_scanned: int) -> tup
         "timestamp": datetime.now().isoformat(),
         "sampling_method": "reservoir_sampling_R_Vitter_uniform_no_bias",
         "authentication": "HF_TOKEN",
-        "eligibility_definition": "multiple_versions_only (tags>=2)",
+        "eligibility_definition": ">=2 tags from Git or >=2 substantial commits",
         "sample_size": total,
         "population_scanned": total_scanned,
-        "with_any_tag": int(df["has_tags"].sum()),
+        "with_any_tag": int((df["num_tags"] > 0).sum()),
         "with_2plus_tags": int((df["num_tags"] >= 2).sum()),
         "eligible_total": eligible,
         "eligible_via_tags": int((df["eligibility_reason"] == "tags>=2").sum()),
