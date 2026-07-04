@@ -1,29 +1,32 @@
 """
-Mostreig aleatori correcte de datasets de HuggingFace.
+Anàlisi de la població de datasets de HuggingFace per determinar l'elegibilitat.
 
-Metodologia: Reservoir sampling (algoritme R de Vitter) sobre TOTA la población
-de datasets, sense ordenar per popularitat. Això garanteix que cada dataset
-de la población té igual probabilitat de ser seleccionat.
+DOS MODES D'EXECUCIÓ:
 
-Estratègia per detectar "versions reals":
-1. Es llisten tags/refs del repo (versionat explicit).
-2. Si no hi ha tags, es miren els commits i es filtren per fitxers substantius.
-3. Es considera "elegible" un dataset amb almenys 2 "punts de canvi" rellevants.
+  MODE 1 — Mostreig (per defecte):
+    Reservoir sampling (algorisme R de Vitter) sobre TOTA la població.
+    Objectiu: estimar la proporció d'elegibles sense processar tothom.
 
-Output: data/eligibility_report.csv + data/funnel_summary.json
+    python random_sample_analysis.py --sample-size 1000 --threads 4 --seed 42
 
-Estratègia de detecció de "versions reals":
-  - El repositori té >= 2 tags de Git
-  - El repositori té >= 2 commits substancials, és a dir, commits que NO són purament documentals (README, llicències, metadades)
- 
-Ús:
-  python random_sample_analysis.py --sample-size 500 --threads 4
-  python random_sample_analysis.py --sample-size 1000 --max-scanned 50000 --threads 8
-  python random_sample_analysis.py --sample-size 200 --max-scanned 5000  # prova ràpida
- 
+  MODE 2 — Escaneig complet (--full-scan):
+    Itera TOTS els datasets de HF i guarda els elegibles directament.
+    Objectiu: obtenir la llista exhaustiva un cop coneguda la proporció.
+    Inclou checkpoint: si s'interromp, es pot reprendre des del punt on era.
+
+    python random_sample_analysis.py --full-scan --threads 8
+    python random_sample_analysis.py --full-scan --resume  # reprèn si s'havia interromput
+
+Criteri d'elegibilitat:
+  Criteri A (principal): el repositori té >= 2 tags de Git.
+  Criteri B (fallback):  el repositori té >= 2 branches I >= 2 commits
+                         el títol dels quals no és purament documental.
+
 Output:
-  data/eligibility_report_<N>.csv   -> fila per dataset explorat
-  data/funnel_summary_<N>.json      -> xifres agregades de l'embut
+  data/eligibility_report_<N>_<run_id>.csv   (mode mostreig)
+  data/funnel_summary_<N>_<run_id>.json      (mode mostreig)
+  data/full_scan_eligible.csv                (mode escaneig complet)
+  data/full_scan_checkpoint.txt              (reprèn si s'interromp)
 """
 
 import os
@@ -34,132 +37,87 @@ import argparse
 import logging
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
- 
+
 import pandas as pd
 from dotenv import load_dotenv
 from tqdm import tqdm
 from huggingface_hub import HfApi, list_repo_commits, list_repo_refs
 
-
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger(__name__)
- 
-# Fitxers que NO compten com a "canvi real de dataset".
-# Basat en la taxonomia els canvis de Metadata
 
-NON_SUBSTANTIVE_FILES = {
-    "README.md",
-    ".gitattributes",
-    "dataset_infos.json",
-    ".gitignore",
-    "LICENSE",
-    "LICENSE.md",
-    "CITATION.cff",
-    ".github",
-    ".gitmodules",
-    "setup.py",
-    "setup.cfg",
-}
- 
-# Paraules clau als títols de commits que indiquen canvi purament documental.
-# S'utilitzen com a heurística quan no tenim accés directe a la llista de fitxers.
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+# Nota: NON_SUBSTANTIVE_FILES (per contingut real del commit) es reserva per
+# a la fase 2 del TFG quan accedirem als fitxers concrets de cada commit.
 NON_SUBSTANTIVE_TITLE_KEYWORDS = {
     "readme", "metadata", ".gitattributes", "dataset_infos",
     "license", "citation", "typo", "fix typo", "update docs",
 }
- 
+
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-#Inicialització de l'API
+CHECKPOINT_FILE = os.path.join(OUTPUT_DIR, "full_scan_checkpoint.txt")
+FULL_SCAN_CSV   = os.path.join(OUTPUT_DIR, "full_scan_eligible.csv")
+
+# ---------------------------------------------------------------------------
+# Inicialització de l'API (un sol cop, global)
+# ---------------------------------------------------------------------------
 load_dotenv()
 HF_TOKEN = os.getenv("HF_TOKEN")
 if not HF_TOKEN:
     log.error("Cap token HF detectat. Crea un fitxer .env amb HF_TOKEN=hf_xxx")
     sys.exit(1)
- 
+
 api = HfApi(token=HF_TOKEN)
 log.info("Token HF carregat correctament.")
 
 
-OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-
 # ---------------------------------------------------------------------------
-# Fase 1: Iteració i reservoir sampling
+# Iteració de la població completa
 # ---------------------------------------------------------------------------
- 
-def iter_all_datasets(page_size: int = 500):
+
+def iter_all_datasets():
     """
     Itera TOTA la població de datasets de HF sense cap ordenació.
-    Genera datasets un a un (generator) per no carregar tot a memòria.
+    list_datasets() sense limit fa paginació automàtica internament.
+    Genera datasets un a un (generator) → mai carrega tot a memòria.
     """
     try:
-        # IMPORTANT: no posem `limit=page_size` perquè això només retornaria
-        # els primers datasets. Amb `limit=None` iterem tota la població real.
-        for dataset in api.list_datasets(limit=None):
+        for dataset in api.list_datasets():
             yield dataset
     except Exception as exc:
         log.error(f"Error iterant datasets: {exc}")
- 
- 
-def reservoir_sample_datasets(
-    sample_size: int, max_scanned: int | None = None
-) -> tuple[list, int]:
-    """
-    Algorisme R de Vitter: mostreig aleatori uniforme sobre tota la població.
-    Cada dataset té igual probabilitat = sample_size / N de ser seleccionat.
- 
-    Args:
-        sample_size:  Mida de la mostra final desitjada.
-        max_scanned:  Límit opcional de datasets a escanejar (per a proves ràpides).
- 
-    Returns:
-        (reservoir, n_seen): mostra final i total de datasets escanejats.
-    """
-    reservoir: list = []
-    n_seen = 0
- 
-    desc = f"Escaneig reservoir sampling (objectiu: {sample_size} datasets)"
 
-    with tqdm(desc=desc, unit=" datasets", dynamic_ncols=True) as pbar:
-        for dataset in iter_all_datasets():
-            n_seen += 1
-            if len(reservoir) < sample_size:
-                reservoir.append(dataset)
-            else:
-                j = random.randint(0, n_seen - 1)
-                if j < sample_size:
-                    reservoir[j] = dataset
- 
-            pbar.update(1)
-            pbar.set_postfix({"reservori": len(reservoir), "vist": n_seen})
- 
-            if max_scanned and n_seen >= max_scanned:
-                log.info(f"Límit max_scanned={max_scanned} assolit. Aturant escaneig.")
-                break
- 
-    log.info(f"Escaneig completat: {n_seen} datasets vistos, {len(reservoir)} a la mostra.")
-    return reservoir, n_seen
- 
- 
+
 # ---------------------------------------------------------------------------
-# Fase 2: Classificació d'elegibilitat per dataset
+# Classificació d'elegibilitat
 # ---------------------------------------------------------------------------
- 
+
+def is_substantive_commit(title: str) -> bool:
+    """Retorna True si el títol del commit NO és purament documental."""
+    if not title:
+        return False
+    title_lower = title.lower()
+    return not any(kw in title_lower for kw in NON_SUBSTANTIVE_TITLE_KEYWORDS)
+
+
 def classify_dataset(dataset_id: str) -> dict:
-    """ 
-    Criteri A: >= 2 tags de Git (versionat explícit, com en el paper dels LLM).
-    Criteri B: >= 2 commits substancials (canvis reals de dataset, no purament documentals).
+    """
+    Determina si un dataset és elegible.
 
-    ELs commits del criteri B es consideren substancials si el títol del commit no conté paraules clau de pur manteniment/documentació.
- 
-    Retorna un diccionari amb tots els camps per al CSV final.
+    Criteri A: >= 2 tags de Git (versionat explícit).
+    Criteri B: >= 2 branches I >= 2 commits substantius (fallback).
     """
     result = {
         "dataset_id": dataset_id,
@@ -170,228 +128,319 @@ def classify_dataset(dataset_id: str) -> dict:
         "eligibility_reason": "",
         "error": "",
     }
- 
+
     try:
         refs = list_repo_refs(repo_id=dataset_id, repo_type="dataset", token=HF_TOKEN)
-        tags = refs.tags if refs.tags else []
+        tags     = refs.tags     if refs.tags     else []
         branches = refs.branches if refs.branches else []
-        result["num_tags"] = len(tags)
+        result["num_tags"]     = len(tags)
         result["num_branches"] = len(branches)
 
+        # Criteri A: ràpid, retorna immediatament si es compleix
         if len(tags) >= 2:
-            result["eligible"] = True
-            result["eligibility_reason"] = "Criteri A: tags>=2"
+            result["eligible"]            = True
+            result["eligibility_reason"]  = "Criteri A: tags>=2"
             return result
-        
-        commits_scanned = 0
-        num_commits_substantive = 0
-        
-        for commit in list_repo_commits(repo_id=dataset_id, repo_type="dataset", token=HF_TOKEN):
-            commits_scanned += 1
-            
-            ##cal comprovar que hi hagi almenys 2 branches, ja que si només hi ha 1 branch, no podem considerar els commits com a "versions reals"
-            ##si existeixen almenys 2 branches, podem considerar els commits substancials com a "versions reals"
 
-            if len(branches) >= 2:
-                if is_substantive_commit(commit.title):
-                    num_commits_substantive += 1
-                    
-                if num_commits_substantive >= 2:
-                    result["eligible"] = True
-                    result["eligibility_reason"] = "Criteri B: substantive_commits>=2"
-                    result["num_commits_substantive"] = num_commits_substantive
-                    return result
-                    
-                if commits_scanned >= 50:
+        # Criteri B: només si hi ha >= 2 branches; limitem a 50 commits sempre
+        if len(branches) >= 2:
+            substantive = 0
+            for i, commit in enumerate(
+                list_repo_commits(repo_id=dataset_id, repo_type="dataset", token=HF_TOKEN)
+            ):
+                if i >= 50:
                     break
-                
-        result["num_commits_substantive"] = num_commits_substantive
- 
+                if is_substantive_commit(commit.title):
+                    substantive += 1
+                if substantive >= 2:
+                    result["eligible"]                   = True
+                    result["eligibility_reason"]         = "Criteri B: branches>=2 i substantive_commits>=2"
+                    result["num_commits_substantive"]    = substantive
+                    return result
+            result["num_commits_substantive"] = substantive
+
     except Exception as exc:
         result["error"] = str(exc)[:120]
- 
+
     return result
 
-def is_substantive_commit(commit_title: str) -> bool:
-    """
-    Avalua si un commit és substancial.
-    Retorna False si el títol conté paraules clau de pur manteniment/documentació.
-    """
-    if not commit_title:
-        return False
-        
-    title_lower = commit_title.lower()
-    
-    for keyword in NON_SUBSTANTIVE_TITLE_KEYWORDS:
-        if keyword in title_lower:
-            return False
-            
-    return True 
- 
+
 def classify_dataset_safe(args: tuple) -> dict | None:
-    """Wrapper segur per a execució paral·lela amb ThreadPoolExecutor."""
+    """Wrapper per a execució paral·lela. Captura excepcions inesperades."""
     idx, dataset_id = args
     try:
         return classify_dataset(dataset_id)
     except Exception as exc:
-        log.warning(f"[{idx}] Error classificant {dataset_id}: {exc}")
+        log.warning(f"[{idx}] Error inesperat a {dataset_id}: {exc}")
         return None
- 
- 
+
+
 # ---------------------------------------------------------------------------
-# Fase 3: Escriptura de resultats
+# Gestió de runs i resultats
 # ---------------------------------------------------------------------------
 
-def get_next_run_id(output_dir: str, sample_size: int) -> int:
+def get_next_run_id(sample_size: int) -> int:
+    """Retorna el pròxim run_id per evitar sobreescriure execucions anteriors."""
     max_id = 0
     prefix = f"funnel_summary_{sample_size}_"
-
-    for filename in os.listdir(output_dir):
-        if filename.startswith(prefix) and filename.endswith(".json"):
+    for fn in os.listdir(OUTPUT_DIR):
+        if fn.startswith(prefix) and fn.endswith(".json"):
             try:
-                id_str = filename[len(prefix):-5]
-                current_id = int(id_str)
-                if current_id > max_id:
-                    max_id = current_id
+                max_id = max(max_id, int(fn[len(prefix):-5]))
             except ValueError:
                 pass
-                
     return max_id + 1
 
-def write_results(rows: list[dict], run_id: int, sample_size: int, total_scanned: int) -> tuple[str, str, dict]:
-    """Escriu el CSV i el JSON de resultats. Retorna les rutes dels fitxers."""
+
+def write_results(
+    rows: list[dict], run_id: int, sample_size: int, total_scanned: int
+) -> tuple[str, str, dict]:
+    """Escriu CSV + JSON de resultats del mode mostreig."""
     df = pd.DataFrame(rows)
- 
-    csv_path = os.path.join(OUTPUT_DIR, f"eligibility_report_{sample_size}_{run_id}.csv")
+
+    csv_path  = os.path.join(OUTPUT_DIR, f"eligibility_report_{sample_size}_{run_id}.csv")
+    json_path = os.path.join(OUTPUT_DIR, f"funnel_summary_{sample_size}_{run_id}.json")
+
     df.to_csv(csv_path, index=False, encoding="utf-8")
- 
-    total = len(rows)
+
+    total    = len(rows)
     eligible = int(df["eligible"].sum())
- 
+
     summary = {
-        "timestamp": datetime.now().isoformat(),
-        "sampling_method": "reservoir_sampling_R_Vitter_uniform_no_bias",
-        "authentication": "HF_TOKEN",
-        "eligibility_definition": ">=2 tags from Git or >=2 substantial commits",
-        "sample_size": total,
-        "population_scanned": total_scanned,
-        "with_any_tag": int((df["num_tags"] > 0).sum()),
-        "with_2plus_tags": int((df["num_tags"] >= 2).sum()),
-        "eligible_total": eligible,
-        "eligible_via_tags": int((df["eligibility_reason"] == "Criteri A: tags>=2").sum()),
-        "eligible_via_commits": int(
-            (df["eligibility_reason"] == "Criteri B: substantive_commits>=2").sum()
+        "timestamp":            datetime.now().isoformat(),
+        "mode":                 "sampling",
+        "sampling_method":      "reservoir_sampling_R_Vitter_uniform_no_bias",
+        "eligibility_criteria": "Criteri A: tags>=2 | Criteri B: branches>=2 AND substantive_commits>=2",
+        "sample_size":          total,
+        "population_scanned":   total_scanned,
+        "with_any_tag":         int((df["num_tags"] > 0).sum()),
+        "with_2plus_tags":      int((df["num_tags"] >= 2).sum()),
+        "eligible_total":       eligible,
+        "eligible_via_tags":    int((df["eligibility_reason"] == "Criteri A: tags>=2").sum()),
+        "eligible_via_commits": int((df["eligibility_reason"].str.startswith("Criteri B")).sum()),
+        "ineligible":           total - eligible - int((df["error"] != "").sum()),
+        "errors":               int((df["error"] != "").sum()),
+        "eligible_proportion":  round(eligible / total, 4) if total else 0,
+        "estimated_eligible_in_population": (
+            int(round((eligible / total) * total_scanned)) if total else 0
         ),
-        "ineligible": int((df["eligibility_reason"] == "insufficient_changes").sum()),
-        "errors": int((df["error"] != "").sum()),
-        "eligible_proportion": round(eligible / total, 4) if total else 0,
-        "estimated_eligible_in_population": int(round((eligible / total) * total_scanned)) if total else 0,
     }
 
-    #com obtenir cada prova en un nom de json diferent?
-    # per exemple, si fem 3 proves amb sample_size=1000, que cada prova generi un json diferent amb el nom funnel_summary_1000_1.json, funnel_summary_1000_2.json, funnel_summary_1000_3.json
-        
-    json_path = os.path.join(OUTPUT_DIR, f"funnel_summary_{sample_size}_{run_id}.json")
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
- 
+
     return csv_path, json_path, summary
- 
- 
+
+
 # ---------------------------------------------------------------------------
-# Orquestrador principal
+# MODE 1: Reservoir sampling
 # ---------------------------------------------------------------------------
- 
-def run_funnel(sample_size: int, max_scanned: int | None, num_threads: int) -> None:
-    """Executa l'embut complet: mostreig → classificació paral·lela → resultats."""
- 
-    # --- Fase 1: Mostreig ---
-    log.info(f"FASE 1: Reservoir sampling (objectiu={sample_size}, max_scanned={max_scanned})")
+
+def reservoir_sample_datasets(
+    sample_size: int, max_scanned: int | None = None
+) -> tuple[list, int]:
+    """Algorisme R de Vitter sobre la població completa."""
+    reservoir: list = []
+    n_seen = 0
+
+    with tqdm(
+        desc=f"Reservoir sampling (objectiu: {sample_size})",
+        unit=" ds", dynamic_ncols=True
+    ) as pbar:
+        for dataset in iter_all_datasets():
+            n_seen += 1
+            if len(reservoir) < sample_size:
+                reservoir.append(dataset)
+            else:
+                j = random.randint(0, n_seen - 1)
+                if j < sample_size:
+                    reservoir[j] = dataset
+
+            pbar.update(1)
+            pbar.set_postfix({"reservori": len(reservoir), "vistos": n_seen})
+
+            if max_scanned and n_seen >= max_scanned:
+                log.info(f"max_scanned={max_scanned} assolit.")
+                break
+
+    return reservoir, n_seen
+
+
+def run_sampling(sample_size: int, max_scanned: int | None, num_threads: int) -> None:
+    """Executa el mode mostreig complet."""
+    log.info(f"MODE MOSTREIG: sample_size={sample_size}, max_scanned={max_scanned}")
+
     datasets, total_scanned = reservoir_sample_datasets(sample_size, max_scanned)
     dataset_ids = [d.id for d in datasets]
-    log.info(f"Mostra obtinguda: {len(dataset_ids)} datasets de {total_scanned} escanejats.")
- 
-    # --- Fase 2: Classificació paral·lela ---
-    log.info(f"FASE 2: Classificant elegibilitat ({num_threads} threads)...")
+    log.info(f"Mostra: {len(dataset_ids)} datasets de {total_scanned} escanejats.")
+
+    log.info(f"Classificant ({num_threads} threads)...")
     indexed = list(enumerate(dataset_ids))
     rows: list[dict] = []
- 
+
     with ThreadPoolExecutor(max_workers=num_threads) as executor:
         futures = {executor.submit(classify_dataset_safe, item): item for item in indexed}
-        with tqdm(total=len(indexed), desc="Classificant datasets", unit=" ds") as pbar:
+        with tqdm(total=len(indexed), desc="Classificant", unit=" ds") as pbar:
             for future in as_completed(futures):
                 result = future.result()
                 if result is not None:
                     rows.append(result)
                 pbar.update(1)
                 pbar.set_postfix({"elegibles": sum(1 for r in rows if r["eligible"])})
- 
-    log.info(f"Classificació completada: {len(rows)} datasets processats.")
- 
-    # --- Fase 3: Resultats ---
-    log.info("FASE 3: Escrivint resultats...")
-    run_id = get_next_run_id(OUTPUT_DIR, sample_size)
+
+    run_id = get_next_run_id(sample_size)
     csv_path, json_path, summary = write_results(rows, run_id, sample_size, total_scanned)
- 
-    # Imprimir resum final
+
     print(f"\n{'='*65}")
-    print(f"  RESUM EMBUT — mostra de {summary['sample_size']} datasets aleatoris")
+    print(f"  RESUM — mostra de {summary['sample_size']} datasets aleatoris")
     print(f"{'='*65}")
     for k, v in summary.items():
-        print(f"  {k:<40} {v}")
+        print(f"  {k:<45} {v}")
     print(f"{'='*65}")
     print(f"\n  CSV:  {csv_path}")
     print(f"  JSON: {json_path}\n")
- 
- 
+
+
 # ---------------------------------------------------------------------------
-# Punt d'entrada amb argparse
+# MODE 2: Escaneig complet amb checkpoint
 # ---------------------------------------------------------------------------
- 
+
+def load_checkpoint() -> set[str]:
+    """Carrega els dataset_ids ja processats en una execució anterior."""
+    if not os.path.exists(CHECKPOINT_FILE):
+        return set()
+    with open(CHECKPOINT_FILE, encoding="utf-8") as f:
+        ids = {line.strip() for line in f if line.strip()}
+    log.info(f"Checkpoint: {len(ids)} datasets ja processats. Es reprèn des d'aquí.")
+    return ids
+
+
+def append_checkpoint(dataset_id: str) -> None:
+    """Afegeix un dataset_id al fitxer de checkpoint (append, no sobreescriu)."""
+    with open(CHECKPOINT_FILE, "a", encoding="utf-8") as f:
+        f.write(dataset_id + "\n")
+
+
+def append_eligible_row(row: dict) -> None:
+    """Afegeix una fila elegible al CSV de resultats de forma incremental."""
+    file_exists = os.path.exists(FULL_SCAN_CSV)
+    df = pd.DataFrame([row])
+    df.to_csv(FULL_SCAN_CSV, mode="a", header=not file_exists, index=False, encoding="utf-8")
+
+
+def run_full_scan(num_threads: int, resume: bool) -> None:
+    """
+    Itera TOTS els datasets de HF i guarda els elegibles.
+
+    La diferència clau respecte al mostreig és que aquí no hi ha reservori:
+    processem cada dataset a mesura que arriba del generador, en blocs
+    de `num_threads * 4` datasets, per no acumular massa futures en memòria.
+
+    El checkpoint permet reprendre si l'execució s'interromp.
+    """
+    already_done: set[str] = load_checkpoint() if resume else set()
+    if not resume and os.path.exists(CHECKPOINT_FILE):
+        os.remove(CHECKPOINT_FILE)
+    if not resume and os.path.exists(FULL_SCAN_CSV):
+        os.remove(FULL_SCAN_CSV)
+
+    log.info(f"MODE ESCANEIG COMPLET (resume={resume}, threads={num_threads})")
+    log.info("Iterant tota la població de HF sense límit...")
+
+    # Mida del bloc de processament paral·lel
+    BATCH_SIZE = num_threads * 8
+
+    n_total   = 0
+    n_eligible = 0
+    batch: list[tuple[int, str]] = []
+
+    def process_batch(b: list[tuple[int, str]]) -> None:
+        nonlocal n_eligible
+        with ThreadPoolExecutor(max_workers=num_threads) as executor:
+            futures = {executor.submit(classify_dataset_safe, item): item for item in b}
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    append_checkpoint(result["dataset_id"])
+                    if result["eligible"]:
+                        append_eligible_row(result)
+                        n_eligible += 1
+
+    with tqdm(desc="Escaneig complet", unit=" ds", dynamic_ncols=True) as pbar:
+        for dataset in iter_all_datasets():
+            ds_id = dataset.id
+            n_total += 1
+
+            if ds_id in already_done:
+                pbar.update(1)
+                continue
+
+            batch.append((n_total, ds_id))
+
+            if len(batch) >= BATCH_SIZE:
+                process_batch(batch)
+                batch = []
+                pbar.set_postfix({"elegibles": n_eligible, "total": n_total})
+
+            pbar.update(1)
+
+        # Processar el darrer batch parcial
+        if batch:
+            process_batch(batch)
+
+    log.info(f"Escaneig complet. Total: {n_total}, Elegibles: {n_eligible}")
+    print(f"\n  Resultats guardats a: {FULL_SCAN_CSV}")
+    print(f"  Checkpoint a: {CHECKPOINT_FILE}\n")
+
+
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Filtratge previ de datasets de HF amb versions reals.",
+        description="Filtratge de datasets de HF: mostreig o escaneig complet.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "--sample-size", "-n",
-        type=int,
-        default=1000,
-        help="Nombre de datasets a incloure a la mostra final (reservoir size).",
+        "--full-scan", action="store_true",
+        help="Mode escaneig complet: processa TOTS els datasets de HF.",
     )
     parser.add_argument(
-        "--max-scanned", "-m",
-        type=int,
-        default=None,
-        help=(
-            "Límit de datasets a escanejar en total. "
-            "Útil per a proves ràpides. Sense valor = escaneig complet."
-        ),
+        "--resume", action="store_true",
+        help="(Només --full-scan) Reprèn un escaneig complet interromput.",
     )
     parser.add_argument(
-        "--threads", "-t",
-        type=int,
-        default=4,
-        help="Nombre de threads per al processament paral·lel de la classificació.",
+        "--sample-size", "-n", type=int, default=1000,
+        help="(Mode mostreig) Mida de la mostra final.",
     )
     parser.add_argument(
-        "--seed",
-        type=int,
-        default=None,
-        help="Llavor aleatòria per a reproduïbilitat (opcional).",
+        "--max-scanned", "-m", type=int, default=None,
+        help="(Mode mostreig) Límit de datasets a escanejar. Sense valor = tot.",
+    )
+    parser.add_argument(
+        "--threads", "-t", type=int, default=4,
+        help="Nombre de threads paral·lels per a la classificació.",
+    )
+    parser.add_argument(
+        "--seed", type=int, default=None,
+        help="(Mode mostreig) Llavor aleatòria per a reproduïbilitat.",
     )
     return parser.parse_args()
- 
- 
+
+
 if __name__ == "__main__":
     args = parse_args()
- 
+
     if args.seed is not None:
         random.seed(args.seed)
-        log.info(f"Llavor aleatòria fixada a {args.seed} per a reproduïbilitat.")
- 
-    run_funnel(
-        sample_size=args.sample_size,
-        max_scanned=args.max_scanned,
-        num_threads=args.threads,
-    )
+        log.info(f"Llavor aleatòria: {args.seed}")
+
+    if args.full_scan:
+        run_full_scan(num_threads=args.threads, resume=args.resume)
+    else:
+        run_sampling(
+            sample_size=args.sample_size,
+            max_scanned=args.max_scanned,
+            num_threads=args.threads,
+        )
