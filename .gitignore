@@ -229,8 +229,8 @@ dataset_versions_*.csv
 debug_dataset.py
 eligibility_debug.log
 
+
 # Project-specific: Runtime outputs and data
-data/                          # Analysis outputs (CSVs, JSONs, reports)
 dataset_versions_*.csv         # Dataset version analysis results
 *.log                          # Debug logs
 eligibility_debug.log          # Eligibility analysis debug logs
