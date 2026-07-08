@@ -4,16 +4,8 @@ Tests unitaris per a `notebooks/eligibility_scan.py`.
 Cobreixen:
   1. `reservoir_sample_dataset_ids` només conserva identificadors (strings),
      mai els objectes originals -- aquest era el bug de memòria reportat.
-  2. Checkpoint (`load_checkpoint`/`append_checkpoint`): persistència
-     d'ids ja processats per poder reprendre un escaneig llarg.
-  3. `compute_funnel_stats`: denominadors correctes de l'embut
+  2. `compute_funnel_stats`: denominadors correctes de l'embut
      d'elegibilitat (separant accés restringit i errors dels no elegibles).
-
-Nota: importar aquest mòdul executa la inicialització de `HfApi` amb
-`HF_TOKEN` carregat des de `.env` (igual que en execució normal del
-script) -- cal tenir un `.env` vàlid per poder córrer aquests tests, ja
-que sense token el mòdul fa `sys.exit(1)` en importar-se. No es fan
-crides reals a l'API en cap test d'aquest fitxer.
 """
 
 import random
@@ -105,22 +97,6 @@ class TestReservoirSampleDatasetIds:
 
 
 # ---------------------------------------------------------------------------
-# Checkpoint round-trip
-# ---------------------------------------------------------------------------
-
-class TestCheckpoint:
-    def test_checkpoint_round_trip(self, tmp_path):
-        path = tmp_path / "checkpoint.txt"
-
-        assert es.load_checkpoint(path) == set()
-
-        es.append_checkpoint(path, "org/ds-1")
-        es.append_checkpoint(path, "org/ds-2")
-
-        assert es.load_checkpoint(path) == {"org/ds-1", "org/ds-2"}
-
-
-# ---------------------------------------------------------------------------
 # compute_funnel_stats — correcció dels bugs de denominador
 # ---------------------------------------------------------------------------
 
@@ -183,14 +159,53 @@ class _FakeRefs:
         self.branches = branches or []
 
 
+class _FakeCommit:
+    def __init__(self, title):
+        self.title = title
+
+
 class TestClassifyDatasetResultShape:
-    def test_status_is_classified_when_eligible_via_tags(self, monkeypatch, tmp_path):
+    def test_eligible_via_tags_requires_a_substantive_commit(self, monkeypatch, tmp_path):
+        # >=2 tags amb almenys un commit substantiu -> elegible via Criteri A.
         monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1", "v2"]))
+        monkeypatch.setattr(
+            es, "list_repo_commits",
+            lambda **kw: iter([_FakeCommit("Update README"), _FakeCommit("Add new records")]),
+        )
         monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
 
         result = es.classify_dataset("org/ds")
 
         assert result["status"] == "classified"
+        assert result["eligible"] is True
+        assert result["eligibility_reason"] == "Criteri A: tags>=2 amb commits substantius"
+
+    def test_tags_without_any_substantive_commit_are_not_eligible(self, monkeypatch, tmp_path):
+        # >=2 tags però TOTS els commits són purament de metadades/documentació
+        # (el cas improbable que motiva aquest guard) -> NO elegible via Criteri A.
+        monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1", "v2"]))
+        monkeypatch.setattr(
+            es, "list_repo_commits",
+            lambda **kw: iter([_FakeCommit("Update README"), _FakeCommit("fix typo")]),
+        )
+        monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
+
+        result = es.classify_dataset("org/ds")
+
+        assert result["status"] == "classified"
+        assert result["eligible"] is False
+
+    def test_tags_only_mode_skips_the_substantive_commit_check(self, monkeypatch, tmp_path):
+        # tags_only=True: >=2 tags n'hi ha prou, sense consultar commits.
+        monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1", "v2"]))
+        monkeypatch.setattr(
+            es, "list_repo_commits",
+            lambda **kw: (_ for _ in ()).throw(AssertionError("no s'hauria de cridar")),
+        )
+        monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
+
+        result = es.classify_dataset("org/ds", tags_only=True)
+
         assert result["eligible"] is True
         assert result["eligibility_reason"] == "Criteri A: tags>=2"
 
@@ -235,6 +250,9 @@ class TestClassifyDatasetResultShape:
 
     def test_result_has_status_key_regardless_of_path(self, monkeypatch, tmp_path):
         monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
+        monkeypatch.setattr(
+            es, "list_repo_commits", lambda **kw: iter([_FakeCommit("Add new records")])
+        )
 
         for fake_refs_fn in (
             lambda **kw: _FakeRefs(tags=["v1", "v2"]),

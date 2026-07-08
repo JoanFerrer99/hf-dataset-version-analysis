@@ -16,20 +16,13 @@ Els errors definitius es classifiquen en categories (accés restringit,
 no trobat, transitori esgotat, desconegut) i es registren de forma
 estructurada a `data/failures.csv`, separats del report principal.
 
-MODES D'EXECUCIÓ:
-  Mostreig (estimar proporció de la població):
-    python eligibility_scan.py --sample-size 1000 --threads 4 --seed 42
-    python eligibility_scan.py --sample-size 200 --max-scanned 5000
-
-  Escaneig complet (llista exhaustiva, amb checkpoint/resume):
-    python eligibility_scan.py --full-scan --threads 4
-    python eligibility_scan.py --full-scan --resume
-    python eligibility_scan.py --full-scan --tags-only --threads 4  # Criteri A únicament
+Ús:
+  python eligibility_scan.py --sample-size 2000 --threads 4 --seed 42
+  python eligibility_scan.py --sample-size 200 --max-scanned 5000  # prova ràpida, esbiaixada
 
 Output:
-  Mostreig:      data/eligibility_report_<N>_<run_id>.csv, data/funnel_summary_<N>_<run_id>.json
-  Escaneig total: data/full_scan_eligible.csv, data/full_scan_stats.json, data/full_scan_checkpoint.txt
-  Ambdós modes:  data/failures.csv (registre estructurat de fallades, compartit entre execucions)
+  data/eligibility_report_<N>_<run_id>.csv, data/funnel_summary_<N>_<run_id>.json
+  data/failures.csv (registre estructurat de fallades)
 """
 
 import os
@@ -41,7 +34,6 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
@@ -86,9 +78,6 @@ NON_SUBSTANTIVE_TITLE_KEYWORDS = {
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-CHECKPOINT_FILE = os.path.join(OUTPUT_DIR, "full_scan_checkpoint.txt")
-FULL_SCAN_CSV = os.path.join(OUTPUT_DIR, "full_scan_eligible.csv")
-FULL_SCAN_STATS = os.path.join(OUTPUT_DIR, "full_scan_stats.json")
 FAILURES_LOG_PATH = os.path.join(OUTPUT_DIR, "failures.csv")
 
 # Configuració de reintent. Es llegeix des de classify_dataset() a cada crida,
@@ -100,10 +89,6 @@ RETRY_CONFIG: dict = {
     "max_wait_s": errors.DEFAULT_MAX_WAIT_S,
 }
 
-# "sampling" o "full_scan"; només s'usa per etiquetar les files del registre
-# de fallades i saber de quin mode d'execució provenen.
-CURRENT_SOURCE = "sampling"
-
 # Inicialització de l'API
 load_dotenv()
 HF_TOKEN = os.getenv("HF_TOKEN")
@@ -113,11 +98,6 @@ if not HF_TOKEN:
 
 api = HfApi(token=HF_TOKEN)
 log.info("Token HF carregat correctament.")
-
-
-# ---------------------------------------------------------------------------
-# Fase 1: Iteració i reservoir sampling (només ids, no objectes complets)
-# ---------------------------------------------------------------------------
 
 def iter_all_dataset_ids():
     """
@@ -200,22 +180,24 @@ def reservoir_sample_dataset_ids(
     log.info(f"Escaneig completat: {n_seen} datasets vistos, {len(reservoir)} a la mostra.")
     return reservoir, n_seen
 
-
-# ---------------------------------------------------------------------------
-# Fase 2: Classificació d'elegibilitat per dataset
-# ---------------------------------------------------------------------------
-
 def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
     """
-    Criteri A: >= 2 tags de Git (versionat explícit, com en el paper dels LLM).
+    Criteri A: >= 2 tags de Git (versionat explícit, com en el paper dels LLM)
+               I almenys un commit substantiu. El segon requisit cobreix el
+               cas (improbable) d'un dataset amb >=2 tags on tots els
+               commits associats només toquen README/metadades: sense
+               commits substantius, els tags no representen canvis reals de
+               dataset i no compten com a Criteri A.
     Criteri B: >= 2 branches I >= 2 commits substancials (canvis reals de
-               dataset, no purament documentals). Els commits es consideren
-               substancials si el títol no conté paraules clau de pur
-               manteniment/documentació.
+               dataset, no purament documentals).
 
-    Si `tags_only=True`, només s'avalua el Criteri A (una sola crida a
-    l'API): útil per fer un escaneig complet més ràpid i amb molt menys risc
-    de rate limiting quan només interessa una estimació ràpida.
+    Els commits es consideren substancials si el títol no conté paraules
+    clau de pur manteniment/documentació (`is_substantive_commit`).
+
+    Si `tags_only=True`, només s'avalua el Criteri A ORIGINAL (>=2 tags,
+    sense verificar commits substantius; una sola crida a l'API): útil per
+    fer un escaneig complet més ràpid i amb molt menys risc de rate
+    limiting quan només interessa una estimació ràpida.
 
     Totes les crides a l'API es reintenten automàticament amb backoff
     exponencial davant rate limiting (`errors.with_retry`). Si després
@@ -251,7 +233,7 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
         result["num_tags"] = len(tags)
         result["num_branches"] = len(branches)
 
-        if len(tags) >= 2:
+        if len(tags) >= 2 and tags_only:
             result["eligible"] = True
             result["eligibility_reason"] = "Criteri A: tags>=2"
             return result
@@ -263,10 +245,14 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
         commits_scanned = 0
         num_commits_substantive = 0
 
-        # NOTA: només consultem els commits si ja sabem que hi ha prou
-        # branches per considerar-los "versions reals" (Criteri B), evitant
-        # una crida i iteració senceres quan no poden canviar el resultat.
-        if len(branches) >= 2:
+        # NOTA: només consultem els commits si tenim >=2 tags (Criteri A) o
+        # >=2 branches (Criteri B), evitant una crida i iteració senceres
+        # quan no poden canviar el resultat. Per al Criteri A, no n'hi ha
+        # prou amb tenir >=2 tags: cal que almenys un commit sigui
+        # substantiu, per cobrir el cas (improbable) d'un dataset amb
+        # versions etiquetades on tots els commits només toquen
+        # README/metadades.
+        if len(tags) >= 2 or len(branches) >= 2:
             commits_iter = errors.with_retry(
                 list_repo_commits, repo_id=dataset_id, repo_type="dataset", token=HF_TOKEN,
                 **RETRY_CONFIG,
@@ -276,6 +262,12 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
 
                 if is_substantive_commit(commit.title):
                     num_commits_substantive += 1
+
+                if len(tags) >= 2 and num_commits_substantive >= 2:
+                    result["eligible"] = True
+                    result["eligibility_reason"] = "Criteri A: tags>=2 amb commits substantius"
+                    result["num_commits_substantive"] = num_commits_substantive
+                    return result
 
                 if num_commits_substantive >= 2:
                     result["eligible"] = True
@@ -308,7 +300,7 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
             category=category,
             message=str(exc),
             retries_attempted=retries_attempted,
-            source=CURRENT_SOURCE,
+            source="sampling",
         )
 
     return result
@@ -342,43 +334,6 @@ def classify_dataset_safe(args: tuple) -> dict | None:
 
 
 # ---------------------------------------------------------------------------
-# Checkpoint i persistència incremental (per a l'escaneig complet)
-# ---------------------------------------------------------------------------
-
-def load_checkpoint(path: str | Path) -> set[str]:
-    """Retorna el conjunt d'ids ja processats en una execució anterior."""
-    path = Path(path)
-    if not path.exists():
-        return set()
-    with path.open(encoding="utf-8") as f:
-        return {line.strip() for line in f if line.strip()}
-
-
-def append_checkpoint(path: str | Path, dataset_id: str) -> None:
-    """Marca un dataset com a processat (una línia per id, append-only)."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
-        f.write(dataset_id + "\n")
-
-
-def append_result_row(path: str | Path, row: dict) -> None:
-    """Afegeix una fila de resultat a un CSV, escrivint la capçalera si cal."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    exists = path.exists()
-    pd.DataFrame([row]).to_csv(path, mode="a", header=not exists, index=False, encoding="utf-8")
-
-
-def save_scan_stats(path: str | Path, stats: dict) -> None:
-    """Sobreescriu el fitxer d'estadístiques amb l'estat agregat actual."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(stats, f, indent=2, ensure_ascii=False)
-
-
-# ---------------------------------------------------------------------------
 # Estadístiques agregades de l'embut d'elegibilitat
 # ---------------------------------------------------------------------------
 
@@ -403,9 +358,12 @@ def compute_funnel_stats(counts: FunnelCounts) -> dict:
     representa una classificació d'elegibilitat vàlida: incloure'ls
     esbiaixa a la baixa l'estimació de la proporció real d'elegibles.
 
-    `eligible_proportion_of_attempts` és una mètrica secundària, de
-    transparència, que SÍ inclou tots els intents (útil per veure quin
-    percentatge de la mostra es va poder classificar amb èxit).
+    `eligible_proportion_of_attempts` mètrica que inclou tots els intents 
+    (útil per veure quin percentatge de la mostra es pot classificar amb èxit).
+
+    'elegible_proportion_in_population' s'utilitza per estimar el nombre de datasets 
+    elegibles si no haguessin datasets amb accés restringit ni errors.
+
     """
     denom_valid = counts.eligible + counts.ineligible
     denom_attempts = denom_valid + counts.access_restricted + counts.errors
@@ -425,11 +383,6 @@ def compute_funnel_stats(counts: FunnelCounts) -> dict:
             int(round(eligible_proportion * counts.total_scanned)) if denom_valid else 0
         ),
     }
-
-
-# ---------------------------------------------------------------------------
-# Fase 3: Escriptura de resultats
-# ---------------------------------------------------------------------------
 
 def get_next_run_id(output_dir: str, sample_size: int) -> int:
     max_id = 0
@@ -475,7 +428,7 @@ def write_results(rows: list[dict], run_id: int, sample_size: int, total_scanned
         "sample_size": total,
         "population_scanned": total_scanned,
         "eligible_total": eligible,
-        "eligible_Criteri_A": int((df["eligibility_reason"] == "Criteri A: tags>=2").sum()),
+        "eligible_Criteri_A": int(df["eligibility_reason"].str.startswith("Criteri A").sum()),
         "eligible_Criteri_B": int(
             (df["eligibility_reason"] == "Criteri B: substantive_commits>=2").sum()
         ),
@@ -495,9 +448,6 @@ def write_results(rows: list[dict], run_id: int, sample_size: int, total_scanned
 
 def run_sampling(sample_size: int, max_scanned: int | None, num_threads: int, tags_only: bool = False) -> None:
     """Executa l'embut complet: mostreig -> classificació paral·lela -> resultats."""
-    global CURRENT_SOURCE
-    CURRENT_SOURCE = "sampling"
-
     # --- Fase 1: Mostreig ---
     log.info(f"FASE 1: Reservoir sampling (objectiu={sample_size}, max_scanned={max_scanned})")
     dataset_ids, total_scanned = reservoir_sample_dataset_ids(
@@ -539,138 +489,13 @@ def run_sampling(sample_size: int, max_scanned: int | None, num_threads: int, ta
 
 
 # ---------------------------------------------------------------------------
-# Orquestrador — Mode escaneig complet (amb checkpoint/resume)
-# ---------------------------------------------------------------------------
-
-def run_full_scan(num_threads: int, resume: bool, tags_only: bool = False) -> None:
-    """
-    Itera TOTS els datasets de HF, amb el mateix criteri d'elegibilitat que
-    el mode mostreig (`classify_dataset`), però sense reservoir sampling.
-
-    Persisteix incrementalment (checkpoint d'ids processats, CSV d'elegibles
-    i JSON d'estadístiques actualitzat cada batch) per poder-se interrompre
-    i reprendre sense perdre feina ni tornar a processar datasets ja fets.
-    Només es guarden al CSV els datasets elegibles (el denominador real es
-    manté a `full_scan_stats.json`) per no materialitzar centenars de
-    milers de files quan només interessen els positius.
-    """
-    global CURRENT_SOURCE
-    CURRENT_SOURCE = "full_scan"
-
-    already_done = load_checkpoint(CHECKPOINT_FILE) if resume else set()
-    if not resume:
-        for path in (CHECKPOINT_FILE, FULL_SCAN_CSV, FULL_SCAN_STATS):
-            if os.path.exists(path):
-                os.remove(path)
-
-    mode_str = "tags-only" if tags_only else "tags + commits"
-    log.info(f"MODE ESCANEIG COMPLET (threads={num_threads}, mode={mode_str}, resume={resume})")
-
-    n_total = n_eligible = n_ineligible = n_access_restricted = n_errors = 0
-    if resume and os.path.exists(FULL_SCAN_STATS):
-        with open(FULL_SCAN_STATS, encoding="utf-8") as f:
-            prev = json.load(f)
-        n_total = prev.get("n_total_scanned", 0)
-        n_eligible = prev.get("eligible", 0)
-        n_ineligible = prev.get("ineligible", 0)
-        n_access_restricted = prev.get("access_restricted", 0)
-        n_errors = prev.get("errors", 0)
-        log.info(f"Reprèn des de: {n_total} processats, {n_eligible} elegibles.")
-
-    BATCH_SIZE = num_threads * 8
-    batch: list[tuple] = []
-
-    def flush_batch(items: list[tuple]) -> None:
-        nonlocal n_eligible, n_ineligible, n_access_restricted, n_errors
-        with ThreadPoolExecutor(max_workers=num_threads) as executor:
-            futures = {executor.submit(classify_dataset_safe, item): item for item in items}
-            for future in as_completed(futures):
-                result = future.result()
-                if result is None:
-                    continue
-                append_checkpoint(CHECKPOINT_FILE, result["dataset_id"])
-                if result["status"] == "access_restricted":
-                    n_access_restricted += 1
-                elif result["status"] == "error":
-                    n_errors += 1
-                elif result["eligible"]:
-                    n_eligible += 1
-                    append_result_row(FULL_SCAN_CSV, result)
-                else:
-                    n_ineligible += 1
-
-        counts = FunnelCounts(
-            total_scanned=n_total,
-            eligible=n_eligible,
-            ineligible=n_ineligible,
-            access_restricted=n_access_restricted,
-            errors=n_errors,
-        )
-        stats = {
-            "timestamp": datetime.now().isoformat(),
-            "completed": False,
-            "tags_only": tags_only,
-            "n_total_scanned": n_total,
-            **compute_funnel_stats(counts),
-        }
-        save_scan_stats(FULL_SCAN_STATS, stats)
-
-    with tqdm(desc="Escaneig complet", unit=" ds", dynamic_ncols=True) as pbar:
-        for dataset_id in iter_all_dataset_ids():
-            n_total += 1
-            if dataset_id in already_done:
-                pbar.update(1)
-                continue
-
-            batch.append((n_total, dataset_id, tags_only))
-
-            if len(batch) >= BATCH_SIZE:
-                flush_batch(batch)
-                batch = []
-                pbar.set_postfix({"elegibles": n_eligible, "total": n_total})
-            pbar.update(1)
-
-        if batch:
-            flush_batch(batch)
-
-    counts = FunnelCounts(
-        total_scanned=n_total,
-        eligible=n_eligible,
-        ineligible=n_ineligible,
-        access_restricted=n_access_restricted,
-        errors=n_errors,
-    )
-    final_stats = {
-        "timestamp": datetime.now().isoformat(),
-        "completed": True,
-        "tags_only": tags_only,
-        "n_total_scanned": n_total,
-        **compute_funnel_stats(counts),
-    }
-    save_scan_stats(FULL_SCAN_STATS, final_stats)
-
-    log.info(f"Escaneig complet. Total: {n_total}, Elegibles: {n_eligible}")
-    print(f"\n  Elegibles: {FULL_SCAN_CSV}")
-    print(f"  Stats (denominador real): {FULL_SCAN_STATS}")
-    print(f"  Fallades (detall): {FAILURES_LOG_PATH}\n")
-
-
-# ---------------------------------------------------------------------------
 # Punt d'entrada amb argparse
 # ---------------------------------------------------------------------------
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Filtratge de datasets de HF: mostreig o escaneig complet.",
+        description="Filtratge de datasets de HF mitjançant mostreig (reservoir sampling).",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    parser.add_argument(
-        "--full-scan", action="store_true",
-        help="Processa TOTS els datasets de HF en lloc de fer un mostreig.",
-    )
-    parser.add_argument(
-        "--resume", action="store_true",
-        help="(Només amb --full-scan) Reprèn un escaneig interromput des del checkpoint.",
     )
     parser.add_argument(
         "--tags-only", action="store_true",
@@ -679,8 +504,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--sample-size", "-n",
         type=int,
-        default=1000,
-        help="Nombre de datasets a incloure a la mostra final (reservoir size).",
+        default=2000,
+        help=(
+            "Nombre de datasets a incloure a la mostra final (reservoir size). "
+            "Per defecte 2000: marge d'error ±0.51pp a 95%% de confiança, "
+            "assumint p=0.0137 (proporció real observada, vegeu README)."
+        ),
     )
     parser.add_argument(
         "--max-scanned", "-m",
@@ -721,6 +550,11 @@ def parse_args() -> argparse.Namespace:
         default=errors.DEFAULT_MAX_WAIT_S,
         help="Espera màxima (segons) entre reintents (topall del backoff exponencial).",
     )
+
+    if len(sys.argv) == 1:
+        parser.print_help()
+        sys.exit(0)
+
     return parser.parse_args()
 
 
@@ -738,12 +572,9 @@ if __name__ == "__main__":
         max_wait_s=args.retry_max_wait,
     )
 
-    if args.full_scan:
-        run_full_scan(num_threads=args.threads, resume=args.resume, tags_only=args.tags_only)
-    else:
-        run_sampling(
-            sample_size=args.sample_size,
-            max_scanned=args.max_scanned,
-            num_threads=args.threads,
-            tags_only=args.tags_only,
-        )
+    run_sampling(
+        sample_size=args.sample_size,
+        max_scanned=args.max_scanned,
+        num_threads=args.threads,
+        tags_only=args.tags_only,
+    )
