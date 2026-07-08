@@ -217,22 +217,11 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Project outputs and local debug artifacts
+# Project-specific: Runtime outputs and local debug artifacts.
+# NOTE: gitignore patterns do NOT support trailing inline comments -- a "#"
+# after a pattern is taken literally as part of it, not as a comment. Keep
+# comments on their own line (like this one) instead.
 data/
 dataset_versions_*.csv
-eligibility_debug.log
+*.log
 debug_*.py
-
-# Project outputs and local debug files
-data/
-dataset_versions_*.csv
-debug_dataset.py
-eligibility_debug.log
-
-# Project-specific: Runtime outputs and data
-data/                          # Analysis outputs (CSVs, JSONs, reports)
-dataset_versions_*.csv         # Dataset version analysis results
-*.log                          # Debug logs
-eligibility_debug.log          # Eligibility analysis debug logs
-debug_dataset.py               # Debug scripts
->>>>>>> Stashed changes
