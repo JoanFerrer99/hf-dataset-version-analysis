@@ -182,15 +182,22 @@ def reservoir_sample_dataset_ids(
 
 def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
     """
-    Criteri A: >= 2 tags de Git (versionat explícit, com en el paper dels LLM).
+    Criteri A: >= 2 tags de Git (versionat explícit, com en el paper dels LLM)
+               I almenys un commit substantiu. El segon requisit cobreix el
+               cas (improbable) d'un dataset amb >=2 tags on tots els
+               commits associats només toquen README/metadades: sense
+               commits substantius, els tags no representen canvis reals de
+               dataset i no compten com a Criteri A.
     Criteri B: >= 2 branches I >= 2 commits substancials (canvis reals de
-               dataset, no purament documentals). Els commits es consideren
-               substancials si el títol no conté paraules clau de pur
-               manteniment/documentació.
+               dataset, no purament documentals).
 
-    Si `tags_only=True`, només s'avalua el Criteri A (una sola crida a
-    l'API): útil per fer un escaneig complet més ràpid i amb molt menys risc
-    de rate limiting quan només interessa una estimació ràpida.
+    Els commits es consideren substancials si el títol no conté paraules
+    clau de pur manteniment/documentació (`is_substantive_commit`).
+
+    Si `tags_only=True`, només s'avalua el Criteri A ORIGINAL (>=2 tags,
+    sense verificar commits substantius; una sola crida a l'API): útil per
+    fer un escaneig complet més ràpid i amb molt menys risc de rate
+    limiting quan només interessa una estimació ràpida.
 
     Totes les crides a l'API es reintenten automàticament amb backoff
     exponencial davant rate limiting (`errors.with_retry`). Si després
@@ -226,7 +233,7 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
         result["num_tags"] = len(tags)
         result["num_branches"] = len(branches)
 
-        if len(tags) >= 2:
+        if len(tags) >= 2 and tags_only:
             result["eligible"] = True
             result["eligibility_reason"] = "Criteri A: tags>=2"
             return result
@@ -238,10 +245,14 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
         commits_scanned = 0
         num_commits_substantive = 0
 
-        # NOTA: només consultem els commits si ja sabem que hi ha prou
-        # branches per considerar-los "versions reals" (Criteri B), evitant
-        # una crida i iteració senceres quan no poden canviar el resultat.
-        if len(branches) >= 2:
+        # NOTA: només consultem els commits si tenim >=2 tags (Criteri A) o
+        # >=2 branches (Criteri B), evitant una crida i iteració senceres
+        # quan no poden canviar el resultat. Per al Criteri A, no n'hi ha
+        # prou amb tenir >=2 tags: cal que almenys un commit sigui
+        # substantiu, per cobrir el cas (improbable) d'un dataset amb
+        # versions etiquetades on tots els commits només toquen
+        # README/metadades.
+        if len(tags) >= 2 or len(branches) >= 2:
             commits_iter = errors.with_retry(
                 list_repo_commits, repo_id=dataset_id, repo_type="dataset", token=HF_TOKEN,
                 **RETRY_CONFIG,
@@ -251,6 +262,12 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
 
                 if is_substantive_commit(commit.title):
                     num_commits_substantive += 1
+
+                if len(tags) >= 2 and num_commits_substantive >= 2:
+                    result["eligible"] = True
+                    result["eligibility_reason"] = "Criteri A: tags>=2 amb commits substantius"
+                    result["num_commits_substantive"] = num_commits_substantive
+                    return result
 
                 if num_commits_substantive >= 2:
                     result["eligible"] = True
@@ -411,7 +428,7 @@ def write_results(rows: list[dict], run_id: int, sample_size: int, total_scanned
         "sample_size": total,
         "population_scanned": total_scanned,
         "eligible_total": eligible,
-        "eligible_Criteri_A": int((df["eligibility_reason"] == "Criteri A: tags>=2").sum()),
+        "eligible_Criteri_A": int(df["eligibility_reason"].str.startswith("Criteri A").sum()),
         "eligible_Criteri_B": int(
             (df["eligibility_reason"] == "Criteri B: substantive_commits>=2").sum()
         ),
