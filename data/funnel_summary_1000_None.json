@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-07-04T04:39:37.264555",
+  "sampling_method": "reservoir_sampling_R_Vitter_uniform_no_bias",
+  "authentication": "HF_TOKEN",
+  "eligibility_definition": ">=2 tags from Git or >=2 substantial commits",
+  "sample_size": 1000,
+  "population_scanned": 944975,
+  "with_any_tag": 15,
+  "with_2plus_tags": 0,
+  "eligible_total": 5,
+  "eligible_via_tags": 0,
+  "eligible_via_commits": 5,
+  "ineligible": 0,
+  "errors": 696,
+  "eligible_proportion": 0.005,
+  "estimated_eligible_in_population": 4725
+}
