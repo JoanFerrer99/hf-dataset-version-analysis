@@ -37,11 +37,56 @@ Mostreig aleatori de datasets de Hugging Face per estimar quants tenen 2 o mes v
 
 ```bash
 source venv/bin/activate
-python notebooks/eligibility_scan.py --sample-size 50 --threads 4 --seed 42
-python notebooks/eligibility_scan.py --sample-size 1000 --threads 8 --seed 42
+python notebooks/eligibility_scan.py --sample-size 50 --threads 4 --seed 42 --max-scanned 5000  # prova rapida
+python notebooks/eligibility_scan.py --sample-size 2000 --threads 4 --seed 42                    # mostra principal
 ```
 
-Per estimacio principal, no passis `--max-scanned` (escaneig complet de la poblacio disponible).
+Per l'estimació principal, **no passis `--max-scanned`**: la mostra ha
+d'escanejar tota la població per no esbiaixar-se (vegeu "Mida de la mostra"
+més avall). `--max-scanned` només és per a proves ràpides de desenvolupament.
+
+Classificar exhaustivament tots els datasets (en lloc d'una mostra) **no és
+viable sense un pla de pagament de Hugging Face**: als límits de peticions
+per segon d'un compte gratuït, classificar els ~950.000 datasets de la
+població trigaria hores i xocaria constantment amb rate limiting. Per això
+aquest pipeline només implementa el mode de mostreig (`--sample-size`).
+
+## Mida de la mostra i interval de confiança
+
+L'objectiu és estimar, amb un 95% de confiança, la proporció de datasets de
+HF que són elegibles (≥2 versions reals). Una execució real i no esbiaixada
+(`--sample-size 1000`, sense `--max-scanned`) va donar:
+
+| Mètrica                | Valor          |
+|-------------------------|----------------|
+| Població escanejada (N) | 949.991        |
+| Elegibles                | 13             |
+| No elegibles             | 938            |
+| Accés restringit (403)   | 49             |
+| Errors                   | 0              |
+| Proporció elegible (p)   | 0.0137 (1.37%) |
+
+Aquesta p observada és molt més baixa que les proves ràpides amb
+`--max-scanned` (~10-17%), perquè `list_datasets()` no retorna els datasets
+en ordre aleatori: capar l'escaneig als primers N esbiaixa la mostra. Només
+un escaneig complet (sense `--max-scanned`) dona una p fiable.
+
+Amb aquesta p (en lloc de l'assumpció conservadora p=0.5, que sobredimensiona
+molt la mostra necessària quan la proporció real és petita), la mida de
+mostra necessària per a un marge d'error E amb 95% de confiança és
+n = z²·p·(1-p)/E² (z=1.96):
+
+| Marge d'error (E) | n necessària |
+|---|---|
+| ±1.0 punts percentuals | ~520 |
+| ±0.5 punts percentuals | ~2.070 |
+| ±0.3 punts percentuals | ~5.730 |
+
+Per això el valor per defecte de `--sample-size` és **2000**: marge d'error
+±0.51pp (interval aprox. [0.86%, 1.88%]), doblant la precisió respecte a
+n=1000 (±0.72pp) per només el doble de cost de classificació (~2 minuts amb
+4 threads). La correcció per població finita és negligible en aquest rang
+(fracció de mostreig < 0.6%).
 
 ## Criteri d'elegibilitat
 

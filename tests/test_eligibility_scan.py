@@ -4,16 +4,8 @@ Tests unitaris per a `notebooks/eligibility_scan.py`.
 Cobreixen:
   1. `reservoir_sample_dataset_ids` només conserva identificadors (strings),
      mai els objectes originals -- aquest era el bug de memòria reportat.
-  2. Checkpoint (`load_checkpoint`/`append_checkpoint`): persistència
-     d'ids ja processats per poder reprendre un escaneig llarg.
-  3. `compute_funnel_stats`: denominadors correctes de l'embut
+  2. `compute_funnel_stats`: denominadors correctes de l'embut
      d'elegibilitat (separant accés restringit i errors dels no elegibles).
-
-Nota: importar aquest mòdul executa la inicialització de `HfApi` amb
-`HF_TOKEN` carregat des de `.env` (igual que en execució normal del
-script) -- cal tenir un `.env` vàlid per poder córrer aquests tests, ja
-que sense token el mòdul fa `sys.exit(1)` en importar-se. No es fan
-crides reals a l'API en cap test d'aquest fitxer.
 """
 
 import random
@@ -102,22 +94,6 @@ class TestReservoirSampleDatasetIds:
         assert n_seen == 3
         assert len(reservoir) == 2
         assert all(isinstance(x, str) for x in reservoir)
-
-
-# ---------------------------------------------------------------------------
-# Checkpoint round-trip
-# ---------------------------------------------------------------------------
-
-class TestCheckpoint:
-    def test_checkpoint_round_trip(self, tmp_path):
-        path = tmp_path / "checkpoint.txt"
-
-        assert es.load_checkpoint(path) == set()
-
-        es.append_checkpoint(path, "org/ds-1")
-        es.append_checkpoint(path, "org/ds-2")
-
-        assert es.load_checkpoint(path) == {"org/ds-1", "org/ds-2"}
 
 
 # ---------------------------------------------------------------------------
