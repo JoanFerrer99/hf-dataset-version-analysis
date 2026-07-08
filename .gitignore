@@ -66,23 +66,3 @@ Thumbs.db
 *.log
 tempCodeRunnerFile.py
 .ruff_cache/
-
-# PyPI configuration file
-.pypirc
-
-# Marimo
-marimo/_static/
-marimo/_lsp/
-__marimo__/
-
-# Streamlit
-.streamlit/secrets.toml
-
-# Project-specific: Runtime outputs and local debug artifacts.
-# NOTE: gitignore patterns do NOT support trailing inline comments -- a "#"
-# after a pattern is taken literally as part of it, not as a comment. Keep
-# comments on their own line (like this one) instead.
-data/
-dataset_versions_*.csv
-*.log
-debug_*.py
