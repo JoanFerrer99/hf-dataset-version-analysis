@@ -165,8 +165,29 @@ class _FakeCommit:
 
 
 class TestClassifyDatasetResultShape:
-    def test_eligible_via_tags_requires_a_substantive_commit(self, monkeypatch, tmp_path):
-        # >=2 tags amb almenys un commit substantiu -> elegible via Criteri A.
+    def test_eligible_via_tags_requires_two_substantive_commits(self, monkeypatch, tmp_path):
+        # >=2 tags amb >=2 commits substantius (mateix llindar que el
+        # Criteri B) -> elegible via Criteri A.
+        monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1", "v2"]))
+        monkeypatch.setattr(
+            es, "list_repo_commits",
+            lambda **kw: iter([
+                _FakeCommit("Update README"),
+                _FakeCommit("Add new records"),
+                _FakeCommit("Fix labeling errors"),
+            ]),
+        )
+        monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
+
+        result = es.classify_dataset("org/ds")
+
+        assert result["status"] == "classified"
+        assert result["eligible"] is True
+        assert result["eligibility_reason"] == "Criteri A: tags>=2 amb commits substantius"
+
+    def test_tags_with_only_one_substantive_commit_are_not_eligible(self, monkeypatch, tmp_path):
+        # >=2 tags però només 1 commit substantiu (per sota del llindar de
+        # 2) -> NO elegible via Criteri A.
         monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1", "v2"]))
         monkeypatch.setattr(
             es, "list_repo_commits",
@@ -177,8 +198,7 @@ class TestClassifyDatasetResultShape:
         result = es.classify_dataset("org/ds")
 
         assert result["status"] == "classified"
-        assert result["eligible"] is True
-        assert result["eligibility_reason"] == "Criteri A: tags>=2 amb commits substantius"
+        assert result["eligible"] is False
 
     def test_tags_without_any_substantive_commit_are_not_eligible(self, monkeypatch, tmp_path):
         # >=2 tags però TOTS els commits són purament de metadades/documentació
