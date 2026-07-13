@@ -76,7 +76,43 @@ del 429, aquesta condició NO és transitòria: reintentar no la resol mai
 (no canvia amb el temps, només si algú concedeix accés manualment al
 token).
 
-Alternatives considerades:
+Diagnosi descartada -- rol del token (read vs write): alguns fils del
+fòrum de HF (p.e. discuss.huggingface.co/t/error-403-what-to-do-about-it)
+atribueixen un 403 a fer servir un token amb rol "read" en lloc de
+"write". S'ha investigat aquesta hipòtesi per als 403 d'aquest projecte i
+es descarta, amb evidència en ambdós sentits:
+
+  - El fil en qüestió: el 403 original s'hi produeix a `POST
+    /api/repos/create` -- una operació d'ESCRIPTURA (crear un repositori)
+    amb un token de només lectura. Aquest projecte no escriu mai res a
+    l'API (`list_repo_refs`, `list_repo_commits`, `list_datasets` són
+    totes operacions de lectura), així que aquesta causa concreta no hi
+    és aplicable.
+  - Evidència empírica pròpia: de les 626 files amb
+    `error_category == "access_restricted"` acumulades a
+    `data/failures.csv` en aquest projecte, el 100% contenen el mateix
+    missatge oficial de HF, "Cannot access gated repo for url ...
+    Access to dataset ... is restricted and you are not in the
+    authorized list" -- cap conté cap referència a permisos o abast del
+    token (cap "permission"/"scope"/"write" al missatge). L'accés a un
+    dataset gated és un consentiment per compte i per dataset (cal
+    "Agree"/sol·licitar accés a la pàgina del dataset), no un abast del
+    token: un token amb rol "write" del mateix compte xocaria amb el
+    mateix mur.
+  - Una resposta secundària d'aquell mateix fil sí que descriu el nostre
+    cas real ("per accedir a CompVis/stable-diffusion-v1-4 cal acceptar
+    la llicència a la pàgina del dataset primer"), però aquesta solució
+    (sol·licitar accés manualment, dataset a dataset) no és aplicable a
+    un mostreig aleatori de la població: no té sentit sol·licitar accés
+    a desenes/centenars de datasets gated escollits a l'atzar dels quals
+    no se sap per endavant si formaran part de la mostra.
+
+  Conclusió: mantenir el token amb rol "Read" (com recomana el README) és
+  correcte i suficient per a aquest projecte; un token "write" no
+  canviaria el resultat dels 403 observats.
+
+Alternatives considerades (per tractar el 403 un cop identificat, no per
+evitar-lo -- l'accés gated no es pot "evitar" des del codi):
 
   1. Reintentar-lo igual que qualsevol altre error. Descartada: malgasta
      tot el pressupost de reintents (fins a `max_retries` intents amb
