@@ -1,0 +1,329 @@
+================================================================================
+DECISIONS DEL TFG — How do HuggingFace Datasets Change?
+Joan [Cognom]  |  Grau en Enginyeria Informàtica (GEI) — Esp. Enginyeria del Software
+Director: Alberto Abelló (UPC - FIB)
+Última actualització: juny 2026
+================================================================================
+
+Aquest document registra totes les decisions tècniques, metodològiques i
+d'abast preses durant el desenvolupament del TFG. Serveix com a base per
+a la redacció de la memòria final i com a registre de raonament per al
+director. S'actualitza al final de cada sprint.
+
+================================================================================
+BLOC 1 — DESCRIPCIÓ I OBJECTIUS
+================================================================================
+
+TÍTOL
+-----
+"How do HuggingFace Datasets Change? An Automated Pipeline for Version Analysis"
+
+DESCRIPCIÓ (inscripció FIB, màx. 500 caràcters)
+------------------------------------------------
+Aquest treball té com a objectiu analitzar com canvien els datasets allotjats
+al repositori de codi obert Hugging Face entre les seves versions successives.
+Per assolir aquest objectiu, es dissenyarà i implementarà un pipeline
+automatitzat que, mitjançant l'API pública de HF, permeti identificar els
+datasets amb múltiples versions, extreure'n les diferències rellevants entre
+versions consecutives i classificar el tipus de canvi produït.
+
+OBJECTIUS ESPECÍFICS (OE)
+--------------------------
+OE1. Identificar de manera automàtica quants datasets de HuggingFace tenen
+     múltiples versions detectables, i quina proporció de la població total
+     representen. [Fase 0 — Filtratge previ i mostreig]
+
+OE2. Dissenyar un pipeline ETL que extregui, per a cada dataset elegible,
+     les diferències entre versions consecutives de forma automatitzada.
+     [Fase 1 — Extracció; Fase 2 — Transformació]
+
+OE3. Definir i implementar criteris de classificació que distingeixin canvis
+     que afecten el contingut o l'esquema de les dades (canvis substantius /
+     "breaking") dels canvis que afecten només metadades o documentació.
+     [Fase 2 — Classificació; Fase 3 — Validació]
+
+OE4. Avaluar la cobertura i fiabilitat del pipeline sobre la població
+     elegible completa o una mostra estratificada si la mida ho requereix.
+     [Fase 3 — Validació i anàlisi descriptiva]
+
+COMPETÈNCIES TÈCNIQUES (inscripció FIB)
+----------------------------------------
+CES1.2  En profunditat   — Integració amb l'API de HF, gestió de formats
+                           heterogenis, estratègies de reintent i fallback.
+CES3.2  En profunditat   — Disseny i implementació del data warehouse
+                           (esquema en estrella) per emmagatzemar versions
+                           i canvis classificats.
+CES1.5  Bastant          — Disseny i implementació de la base de dades
+                           relacional de suport al pipeline.
+CES2.1  Bastant          — Definició formal dels criteris de classificació
+                           de canvis (taxonomia de canvis de datasets).
+CES1.7  Una mica         — Tests automàtics de validació de dades i proves
+                           de qualitat del pipeline.
+
+
+================================================================================
+BLOC 2 — DECISIONS METODOLÒGIQUES
+================================================================================
+
+DECISIÓ M-01: Metodologia de mostreig
+Data: juny 2026
+Responsable: Joan + Director
+
+Decisió: Reservoir sampling (algorisme R de Vitter) sobre TOTA la població
+de datasets de HF, sense ordenar per popularitat.
+
+Raonament: Ordenar per popularitat introduiria un biaix a l'alça en la
+proporció d'elegibles (els datasets populars tendeixen a tenir més versions
+i manteniment). Per estimar correctament la mida de la població elegible
+total, cal que cada dataset tingui igual probabilitat de ser seleccionat
+(p = sample_size / N, on N és la mida total de la població).
+
+Referència: Paper "Lessons Learned from Mining the Hugging Face Repository"
+(Castaño et al., WSESE 2024), secció 3.2 — Stratified Sampling.
+
+Alternativa descartada: Ordenació per downloads/likes (biaix de popularitat).
+Alternativa futura: Si la població elegible és gran, aplicar estratificació
+per domini + quartil de versions + quartil de popularitat.
+
+
+DECISIÓ M-02: Criteri d'elegibilitat d'un dataset
+Data: juny 2026
+Responsable: Joan + Director
+
+Un dataset és elegible (inclòs en l'estudi) si compleix UN dels dos criteris:
+  Criteri A — Versionat explícit: el repo té >= 2 tags de Git (equivalent
+              a "releases" en el paper dels LLM, secció 4.2.1).
+  Criteri B — Commits substantius (fallback): >= 2 commits el títol dels
+              quals no és purament documental (README, llicència, citació).
+
+Raonament: La majoria de datasets de HF no fan servir tags explícits (a
+diferència dels models LLM). El Criteri B és una heurística de fallback per
+capturar datasets amb historial de canvis real però sense versionat formal.
+Cal validar empíricament quin % d'elegibles prové de cada criteri per
+avaluar la robustesa de la heurística.
+
+Limitació coneguda: La detecció per títol de commit (Criteri B) és una
+heurística que pot generar falsos positius (commits substantius que en
+realitat només canvien metadades). Caldrà validació manual d'una mostra.
+
+
+DECISIÓ M-03: Definició de "canvi substantiu" (taxonomia)
+Data: juny 2026
+Responsable: Director
+
+Base: Taxonomia de canvis de datasets definida pel professor (paper PROFES
+2026 en preparació). Estructura de la taxonomia:
+
+  Dataset changes
+  ├── Metadata
+  │     (source, licensing, file format, field delimiter, split train/test,
+  │      temporal characteristics)
+  ├── Columns Set
+  │   ├── Column → Order / Rename / Add / Remove
+  │   └── Arity
+  ├── Column Type
+  │   ├── Categorical → Type / Values / Order
+  │   └── Numerical   → Type / Values
+  ├── Rows Set
+  │   ├── Row   → Order / Change ID / Add / Remove
+  │   └── Cardinality
+  └── Data Characteristics
+      ├── Features → Missings / Correlations / Distribution
+      └── Target   → Concept drift / Balance
+
+NOTA IMPORTANT (decisió de classificació):
+  - Canvis de Metadata SÍ compten com a canvi del dataset (poden trencar
+    pipelines si canvia file format o field delimiter).
+  - Canvis de README.md, LICENSE, CITATION.cff NO compten (documentació
+    pura, no afecten l'execució del pipeline).
+  - Canvis de dataset_infos.json: a valorar per cas (pot ser metadata
+    substantiva o documentació automàtica).
+
+Aquesta taxonomia és la base per al classificador automàtic (Fase 2, OE3).
+
+
+================================================================================
+BLOC 3 — DECISIONS TÈCNIQUES
+================================================================================
+
+DECISIÓ T-01: Llibreries principals
+Data: juny 2026
+
+  huggingface_hub  — Accés a l'API de HF (list_datasets, list_repo_commits,
+                     list_repo_refs). Alternativa a crides HTTP directes.
+  pandas           — Manipulació de dades tabulars i escriptura de CSV.
+  tqdm             — Barres de progrés per a operacions llargues.
+  argparse         — Gestió d'arguments de línia de comandes.
+  python-dotenv    — Gestió del token HF_TOKEN via fitxer .env.
+  concurrent.futures (ThreadPoolExecutor) — Paral·lelització de les crides
+                     a l'API (classificació de datasets).
+
+Raonament: Segueix l'arquitectura del replication package del paper
+"Analyzing the Evolution and Maintenance of ML Models on HF" (Castaño
+et al., MSR 2024), adaptat per a datasets en lloc de models.
+
+
+DECISIÓ T-02: Estratègia de paral·lelització
+Data: juny 2026
+
+  Fase de mostreig (reservoir sampling): seqüencial. El sampling és un
+  procés inherentment seqüencial (cal veure cada element en ordre).
+
+  Fase de classificació: paral·lel amb ThreadPoolExecutor (I/O-bound,
+  no CPU-bound, per tant threads > multiprocessing).
+
+  Nombre de threads per defecte: 4. Ajustable via --threads.
+  Rate limit de HF: cada thread inclou un sleep implícit via les crides
+  a l'API; si apareixen errors 429, reduir el nombre de threads.
+
+
+DECISIÓ T-03: Estructura de fitxers del projecte
+Data: juny 2026
+
+  hf-dataset-version-analysis/
+  ├── src/
+  │   ├── extraction/          # Scripts de connexió i extracció via API
+  │   ├── transformation/      # Classificació de canvis per taxonomia
+  │   └── storage/             # Capa de base de dades / data warehouse
+  ├── data/
+  │   ├── raw/                 # Dades tal com arriben de l'API (bronze)
+  │   └── processed/           # Dades netejades i classificades (silver/gold)
+  ├── notebooks/               # Exploració i anàlisi descriptiva
+  ├── tests/                   # Tests de validació del pipeline
+  ├── docs/                    # Documentació (incl. aquest fitxer)
+  └── requirements.txt
+
+
+DECISIÓ T-04: Esquema en estrella (data warehouse)
+Data: juny 2026
+
+Proposta inicial del professor. Esquema bàsic:
+
+  Taula de fets: Change
+    - dataset_id (FK → Dataset)
+    - date_id (FK → DateOfChange)
+    - kind_of_change_id (FK → KindOfChange)
+    - age_days (atribut calculat: DateOfChange - CreationDate)
+
+  Dimensions proposades:
+    - Dataset (dataset_id, name, domain, license, num_downloads,
+               creation_date, num_versions, ...)
+    - DateOfChange (date_id, date, year, quarter, month)
+    - KindOfChange (kind_id, category, subcategory, is_breaking,
+                    taxonomy_level_1, taxonomy_level_2, taxonomy_level_3)
+
+  La dimensió KindOfChange s'alineará directament amb la taxonomia del
+  professor (Decisió M-03).
+
+  Pendent de decisió: PostgreSQL vs DuckDB com a motor.
+  DuckDB és més adequat per a anàlisi local sense servidor (estil TFG);
+  PostgreSQL és millor si es vol desplegar o escalar.
+
+
+================================================================================
+BLOC 4 — DECISIONS D'ABAST
+================================================================================
+
+DECISIÓ A-01: Mida de mostra per al filtratge previ
+Data: juny 2026
+
+  Primera execució de prova: --sample-size 200 --max-scanned 5000
+  Execució completa per estimar proporció: --sample-size 1000 (sense max-scanned)
+
+  Decisió sobre estratificació: PENDENT dels resultats de l'execució.
+  Si eligible_proportion < 5% → treballar amb tota la població elegible.
+  Si eligible_proportion > 15% → aplicar estratificació per domini,
+  quartil de versions i quartil de popularitat.
+
+  Referència: Paper dels LLM — de 1.657.941 models, 1.655 tenien tags
+  detectables, i van acabar amb 202 amb almenys 5 tags vàlids. Si el
+  patró es repeteix per a datasets, la població elegible seria manejable
+  sense estratificació.
+
+
+DECISIÓ A-02: Abast del pipeline (fase actual)
+Data: juny 2026
+
+  INCLOU:
+    - Detecció automàtica de datasets amb múltiples versions (Fase 0)
+    - Extracció de diferències entre versions via API de HF (Fase 1)
+    - Classificació automàtica de canvis per taxonomia (Fase 2)
+    - Emmagatzematge en data warehouse (Fase 2)
+    - Anàlisi descriptiva bàsica dels canvis trobats (Fase 3)
+
+  NO INCLOU (en aquesta versió):
+    - Anàlisi estadística inferencial (Bayesian Networks com en el paper LLM)
+    - Classificació automàtica via LLM dels missatges de commit
+      (pot ser extensió futura si hi ha temps)
+    - Descàrrega dels fitxers de dades complets (massa volum, Git-LFS)
+
+
+================================================================================
+BLOC 5 — PROBLEMES I RISCOS IDENTIFICATS
+================================================================================
+
+RISC R-01: Endpoint de llista de fitxers per commit
+Detectat: juny 2026
+Estat: OBERT
+
+L'API pública de HF no exposa de forma estable i documentada la llista
+completa de fitxers modificats per commit via REST (a diferència de l'SDK
+de Python, que ho suporta parcialment). Si la detecció de canvis substantius
+per títol de commit no és prou precisa, caldrà adoptar l'estratègia de
+clonació bare del repo i `git show --name-only` per commit (com fa el paper
+dels LLM a la secció 4.2.1 del paper arXiv:2411.09645).
+
+Impacte: Afecta la precisió del Criteri B d'elegibilitat i la classificació
+de canvis. Pot augmentar significativament el temps d'execució.
+
+Mitigació: Validació manual d'una mostra de 50-100 datasets per comprovar
+si la heurística de títol és suficientment precisa (> 80% accuracy).
+
+
+RISC R-02: Rate limits de l'API de HF
+Detectat: juny 2026
+Estat: VIGILAT
+
+L'API de HF té rate limits que varien amb el token. Si apareixen errors
+HTTP 429 durant l'execució paral·lela, cal reduir --threads o afegir
+exponential backoff. El replication package del paper (Castaño et al.)
+implementa lògica de reintent que es pot adaptar.
+
+
+RISC R-03: Canvis a l'API de HF
+Detectat: juny 2026
+Estat: VIGILAT
+
+L'API de HF és activa i pot canviar. Tots els resultats s'han de guardar
+amb timestamp. Si es torna a executar el pipeline mesos més tard, els
+resultats no seran idèntics (la població de HF canvia constantment).
+Solució: fixar --seed per a reproduïbilitat del mostreig, i guardar
+snapshots de les dades raw a data/raw/.
+
+
+================================================================================
+BLOC 6 — REGISTRE DE CANVIS D'AQUEST DOCUMENT
+================================================================================
+
+v0.1 — juny 2026 — Creació inicial del document
+  - Decisió M-01: Metodologia de mostreig (reservoir sampling)
+  - Decisió M-02: Criteri d'elegibilitat (tags >= 2 / commits substantius)
+  - Decisió M-03: Taxonomia de canvis (basada en Abelló 2026)
+  - Decisió T-01 a T-04: Stack tècnic, paral·lelització, estructura, DW
+  - Decisió A-01 a A-02: Abast del pipeline
+  - Riscos R-01 a R-03 identificats
+
+================================================================================
+PRÒXIMES DECISIONS PENDENTS
+================================================================================
+
+[ ] Escollir motor de base de dades: PostgreSQL vs DuckDB
+[ ] Decidir si classificar canvis via regles deterministes o via LLM
+[ ] Tancar abast definitiu de la mostra un cop tinguem els resultats del
+    filtratge previ (Decisió A-01 pendent)
+[ ] Definir format exacte de la taula KindOfChange alineada amb la taxonomia
+[ ] Acordar amb director quines preguntes descriptives ha de respondre
+    l'anàlisi final (equivalents als RQ del paper dels LLM)
+
+================================================================================
+
