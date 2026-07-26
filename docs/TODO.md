@@ -5,12 +5,17 @@
 > també l'estat corresponent al CSV/MD de Taiga (i viceversa) — aquest
 > fitxer i Taiga han de dir sempre el mateix.
 
+## Seguiment del projecte
+
+El backlog, sprints i estat de les tasques es gestionen a Taiga:
+https://tree.taiga.io/project/joanferrer-estudi-canvis-datasets-hf-1/timeline
+
 ## Ara mateix (Sprint actual)
 
-- [ ] **US-108** — Validar manualment els 13 datasets elegibles trobats a
-      l'execució de referència (N=949.991, n=1000). Confirmar/desmentir
-      el criteri assignat a cadascun. _Prioritat alta: bloqueja la
-      confiança en tots els resultats de la Fase 0._
+- [x] **US-108** (parcial) — Evidència (tags/commits) recollida per als 13
+      datasets elegibles i primera classificació TP/FP raonada a
+      `docs/us108_validation_report.md` (precisió estimada: 5/13 ≈ 38.5%,
+      Criteri A 100% vs Criteri B 20%). **Pendent decisió de replantajament de criteri**
 
 ## Següent (Fase 2 — desbloqueig urgent)
 
@@ -31,6 +36,10 @@
 
 - [ ] **US-302** — Implementar detecció real de fitxers de dades
       modificats per commit (substituir l'heurística de títol actual).
+      Vegeu `docs/us108_validation_report.md`: 8/13 falsos positius
+      identificats venen del mateix patró (commits automàtics d'una sola
+      sessió de pujada); una millora barata i prèvia a considerar és
+      exigir dispersió temporal mínima entre commits substantius.
 - [ ] **US-305** (abans US-303) — Mapar cada canvi detectat als 15 codis
       oficials (C100–C530).
 - [ ] **US-201** — Extreure llista completa de tags per dataset elegible.

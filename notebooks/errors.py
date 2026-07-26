@@ -107,9 +107,8 @@ es descarta, amb evidència en ambdós sentits:
     a desenes/centenars de datasets gated escollits a l'atzar dels quals
     no se sap per endavant si formaran part de la mostra.
 
-  Conclusió: mantenir el token amb rol "Read" (com recomana el README) és
-  correcte i suficient per a aquest projecte; un token "write" no
-  canviaria el resultat dels 403 observats.
+  Conclusió: mantenir el token amb rol "Read" és correcte i suficient 
+  per a aquest projecte; un token "write" no canviaria el resultat dels 403 observats.
 
 Alternatives considerades (per tractar el 403 un cop identificat, no per
 evitar-lo -- l'accés gated no es pot "evitar" des del codi):

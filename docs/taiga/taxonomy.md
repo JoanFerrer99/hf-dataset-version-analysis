@@ -54,7 +54,7 @@ classificador.
 
 | Grup | Codis | Detectable sense descarregar contingut real |
 |---|---|---|
-| Schema-level | C100, C210, C221, C222, C223, C311, C321 | ✅ Sí — comparant esquema/metadades entre versions (`dataset_infos.json`, `config.json`, llista de noms de columnes, `dtype` declarat) |
+| Schema-level | C210, C221, C222, C223, C311, C321 | ✅ Sí — comparant esquema entre versions (`dataset_infos.json`, `config.json`, llista de noms de columnes, `dtype` declarat) |
 | Content-level | C312, C322, C410, C421, C422, C510, C520, C530 | ❌ No — cal llegir els valors reals de les dades |
 
 Amb la població elegible observada (~1.37% de ~950K, previsiblement
