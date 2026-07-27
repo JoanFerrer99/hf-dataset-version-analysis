@@ -37,4 +37,6 @@ jobs:
         run: ruff check notebooks tests
 
       - name: Tests (pytest)
+        env:
+          HF_TOKEN: ci-dummy-token
         run: pytest -v
