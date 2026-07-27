@@ -25,8 +25,16 @@ errors.py         (a crear)         (a crear)                DuckDB/Postgres)
 
 ## Fase 0 — Mostreig i elegibilitat (`eligibility_scan.py`, `errors.py`)
 
-**Estat: pràcticament tancat.** Pendent: US-108 (validació manual dels
-elegibles trobats).
+**Estat: pràcticament tancat.** US-108 (validació manual dels elegibles
+trobats) té un primer esborrany fet: `docs/us108_validation_report.md`
+reporta una precisió estimada de 5/13 ≈ 38.5% sobre l'execució de
+referència (Criteri A 3/3 = 100%, Criteri B 2/10 = 20%), amb 8/13 falsos
+positius atribuïbles a un únic patró (eines com LeRobot que generen
+desenes de commits automàtics en una sola sessió de pujada, sense
+representar versions reals). **Pendent**: confirmació final de Joan (i,
+si escau, el director) sobre la classificació TP/FP de cada dataset, i
+decisió sobre la recomanació derivada (exigir dispersió temporal mínima
+entre commits substantius del Criteri B) — no implementada encara.
 
 ### Flux
 

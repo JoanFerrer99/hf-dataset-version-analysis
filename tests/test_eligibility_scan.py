@@ -9,6 +9,7 @@ Cobreixen:
 """
 
 import random
+from datetime import datetime, timedelta
 
 import eligibility_scan as es
 
@@ -97,6 +98,36 @@ class TestReservoirSampleDatasetIds:
 
 
 # ---------------------------------------------------------------------------
+# has_time_dispersed_substantive_commits — PROPOSTA revisió Criteri B (US-108)
+# ---------------------------------------------------------------------------
+
+class TestHasTimeDispersedSubstantiveCommits:
+    def test_less_than_two_valid_times_is_false(self):
+        assert es.has_time_dispersed_substantive_commits([]) is False
+        assert es.has_time_dispersed_substantive_commits([datetime(2026, 1, 1)]) is False
+
+    def test_none_values_are_ignored_when_counting(self):
+        assert es.has_time_dispersed_substantive_commits([None, datetime(2026, 1, 1), None]) is False
+
+    def test_commits_within_the_minimum_gap_are_not_dispersed(self):
+        base = datetime(2026, 1, 1, 12, 0, 0)
+        times = [base, base - timedelta(minutes=59)]
+        assert es.has_time_dispersed_substantive_commits(times, min_gap_hours=1.0) is False
+
+    def test_commits_at_or_beyond_the_minimum_gap_are_dispersed(self):
+        base = datetime(2026, 1, 1, 12, 0, 0)
+        times = [base, base - timedelta(hours=1)]
+        assert es.has_time_dispersed_substantive_commits(times, min_gap_hours=1.0) is True
+
+    def test_only_the_span_between_extremes_matters_not_the_count(self):
+        # Molts commits intermedis dins de la mateixa finestra no haurien
+        # de fer variar el resultat: només importa el rang (max - min).
+        base = datetime(2026, 1, 1, 12, 0, 0)
+        times = [base - timedelta(minutes=m) for m in range(0, 30, 2)]
+        assert es.has_time_dispersed_substantive_commits(times, min_gap_hours=1.0) is False
+
+
+# ---------------------------------------------------------------------------
 # compute_funnel_stats — correcció dels bugs de denominador
 # ---------------------------------------------------------------------------
 
@@ -160,8 +191,9 @@ class _FakeRefs:
 
 
 class _FakeCommit:
-    def __init__(self, title):
+    def __init__(self, title, created_at=None):
         self.title = title
+        self.created_at = created_at
 
 
 class TestClassifyDatasetResultShape:
@@ -266,6 +298,52 @@ class TestClassifyDatasetResultShape:
         result = es.classify_dataset("org/ds")
 
         assert result["status"] == "error"
+        assert result["eligible"] is False
+
+    def test_eligible_via_branches_requires_time_dispersed_substantive_commits(
+        self, monkeypatch, tmp_path
+    ):
+        # >=2 branches amb >=2 commits substantius separats per >=24h (llindar
+        # per defecte, vegeu MIN_SUBSTANTIVE_GAP_HOURS) -> elegible via Criteri B.
+        now = datetime(2026, 1, 1, 12, 0, 0)
+        monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(branches=["main", "dev"]))
+        monkeypatch.setattr(
+            es, "list_repo_commits",
+            lambda **kw: iter([
+                _FakeCommit("Add new records", created_at=now),
+                _FakeCommit("Update README", created_at=now - timedelta(minutes=30)),
+                _FakeCommit("Fix labeling errors", created_at=now - timedelta(days=2)),
+            ]),
+        )
+        monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
+
+        result = es.classify_dataset("org/ds")
+
+        assert result["status"] == "classified"
+        assert result["eligible"] is True
+        assert result["eligibility_reason"].startswith("Criteri B")
+
+    def test_branches_with_substantive_commits_clustered_in_time_are_not_eligible(
+        self, monkeypatch, tmp_path
+    ):
+        # Patró LeRobot: desenes de commits substantius (segons la
+        # heurística de títol) però tots dins d'una única sessió de pujada
+        # de pocs minuts -> NO elegible via Criteri B (US-108).
+        now = datetime(2026, 1, 1, 12, 0, 0)
+        monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(branches=["main", "dev"]))
+        monkeypatch.setattr(
+            es, "list_repo_commits",
+            lambda **kw: iter([
+                _FakeCommit("Add new episode", created_at=now),
+                _FakeCommit("Add new episode", created_at=now - timedelta(minutes=2)),
+                _FakeCommit("Add new episode", created_at=now - timedelta(minutes=5)),
+            ]),
+        )
+        monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
+
+        result = es.classify_dataset("org/ds")
+
+        assert result["status"] == "classified"
         assert result["eligible"] is False
 
     def test_result_has_status_key_regardless_of_path(self, monkeypatch, tmp_path):

@@ -250,15 +250,22 @@ com elegibles, **per tal de** confirmar que el criteri automàtic
 positius sistemàtics.
 
 **Criteris d'acceptació:**
-- [ ] Revisar manualment els 13 datasets elegibles de l'execució de
-  referència (N=949.991, sample n=1000)
-- [ ] Per cada un, confirmar/desmentir si el criteri assignat és correcte
-- [ ] Documentar el % d'acord (precisió de la heurística) per a la secció
-  de validesa de la memòria
+- [x] Revisar manualment els 13 datasets elegibles de l'execució de
+  referència (N=949.991, sample n=1000) — evidència real (tags/commits)
+  recollida amb `notebooks/validate_eligible.py` i primera classificació
+  TP/FP raonada a `docs/us108_validation_report.md`
+- [x] Per cada un, confirmar/desmentir si el criteri assignat és correcte
+  — primer esborrany fet (Claude Code); **pendent confirmació final de
+  Joan (i, si escau, el director)**
+- [x] Documentar el % d'acord (precisió de la heurística) per a la secció
+  de validesa de la memòria — precisió estimada 5/13 ≈ 38.5% (Criteri A
+  100%, Criteri B 20%), vegeu `docs/us108_validation_report.md`
 - [ ] Si la precisió és baixa, replantejar el llindar o el mètode del
-  Criteri B abans de continuar a l'Epic 3
+  Criteri B abans de continuar a l'Epic 3 — recomanació concreta
+  (dispersió temporal mínima entre commits substantius) documentada
+  però **no implementada**, a validar amb el director
 
-**Estat:** 📋 To do
+**Estat:** 🔄 In progress
 **Story points:** 5
 **Tags:** validation, data-quality
 **Prioritat:** Alta — bloqueja la confiança en els resultats de l'Epic 1

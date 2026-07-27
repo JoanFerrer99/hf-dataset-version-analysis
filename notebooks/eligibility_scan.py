@@ -32,7 +32,7 @@ import random
 import argparse
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Iterable
 
@@ -74,6 +74,8 @@ NON_SUBSTANTIVE_TITLE_KEYWORDS = {
     "readme", "metadata", ".gitattributes", "dataset_infos",
     "license", "citation", "typo", "fix typo", "update docs",
 }
+
+MIN_SUBSTANTIVE_GAP_HOURS = 24.0
 
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -220,7 +222,8 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
                compten com a Criteri A. Excepció: en mode `tags_only=True`
                només es demana >=2 tags (vegeu més avall).
     Criteri B: >= 2 branches I >= 2 commits substancials (canvis reals de
-               dataset, no purament documentals).
+               dataset, no purament documentals) SEPARATS EN EL TEMPS per
+               almenys `MIN_SUBSTANTIVE_GAP_HOURS` hores
 
     Els commits es consideren substancials si el títol no conté paraules
     clau de pur manteniment/documentació (`is_substantive_commit`).
@@ -295,6 +298,7 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
 
         commits_scanned = 0
         num_commits_substantive = 0
+        substantive_commit_times: list[datetime | None] = []
 
         # NOTA: només consultem els commits si tenim >=2 tags (Criteri A) o
         # >=2 branches (Criteri B), evitant una crida i iteració senceres
@@ -313,6 +317,7 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
 
                 if is_substantive_commit(commit.title):
                     num_commits_substantive += 1
+                    substantive_commit_times.append(getattr(commit, "created_at", None))
 
                 if len(tags) >= 2 and num_commits_substantive >= 2:
                     result["eligible"] = True
@@ -320,9 +325,14 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
                     result["num_commits_substantive"] = num_commits_substantive
                     return result
 
-                if num_commits_substantive >= 2:
+                if len(branches) >= 2 and has_time_dispersed_substantive_commits(
+                    substantive_commit_times
+                ):
                     result["eligible"] = True
-                    result["eligibility_reason"] = "Criteri B: substantive_commits>=2"
+                    result["eligibility_reason"] = (
+                        "Criteri B: substantive_commits>=2 dispersos "
+                        f">={MIN_SUBSTANTIVE_GAP_HOURS}h"
+                    )
                     result["num_commits_substantive"] = num_commits_substantive
                     return result
 
@@ -380,6 +390,32 @@ def is_substantive_commit(commit_title: str) -> bool:
             return False
 
     return True
+
+
+def has_time_dispersed_substantive_commits(
+    commit_times: list[datetime | None], min_gap_hours: float = MIN_SUBSTANTIVE_GAP_HOURS
+) -> bool:
+    """
+    Determina si una llista de dates de commits substantius (segons
+    `is_substantive_commit`) representa actualitzacions prou separades en
+    el temps per considerar-se "versions" diferenciades, en lloc d'una
+    única sessió de pujada/creació.
+
+    :param commit_times: dates (`datetime`) dels commits ja considerats
+        substantius, en qualsevol ordre. Els elements `None` (l'API no
+        sempre proporciona `created_at`) s'ignoren.
+    :param min_gap_hours: separació mínima, en hores, exigida entre el
+        commit substantiu més antic i el més recent de la llista.
+    :return: `True` si hi ha almenys 2 dates vàlides I la diferència entre
+        la més antiga i la més recent és >= `min_gap_hours`; `False` en
+        cas contrari (incloent-hi el cas de menys de 2 dates vàlides).
+    """
+    valid_times = [t for t in commit_times if t is not None]
+    if len(valid_times) < 2:
+        return False
+
+    span = max(valid_times) - min(valid_times)
+    return span >= timedelta(hours=min_gap_hours)
 
 
 def classify_dataset_safe(args: tuple) -> dict | None:
@@ -570,9 +606,7 @@ def write_results(rows: list[dict], run_id: int, sample_size: int, total_scanned
         "population_scanned": total_scanned,
         "eligible_total": eligible,
         "eligible_Criteri_A": int(df["eligibility_reason"].str.startswith("Criteri A").sum()),
-        "eligible_Criteri_B": int(
-            (df["eligibility_reason"] == "Criteri B: substantive_commits>=2").sum()
-        ),
+        "eligible_Criteri_B": int(df["eligibility_reason"].str.startswith("Criteri B").sum()),
         **compute_funnel_stats(counts),
     }
 
