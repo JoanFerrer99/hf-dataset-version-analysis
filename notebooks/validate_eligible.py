@@ -22,10 +22,6 @@ criteri assignat (US-108, criteri d'acceptació 2):
 Reutilitza `errors.with_retry`/`errors.classify_error` per a les crides a
 l'API (mateix mecanisme de fiabilitat que `eligibility_scan.py`) i
 `eligibility_scan.is_substantive_commit` per anotar els commits amb
-l'EXACTA mateixa heurística que va decidir l'elegibilitat originalment
-(important per a la validació: si es canviés la implementació de
-`is_substantive_commit` sense actualitzar aquest script, els resultats ja
-no reflectirien la classificació real).
 
 Ús:
   python validate_eligible.py

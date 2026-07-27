@@ -119,6 +119,39 @@ git push origin hotfix/critical-memory-leak
 
 ---
 
+## CI/CD
+
+### CI (GitHub Actions)
+
+`.github/workflows/ci.yml` s'executa a cada `push` a `main`, `develop`,
+`feature/**`, `release/**`, `hotfix/**` i a cada Pull Request cap a `main` o
+`develop`. El job **"Lint & tests"**:
+1. Instal·la dependències (`requirements.txt` + `ruff`).
+2. Lint: `ruff check notebooks tests` (regles pinnades a `ruff.toml`).
+3. Tests: `pytest -v`.
+
+Cap dels dos passos requereix `HF_TOKEN` ni accés a xarxa: els tests mockegen
+totes les crides a l'API de Hugging Face.
+
+### CD (protecció de branques)
+
+Aquest repositori és un pipeline d'anàlisi per al TFG, no un servei
+desplegable, així que no hi ha "deployment". El "CD" es limita a fer complir
+a GitHub el que ja diu aquest document (secció "Branques Permanents"): `main`
+i `develop` requereixen PR + el check de CI en verd abans de poder mergejar.
+
+Per aplicar-ho (un cop, amb permisos d'admin sobre el repo):
+```bash
+gh auth login
+./scripts/setup_branch_protection.sh
+```
+
+Si el repo el manté una sola persona, GitHub no permet auto-aprovar la pròpia
+PR; en aquest cas usa `REQUIRED_APPROVALS=0 ./scripts/setup_branch_protection.sh`
+per exigir només PR + CI en verd, sense aprovació obligatòria.
+
+---
+
 ## Versioning & Tags
 
 Usem **Semantic Versioning**: `vMAJOR.MINOR.PATCH`

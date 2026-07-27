@@ -1,0 +1,7 @@
+target-version = "py312"
+
+[lint]
+# Ruff's own documented default rule set (pyflakes + a safe subset of
+# pycodestyle). Pinned explicitly so CI lint results don't drift if an
+# ambient/global ruff config on some machine selects extra rule sets.
+select = ["E4", "E7", "E9", "F"]
