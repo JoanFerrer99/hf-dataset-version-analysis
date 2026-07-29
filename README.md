@@ -11,6 +11,15 @@ Mostreig aleatori de datasets de Hugging Face per estimar quants tenen 2 o mes v
    pip install -r requirements.txt
    ```
 
+   **Requereix `git` instal·lat i al `PATH`** (US-302): `classify_dataset()`
+   clona temporalment cada repositori en mode "bare" i amb filtratge de
+   blobs (`git clone --bare --filter=blob:none`, sense contingut real de
+   fitxers, només l'historial) per determinar amb precisió quins fitxers
+   toca cada commit. Si `git` no és disponible (o el clonatge falla per
+   qualsevol motiu), el pipeline recorre automàticament a l'heurística de
+   títol anterior (`is_substantive_commit`) sense aturar-se — vegeu
+   `docs/paper_techniques_ml_models_change.md`.
+
 2. **Genera un token de Hugging Face** (necessari per fer les crides a l'API):
    1. Inicia sessió a [huggingface.co](https://huggingface.co) i ves a
       [Settings → Access Tokens](https://huggingface.co/settings/tokens).
@@ -124,7 +133,16 @@ n=1000 (±0.72pp) per només el doble de cost de classificació (~2 minuts amb
 
 Un dataset és **elegible** si té **2 o més versions genuïnes**, detectades per:
 - **Tags/refs versionades** (explícites): p.e., `v1.0`, `v2.0`, etc.
-- **Commits substantius** (implícits): canvis reals al dataset, sense ser només actualizacions de README o metadata.
+- **Commits substantius** (implícits): commits que toquen fitxers de dades
+  reals (no purament README/metadada), determinat inspeccionant els
+  fitxers reals afegits/modificats/eliminats per cada commit (`git show`
+  sobre un clonatge local, US-302; recorre a l'heurística de títol si el
+  clonatge falla), I separats en el temps (mínim 24h entre el commit
+  substantiu més antic i el més recent) per descartar sessions úniques de
+  pujada automàtica (p.e. eines com LeRobot) que generen desenes de
+  commits en pocs minuts sense representar versions reals — vegeu
+  `docs/us108_validation_report.md` i
+  `docs/criterion_b_time_dispersion_proposal.md`.
 
 ## Sortida
 
