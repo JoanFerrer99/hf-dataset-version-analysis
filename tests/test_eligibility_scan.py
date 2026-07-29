@@ -8,10 +8,21 @@ Cobreixen:
      d'elegibilitat (separant accés restringit i errors dels no elegibles).
 """
 
+import os
 import random
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 
 import eligibility_scan as es
+
+
+@contextmanager
+def _no_git_clone(dataset_id):
+    # Substitueix es.bare_clone als tests de classify_dataset() que no
+    # exerceixen explícitament US-302: sense clonatge real (yield None),
+    # classify_dataset recorre a l'heurística de títol (is_substantive_commit),
+    # evitant una crida de xarxa real (i lenta/inestable) a cada test.
+    yield None
 
 
 class _FakeDatasetInfo:
@@ -128,6 +139,123 @@ class TestHasTimeDispersedSubstantiveCommits:
 
 
 # ---------------------------------------------------------------------------
+# is_substantive_path / get_changed_files / determine_commit_substantive /
+# bare_clone — US-302: detecció real de fitxers modificats per commit
+# ---------------------------------------------------------------------------
+
+class TestIsSubstantivePath:
+    def test_metadata_files_are_not_substantive(self):
+        assert es.is_substantive_path("README.md") is False
+        assert es.is_substantive_path(".gitattributes") is False
+        assert es.is_substantive_path("dataset_infos.json") is False
+
+    def test_nested_metadata_files_are_not_substantive(self):
+        assert es.is_substantive_path("some/dir/README.md") is False
+
+    def test_github_folder_is_not_substantive(self):
+        assert es.is_substantive_path(".github") is False
+        assert es.is_substantive_path(".github/workflows/ci.yml") is False
+
+    def test_data_files_are_substantive(self):
+        assert es.is_substantive_path("data/chunk-000/file-000.parquet") is True
+        assert es.is_substantive_path("videos/observation.images.top/chunk-000/file-000.mp4") is True
+
+    def test_unknown_files_default_to_substantive(self):
+        assert es.is_substantive_path("meta/info.json") is True
+
+
+class TestGetChangedFiles:
+    def test_parses_added_modified_deleted_lines(self, monkeypatch):
+        fake_output = "A\tdata/new_file.parquet\nM\tmeta/info.json\nD\tdata/old_file.parquet\n"
+        monkeypatch.setattr(
+            es.subprocess, "run",
+            lambda *a, **kw: _FakeCompletedProcess(returncode=0, stdout=fake_output),
+        )
+        result = es.get_changed_files("/fake/clone", "abc123")
+        assert result == ["data/new_file.parquet", "meta/info.json", "data/old_file.parquet"]
+
+    def test_parses_rename_lines_keeping_new_path(self, monkeypatch):
+        fake_output = "R100\told_name.csv\tnew_name.csv\n"
+        monkeypatch.setattr(
+            es.subprocess, "run",
+            lambda *a, **kw: _FakeCompletedProcess(returncode=0, stdout=fake_output),
+        )
+        result = es.get_changed_files("/fake/clone", "abc123")
+        assert result == ["new_name.csv"]
+
+    def test_returns_none_on_nonzero_returncode(self, monkeypatch):
+        monkeypatch.setattr(
+            es.subprocess, "run",
+            lambda *a, **kw: _FakeCompletedProcess(returncode=128, stdout=""),
+        )
+        assert es.get_changed_files("/fake/clone", "abc123") is None
+
+    def test_returns_none_on_timeout(self, monkeypatch):
+        def boom(*a, **kw):
+            raise es.subprocess.TimeoutExpired(cmd="git show", timeout=10)
+
+        monkeypatch.setattr(es.subprocess, "run", boom)
+        assert es.get_changed_files("/fake/clone", "abc123") is None
+
+    def test_empty_output_returns_empty_list(self, monkeypatch):
+        monkeypatch.setattr(
+            es.subprocess, "run",
+            lambda *a, **kw: _FakeCompletedProcess(returncode=0, stdout=""),
+        )
+        assert es.get_changed_files("/fake/clone", "abc123") == []
+
+
+class TestDetermineCommitSubstantive:
+    def test_falls_back_to_title_heuristic_when_no_clone_dir(self):
+        assert es.determine_commit_substantive(_FakeCommit("Add new records"), None) is True
+        assert es.determine_commit_substantive(_FakeCommit("Update README"), None) is False
+
+    def test_uses_real_files_when_clone_available(self, monkeypatch):
+        # Títol genèric (no substantiu segons l'heurística) però toca
+        # dades reals -> substantiu segons la inspecció de fitxers.
+        commit = _FakeCommit("Merge pull request #3")
+        monkeypatch.setattr(es, "get_changed_files", lambda clone_dir, sha: ["data/file.parquet"])
+        assert es.determine_commit_substantive(commit, "/fake/clone") is True
+
+    def test_metadata_only_files_are_not_substantive_even_with_generic_title(self, monkeypatch):
+        commit = _FakeCommit("Update stuff")
+        monkeypatch.setattr(es, "get_changed_files", lambda clone_dir, sha: ["README.md", ".gitattributes"])
+        assert es.determine_commit_substantive(commit, "/fake/clone") is False
+
+    def test_falls_back_to_title_heuristic_when_get_changed_files_fails(self, monkeypatch):
+        commit = _FakeCommit("Add new records")
+        monkeypatch.setattr(es, "get_changed_files", lambda clone_dir, sha: None)
+        assert es.determine_commit_substantive(commit, "/fake/clone") is True
+
+
+class TestBareClone:
+    def test_yields_directory_on_success_and_cleans_up_after(self, monkeypatch):
+        monkeypatch.setattr(es.subprocess, "run", lambda *a, **kw: _FakeCompletedProcess(returncode=0))
+
+        with es.bare_clone("org/ds") as clone_dir:
+            assert clone_dir is not None
+            assert os.path.isdir(clone_dir)
+            captured_dir = clone_dir
+
+        assert not os.path.exists(captured_dir)
+
+    def test_yields_none_on_nonzero_returncode(self, monkeypatch):
+        monkeypatch.setattr(es.subprocess, "run", lambda *a, **kw: _FakeCompletedProcess(returncode=128))
+
+        with es.bare_clone("org/ds") as clone_dir:
+            assert clone_dir is None
+
+    def test_yields_none_on_timeout_and_still_cleans_up(self, monkeypatch):
+        def boom(*a, **kw):
+            raise es.subprocess.TimeoutExpired(cmd="git clone", timeout=30)
+
+        monkeypatch.setattr(es.subprocess, "run", boom)
+
+        with es.bare_clone("org/ds") as clone_dir:
+            assert clone_dir is None
+
+
+# ---------------------------------------------------------------------------
 # compute_funnel_stats — correcció dels bugs de denominador
 # ---------------------------------------------------------------------------
 
@@ -191,9 +319,17 @@ class _FakeRefs:
 
 
 class _FakeCommit:
-    def __init__(self, title, created_at=None):
+    def __init__(self, title, created_at=None, commit_id="abc123"):
         self.title = title
         self.created_at = created_at
+        self.commit_id = commit_id
+
+
+class _FakeCompletedProcess:
+    def __init__(self, returncode=0, stdout=""):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = ""
 
 
 class TestClassifyDatasetResultShape:
@@ -209,6 +345,7 @@ class TestClassifyDatasetResultShape:
                 _FakeCommit("Fix labeling errors"),
             ]),
         )
+        monkeypatch.setattr(es, "bare_clone", _no_git_clone)
         monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
 
         result = es.classify_dataset("org/ds")
@@ -225,6 +362,7 @@ class TestClassifyDatasetResultShape:
             es, "list_repo_commits",
             lambda **kw: iter([_FakeCommit("Update README"), _FakeCommit("Add new records")]),
         )
+        monkeypatch.setattr(es, "bare_clone", _no_git_clone)
         monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
 
         result = es.classify_dataset("org/ds")
@@ -240,6 +378,7 @@ class TestClassifyDatasetResultShape:
             es, "list_repo_commits",
             lambda **kw: iter([_FakeCommit("Update README"), _FakeCommit("fix typo")]),
         )
+        monkeypatch.setattr(es, "bare_clone", _no_git_clone)
         monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
 
         result = es.classify_dataset("org/ds")
@@ -315,6 +454,7 @@ class TestClassifyDatasetResultShape:
                 _FakeCommit("Fix labeling errors", created_at=now - timedelta(days=2)),
             ]),
         )
+        monkeypatch.setattr(es, "bare_clone", _no_git_clone)
         monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
 
         result = es.classify_dataset("org/ds")
@@ -339,6 +479,7 @@ class TestClassifyDatasetResultShape:
                 _FakeCommit("Add new episode", created_at=now - timedelta(minutes=5)),
             ]),
         )
+        monkeypatch.setattr(es, "bare_clone", _no_git_clone)
         monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
 
         result = es.classify_dataset("org/ds")
@@ -351,6 +492,7 @@ class TestClassifyDatasetResultShape:
         monkeypatch.setattr(
             es, "list_repo_commits", lambda **kw: iter([_FakeCommit("Add new records")])
         )
+        monkeypatch.setattr(es, "bare_clone", _no_git_clone)
 
         for fake_refs_fn in (
             lambda **kw: _FakeRefs(tags=["v1", "v2"]),

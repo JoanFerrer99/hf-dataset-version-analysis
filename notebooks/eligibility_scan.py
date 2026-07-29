@@ -29,12 +29,16 @@ import os
 import sys
 import json
 import random
+import shutil
 import argparse
 import logging
+import subprocess
+import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Iterable
+from typing import Iterable, Iterator
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -76,6 +80,8 @@ NON_SUBSTANTIVE_TITLE_KEYWORDS = {
 }
 
 MIN_SUBSTANTIVE_GAP_HOURS = 24.0
+GIT_CLONE_TIMEOUT_S = 30
+GIT_SHOW_TIMEOUT_S = 10
 
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -225,8 +231,14 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
                dataset, no purament documentals) SEPARATS EN EL TEMPS per
                almenys `MIN_SUBSTANTIVE_GAP_HOURS` hores
 
-    Els commits es consideren substancials si el títol no conté paraules
-    clau de pur manteniment/documentació (`is_substantive_commit`).
+    Un commit es considera substantiu si TOCA REALMENT algun fitxer de
+    dades (no purament de metadades/documentació): `determine_commit_
+    substantive` inspecciona els fitxers reals afegits/modificats/
+    eliminats per cada commit via un clonatge "bare" local
+    (`bare_clone`/`get_changed_files`/`is_substantive_path`, US-302), i
+    només recorre a l'heurística de títol (`is_substantive_commit`) si el
+    clonatge o `git show` fallen per aquest dataset/commit (git no
+    instal·lat, timeout, xarxa...).
 
     Si `tags_only=True`, només s'avalua el Criteri A ORIGINAL (>=2 tags,
     sense verificar commits substantius; una sola crida a l'API): útil per
@@ -312,32 +324,33 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
                 list_repo_commits, repo_id=dataset_id, repo_type="dataset", token=HF_TOKEN,
                 **RETRY_CONFIG,
             )
-            for commit in commits_iter:
-                commits_scanned += 1
+            with bare_clone(dataset_id) as clone_dir:
+                for commit in commits_iter:
+                    commits_scanned += 1
 
-                if is_substantive_commit(commit.title):
-                    num_commits_substantive += 1
-                    substantive_commit_times.append(getattr(commit, "created_at", None))
+                    if determine_commit_substantive(commit, clone_dir):
+                        num_commits_substantive += 1
+                        substantive_commit_times.append(getattr(commit, "created_at", None))
 
-                if len(tags) >= 2 and num_commits_substantive >= 2:
-                    result["eligible"] = True
-                    result["eligibility_reason"] = "Criteri A: tags>=2 amb commits substantius"
-                    result["num_commits_substantive"] = num_commits_substantive
-                    return result
+                    if len(tags) >= 2 and num_commits_substantive >= 2:
+                        result["eligible"] = True
+                        result["eligibility_reason"] = "Criteri A: tags>=2 amb commits substantius"
+                        result["num_commits_substantive"] = num_commits_substantive
+                        return result
 
-                if len(branches) >= 2 and has_time_dispersed_substantive_commits(
-                    substantive_commit_times
-                ):
-                    result["eligible"] = True
-                    result["eligibility_reason"] = (
-                        "Criteri B: substantive_commits>=2 dispersos "
-                        f">={MIN_SUBSTANTIVE_GAP_HOURS}h"
-                    )
-                    result["num_commits_substantive"] = num_commits_substantive
-                    return result
+                    if len(branches) >= 2 and has_time_dispersed_substantive_commits(
+                        substantive_commit_times
+                    ):
+                        result["eligible"] = True
+                        result["eligibility_reason"] = (
+                            "Criteri B: substantive_commits>=2 dispersos "
+                            f">={MIN_SUBSTANTIVE_GAP_HOURS}h"
+                        )
+                        result["num_commits_substantive"] = num_commits_substantive
+                        return result
 
-                if commits_scanned >= 50:
-                    break
+                    if commits_scanned >= 50:
+                        break
 
         result["num_commits_substantive"] = num_commits_substantive
         result["eligibility_reason"] = (
@@ -390,6 +403,131 @@ def is_substantive_commit(commit_title: str) -> bool:
             return False
 
     return True
+
+
+def is_substantive_path(path: str) -> bool:
+    """
+    Avalua si una ruta de fitxer dins del repositori representa un canvi
+    real de dades del dataset (no purament de metadades/documentació),
+    basant-se en el NOM del fitxer (no en el títol del commit).
+
+    :param path: ruta relativa dins del repositori tal com la retorna
+        `git show --name-status` (p.e. `"data/chunk-000/file-000.parquet"`
+        o `"README.md"`).
+    :return: `False` si el nom base del fitxer és a `NON_SUBSTANTIVE_FILES`
+        o la ruta pertany a la carpeta `.github/`; `True` en qualsevol
+        altre cas (es considera que toca dades/configuració reals).
+    """
+    if path == ".github" or path.startswith(".github/"):
+        return False
+
+    basename = path.rsplit("/", 1)[-1]
+    return basename not in NON_SUBSTANTIVE_FILES
+
+
+@contextmanager
+def bare_clone(dataset_id: str) -> Iterator[str | None]:
+    """
+    Clona el repositori d'un dataset en mode "bare" i amb filtratge de
+    blobs (`git clone --bare --filter=blob:none`): NOMÉS l'historial de
+    git (commits, arbres, noms de fitxer), mai el contingut real dels
+    fitxers (les dades LFS no es descarreguen). El token es passa via
+    variables d'entorn de configuració de git (`GIT_CONFIG_KEY_0`/
+    `_VALUE_0`), no com a argument de la comanda, perquè no aparegui al
+    llistat de processos (`ps aux`) d'altres usuaris de la mateixa
+    màquina -- els fitxers de `/proc/<pid>/environ` només són llegibles
+    pel mateix usuari (o root), a diferència de `argv`.
+
+    :param dataset_id: identificador del dataset, format `owner/name`.
+    :yield: ruta absoluta (str) al directori clonat, o `None` si el
+        clonatge ha fallat (git no instal·lat, timeout, dataset no
+        accessible via git tot i ser-ho via l'API REST, etc.) -- en
+        aquest cas el cridant ha de recórrer a l'heurística de títol
+        (`is_substantive_commit`). El directori temporal s'esborra sempre
+        en sortir del context, amb èxit o amb fallada.
+    """
+    tmp_dir = tempfile.mkdtemp(prefix="hf_bare_clone_")
+    url = f"https://huggingface.co/datasets/{dataset_id}"
+    env = {
+        **os.environ,
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "http.extraHeader",
+        "GIT_CONFIG_VALUE_0": f"Authorization: Bearer {HF_TOKEN}",
+    }
+    try:
+        result = subprocess.run(
+            ["git", "clone", "--bare", "--filter=blob:none", "--quiet", url, tmp_dir],
+            env=env, capture_output=True, timeout=GIT_CLONE_TIMEOUT_S,
+        )
+        yield tmp_dir if result.returncode == 0 else None
+    except (subprocess.TimeoutExpired, OSError):
+        yield None
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def get_changed_files(clone_dir: str, commit_sha: str) -> list[str] | None:
+    """
+    Obté la llista de fitxers afegits/modificats/eliminats per un commit,
+    a partir d'un clonatge "bare" ja fet (vegeu `bare_clone`), sense cap
+    crida addicional a l'API de HF (tot és local un cop clonat).
+
+    :param clone_dir: directori d'un clonatge "bare" ja fet.
+    :param commit_sha: hash del commit a inspeccionar.
+    :return: llista de rutes (`str`) afectades pel commit (`git show
+        --name-status <sha>`), o `None` si la crida a `git` falla (sha no
+        trobat, timeout, error de git) -- el cridant hauria de recórrer a
+        l'heurística de títol en aquest cas.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "show", "--name-status", "--format=", commit_sha],
+            cwd=clone_dir, capture_output=True, text=True, timeout=GIT_SHOW_TIMEOUT_S,
+        )
+        if result.returncode != 0:
+            return None
+
+        paths = []
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            # Format "git show --name-status": "<estat>\t<ruta>" per a
+            # afegits/modificats/eliminats, o "<estat>\t<ruta_antiga>\t
+            # <ruta_nova>" per a renombrats -- l'última columna sempre és
+            # la ruta rellevant per decidir si el commit és substantiu.
+            columns = line.split("\t")
+            if len(columns) >= 2:
+                paths.append(columns[-1])
+        return paths
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+
+
+def determine_commit_substantive(commit, clone_dir: str | None) -> bool:
+    """
+    Decideix si un commit és substantiu, preferint la inspecció real dels
+    fitxers tocats (US-302) i recorrent a l'heurística de títol
+    (`is_substantive_commit`) quan la primera no és disponible.
+
+    :param commit: objecte commit (amb `.title` i `.commit_id`) tal com el
+        retorna `list_repo_commits`.
+    :param clone_dir: directori d'un clonatge "bare" ja fet (vegeu
+        `bare_clone`), o `None` si el clonatge ha fallat per aquest
+        dataset.
+    :return: si `clone_dir` no és `None` i `get_changed_files` retorna una
+        llista, `True` si almenys un fitxer tocat és substantiu segons
+        `is_substantive_path`. En qualsevol altre cas (sense clonatge, o
+        `git show` ha fallat per aquest commit concret), es recorre a
+        `is_substantive_commit(commit.title)`.
+    """
+    if clone_dir is not None:
+        changed_paths = get_changed_files(clone_dir, commit.commit_id)
+        if changed_paths is not None:
+            return any(is_substantive_path(p) for p in changed_paths)
+
+    return is_substantive_commit(commit.title)
 
 
 def has_time_dispersed_substantive_commits(
