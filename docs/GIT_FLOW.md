@@ -20,7 +20,7 @@ main (v1.0, v1.1...)      ← PRODUCCIÓ (estable)
 
 ### **main**
 - **Source**: Merge de `release/` o `hotfix/`
-- **Protecció**: ✅ Require PR + approvals
+- **Protecció**: ✅ Require PR + CI en verd (sense aprovació obligatòria — projecte d'una sola persona, GitHub no permet auto-aprovar la pròpia PR)
 - **Tags**: Versionat (v1.0.0, v1.1.0...)
 - **Política**: `git merge --no-ff` per mantenir històric de merge
 
@@ -33,7 +33,7 @@ git tag -a v1.0.0
 
 ### **develop**
 - **Source**: Merge de `feature/` branches
-- **Protecció**: Require PR + approvals
+- **Protecció**: Require PR + CI en verd (sense aprovació obligatòria, mateix motiu que `main`)
 - **Deployment**: Auto-deploy a entorn de staging
 - **Política**: `git merge --no-ff` per claritat
 
@@ -50,7 +50,7 @@ git merge --no-ff feature/random-sampling-unbiased
 ### **feature/\***
 - **Origen**: Branch des de `develop`
 - **Naming**: `feature/descriptive-name` o `feature/TASK-123-description`
-- **Merger**: PR a `develop`, revisat per otro developer
+- **Merger**: PR a `develop` (autorevisat — sense aprovació obligatòria, vegeu secció "Branques Permanents")
 - **Cleanup**: Eliminar després de merge
 
 Flux complet:
@@ -146,17 +146,19 @@ desplegable amb backend/frontend, així que el "CD" cobreix dues coses:
 
 **1. Protecció de branques** — fer complir a GitHub el que ja diu aquest
 document (secció "Branques Permanents"): `main` i `develop` requereixen PR +
-el check de CI en verd abans de poder mergejar.
-
-Per aplicar-ho (un cop, amb permisos d'admin sobre el repo):
+el check de CI en verd abans de poder mergejar. **Ja configurat** (projecte
+d'una sola persona, `required_approving_review_count=0` -- GitHub no permet
+auto-aprovar la pròpia PR):
 ```bash
 gh auth login
-./scripts/setup_branch_protection.sh
-```
 
-Si el repo el manté una sola persona, GitHub no permet auto-aprovar la pròpia
-PR; en aquest cas usa `REQUIRED_APPROVALS=0 ./scripts/setup_branch_protection.sh`
-per exigir només PR + CI en verd, sense aprovació obligatòria.
+for branch in main develop; do
+  gh api -X PATCH "repos/<owner>/<repo>/branches/$branch/protection/required_pull_request_reviews" \
+    -F dismiss_stale_reviews=true \
+    -F require_code_owner_reviews=false \
+    -F required_approving_review_count=0
+done
+```
 
 **2. Publicació de la imatge Docker** — `.github/workflows/docker-publish.yml`
 es dispara només quan es puja un tag `vX.Y.Z` (el pas de "Crear tag" del flux

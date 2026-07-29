@@ -64,7 +64,7 @@ docker compose run --rm eligibility-scan --sample-size 50 --threads 4 --seed 42 
 ls data/eligibility_report_50_*.csv   # confirma el nom exacte (inclou el run_id)
 
 # 2. validate_eligible.py -- usa el CSV generat al pas anterior
-docker compose run --rm validate-eligible --input data/eligibility_report_50_<run_id>.csv
+docker compose run --rm validate-eligible --input data/eligibility_report_<sample_size>_<run_id>.csv
 ```
 
 `data/` es munta com a volum (`./data:/app/data`), així que els CSV/JSON de

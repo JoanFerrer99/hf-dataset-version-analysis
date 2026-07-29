@@ -254,6 +254,18 @@ class TestBareClone:
         with es.bare_clone("org/ds") as clone_dir:
             assert clone_dir is None
 
+    def test_yields_none_when_git_binary_is_missing(self, monkeypatch):
+        # Regressió: sense 'git' al PATH (p.e. una imatge Docker on s'ha
+        # oblidat instal·lar-lo), bare_clone ha de recórrer al fallback
+        # de títol per a TOTS els datasets -- no ha de petar el pipeline.
+        def boom(*a, **kw):
+            raise FileNotFoundError("git no trobat")
+
+        monkeypatch.setattr(es.subprocess, "run", boom)
+
+        with es.bare_clone("org/ds") as clone_dir:
+            assert clone_dir is None
+
 
 # ---------------------------------------------------------------------------
 # compute_funnel_stats — correcció dels bugs de denominador

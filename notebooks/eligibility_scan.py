@@ -79,18 +79,29 @@ NON_SUBSTANTIVE_TITLE_KEYWORDS = {
     "license", "citation", "typo", "fix typo", "update docs",
 }
 
-MIN_SUBSTANTIVE_GAP_HOURS = 24.0
+# Separació temporal mínima, en hores, entre dos commits substantius
+# CONSECUTIUS perquè es considerin sessions de treball diferents (Criteri
+# B, `has_time_dispersed_substantive_commits`; i, per coherència,
+# `validate_eligible.cluster_commit_times` -- vegeu docs/
+# us108_validation_report.md). Abans era 24h: amb un llindar tan gran,
+# una sèrie de commits separats per <24h cadascun però repartits en
+# diversos dies (p.e. un cada ~20h durant una setmana) es podia comptar
+# com UNA sola sessió, ja que la comprovació només mira el buit entre
+# parells CONSECUTIUS, no l'interval total. Reduït a 6h per fer que
+# aquest fals negatiu de "sessió única" sigui molt menys probable, sense
+# tornar-lo tan permissiu com per confondre commits d'una mateixa
+# jornada de treball normal.
+MIN_SUBSTANTIVE_GAP_HOURS = 6.0
 GIT_CLONE_TIMEOUT_S = 30
 GIT_SHOW_TIMEOUT_S = 10
+
+_git_missing_warned = False
 
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 FAILURES_LOG_PATH = os.path.join(OUTPUT_DIR, "failures.csv")
 
-# Configuració de reintent. Es llegeix des de classify_dataset() a cada crida,
-# per això viu com a estat de mòdul en lloc de passar-se explícitament
-# per tota la cadena de crides paral·leles.
 RETRY_CONFIG: dict = {
     "max_retries": errors.DEFAULT_MAX_RETRIES,
     "base_wait_s": errors.DEFAULT_BASE_WAIT_S,
@@ -312,13 +323,6 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
         num_commits_substantive = 0
         substantive_commit_times: list[datetime | None] = []
 
-        # NOTA: només consultem els commits si tenim >=2 tags (Criteri A) o
-        # >=2 branches (Criteri B), evitant una crida i iteració senceres
-        # quan no poden canviar el resultat. Per al Criteri A, no n'hi ha
-        # prou amb tenir >=2 tags: cal que almenys un commit sigui
-        # substantiu, per cobrir el cas (improbable) d'un dataset amb
-        # versions etiquetades on tots els commits només toquen
-        # README/metadades.
         if len(tags) >= 2 or len(branches) >= 2:
             commits_iter = errors.with_retry(
                 list_repo_commits, repo_id=dataset_id, repo_type="dataset", token=HF_TOKEN,
@@ -444,8 +448,14 @@ def bare_clone(dataset_id: str) -> Iterator[str | None]:
         accessible via git tot i ser-ho via l'API REST, etc.) -- en
         aquest cas el cridant ha de recórrer a l'heurística de títol
         (`is_substantive_commit`). El directori temporal s'esborra sempre
-        en sortir del context, amb èxit o amb fallada.
+        en sortir del context, amb èxit o amb fallada. Si `git` no és al
+        `PATH` (`FileNotFoundError`, subclasse d'`OSError`), es registra
+        un `log.error` UN SOL COP per procés (`_git_missing_warned`) en
+        lloc d'un cop per dataset, perquè el problema sigui visible als
+        logs sense inundar-los durant un escaneig de milers de datasets.
     """
+    global _git_missing_warned
+
     tmp_dir = tempfile.mkdtemp(prefix="hf_bare_clone_")
     url = f"https://huggingface.co/datasets/{dataset_id}"
     env = {
@@ -460,8 +470,20 @@ def bare_clone(dataset_id: str) -> Iterator[str | None]:
             ["git", "clone", "--bare", "--filter=blob:none", "--quiet", url, tmp_dir],
             env=env, capture_output=True, timeout=GIT_CLONE_TIMEOUT_S,
         )
+        if result.returncode != 0:
+            log.debug(f"bare_clone: git clone ha fallat per a {dataset_id} (retorn {result.returncode})")
         yield tmp_dir if result.returncode == 0 else None
-    except (subprocess.TimeoutExpired, OSError):
+    except FileNotFoundError:
+        if not _git_missing_warned:
+            log.error(
+                "bare_clone: 'git' no és al PATH es desactiva per a TOTA la " \
+                "resta de l'escaneig i es recorre a l'heurística de títol per a cada dataset. "
+                "Instal·la 'git' al sistema/imatge Docker."
+            )
+            _git_missing_warned = True
+        yield None
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        log.debug(f"bare_clone: error clonant {dataset_id}: {exc}")
         yield None
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -508,7 +530,7 @@ def get_changed_files(clone_dir: str, commit_sha: str) -> list[str] | None:
 def determine_commit_substantive(commit, clone_dir: str | None) -> bool:
     """
     Decideix si un commit és substantiu, preferint la inspecció real dels
-    fitxers tocats (US-302) i recorrent a l'heurística de títol
+    fitxers tocats i recorrent a l'heurística de títol
     (`is_substantive_commit`) quan la primera no és disponible.
 
     :param commit: objecte commit (amb `.title` i `.commit_id`) tal com el

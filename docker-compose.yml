@@ -27,3 +27,4 @@ services:
       - .env
     volumes:
       - ./data:/app/data
+      - ./docs:/app/docs
