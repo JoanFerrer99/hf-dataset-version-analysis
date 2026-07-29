@@ -125,20 +125,28 @@ git push origin hotfix/critical-memory-leak
 
 `.github/workflows/ci.yml` s'executa a cada `push` a `main`, `develop`,
 `feature/**`, `release/**`, `hotfix/**` i a cada Pull Request cap a `main` o
-`develop`. El job **"Lint & tests"**:
+`develop`. Dos jobs independents:
+
+**"Lint & tests"**:
 1. Instal·la dependències (`requirements.txt` + `ruff`).
 2. Lint: `ruff check notebooks tests` (regles pinnades a `ruff.toml`).
 3. Tests: `pytest -v`.
 
-Cap dels dos passos requereix `HF_TOKEN` ni accés a xarxa: els tests mockegen
-totes les crides a l'API de Hugging Face.
+Cap dels dos passos requereix `HF_TOKEN` real ni accés a xarxa: els tests
+mockegen totes les crides a l'API de Hugging Face (a CI s'usa un valor fictici
+només perquè el mòdul es pugui importar).
 
-### CD (protecció de branques)
+**"Docker build"**: construeix la imatge (`docker build .`, sense publicar-la)
+per detectar de seguida si un canvi trenca el `Dockerfile`.
+
+### CD
 
 Aquest repositori és un pipeline d'anàlisi per al TFG, no un servei
-desplegable, així que no hi ha "deployment". El "CD" es limita a fer complir
-a GitHub el que ja diu aquest document (secció "Branques Permanents"): `main`
-i `develop` requereixen PR + el check de CI en verd abans de poder mergejar.
+desplegable amb backend/frontend, així que el "CD" cobreix dues coses:
+
+**1. Protecció de branques** — fer complir a GitHub el que ja diu aquest
+document (secció "Branques Permanents"): `main` i `develop` requereixen PR +
+el check de CI en verd abans de poder mergejar.
 
 Per aplicar-ho (un cop, amb permisos d'admin sobre el repo):
 ```bash
@@ -149,6 +157,13 @@ gh auth login
 Si el repo el manté una sola persona, GitHub no permet auto-aprovar la pròpia
 PR; en aquest cas usa `REQUIRED_APPROVALS=0 ./scripts/setup_branch_protection.sh`
 per exigir només PR + CI en verd, sense aprovació obligatòria.
+
+**2. Publicació de la imatge Docker** — `.github/workflows/docker-publish.yml`
+es dispara només quan es puja un tag `vX.Y.Z` (el pas de "Crear tag" del flux
+de `release/`/`hotfix/` descrit més amunt). Construeix la imatge i la publica
+a `ghcr.io/<owner>/hf-dataset-version-analysis` amb els tags `X.Y.Z`,
+`X.Y` i `latest`. No cal cap secret addicional: usa el `GITHUB_TOKEN`
+integrat de l'Action.
 
 ---
 

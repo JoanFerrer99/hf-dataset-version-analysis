@@ -1,0 +1,29 @@
+# Ús:
+#   docker compose build
+#
+#   # 1. Genera primer un CSV d'elegibilitat (queda a ./data via el volum):
+#   docker compose run --rm eligibility-scan --sample-size 50 --threads 4 --seed 42 --max-scanned 5000
+#   ls data/eligibility_report_50_*.csv   # confirma el nom exacte (inclou el run_id)
+#
+#   # 2. Passa'l a validate-eligible (substitueix <run_id> pel de l'ls anterior):
+#   docker compose run --rm validate-eligible --input data/eligibility_report_50_<run_id>.csv
+#
+# Requereix un fitxer .env a l'arrel amb HF_TOKEN=hf_xxx (vegeu README.md).
+
+services:
+  eligibility-scan:
+    build: .
+    image: hf-dataset-version-analysis:latest
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+
+  validate-eligible:
+    build: .
+    image: hf-dataset-version-analysis:latest
+    entrypoint: ["python", "notebooks/validate_eligible.py"]
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data

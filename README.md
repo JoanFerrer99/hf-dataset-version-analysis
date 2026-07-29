@@ -41,6 +41,38 @@ python notebooks/eligibility_scan.py --sample-size 50 --threads 4 --seed 42 --ma
 python notebooks/eligibility_scan.py --sample-size 2000 --threads 4 --seed 42                    # mostra principal
 ```
 
+## Ús amb Docker
+
+Alternativa a l'entorn virtual local: no cal instal·lar Python ni les
+dependències, només Docker. Cal el mateix fitxer `.env` amb `HF_TOKEN`
+descrit més amunt.
+
+```bash
+docker compose build
+
+# 1. eligibility_scan.py (prova rapida) -- genera el CSV d'entrada
+docker compose run --rm eligibility-scan --sample-size 50 --threads 4 --seed 42 --max-scanned 5000
+ls data/eligibility_report_50_*.csv   # confirma el nom exacte (inclou el run_id)
+
+# 2. validate_eligible.py -- usa el CSV generat al pas anterior
+docker compose run --rm validate-eligible --input data/eligibility_report_50_<run_id>.csv
+```
+
+`data/` es munta com a volum (`./data:/app/data`), així que els CSV/JSON de
+sortida apareixen directament al repositori de l'host, igual que executant
+els scripts en local. **`validate-eligible` necessita que `eligibility-scan`
+s'hagi executat abans**: llegeix un CSV que aquest genera, no en crea cap de
+nou. Sense `docker compose`, l'equivalent amb `docker run`:
+
+```bash
+docker build -t hf-dataset-version-analysis .
+docker run --rm --env-file .env -v "$(pwd)/data:/app/data" \
+  hf-dataset-version-analysis --sample-size 50 --threads 4 --seed 42 --max-scanned 5000
+```
+
+A cada tag `vX.Y.Z` a `main` (vegeu `docs/GIT_FLOW.md`), la imatge es publica
+automàticament a `ghcr.io/joanferrer99/hf-dataset-version-analysis:X.Y.Z`.
+
 Per l'estimació principal, **no passis `--max-scanned`**: la mostra ha
 d'escanejar tota la població per no esbiaixar-se (vegeu "Mida de la mostra"
 més avall). `--max-scanned` només és per a proves ràpides de desenvolupament.
