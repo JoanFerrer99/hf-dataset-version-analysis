@@ -20,6 +20,10 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 FROM python:3.12-slim AS runtime
 
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y git \
+    && rm -rf /var/lib/apt/lists/*
+
 # Usuari sense privilegis: el procés no necessita root per llegir el codi
 # ni per escriure a data/ (muntat com a volum amb permisos de l'usuari host).
 RUN groupadd --gid 1000 app && useradd --uid 1000 --gid app --create-home app

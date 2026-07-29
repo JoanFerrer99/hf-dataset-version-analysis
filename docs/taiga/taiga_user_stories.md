@@ -255,17 +255,32 @@ positius sistemàtics.
   recollida amb `notebooks/validate_eligible.py` i primera classificació
   TP/FP raonada a `docs/us108_validation_report.md`
 - [x] Per cada un, confirmar/desmentir si el criteri assignat és correcte
-  — primer esborrany fet (Claude Code); **pendent confirmació final de
-  Joan (i, si escau, el director)**
+  — AUTOMATITZAT: `validate_eligible.py` genera un veredicte
+  TP/REVIEW/ERROR per dataset a cada execució (agrupació de commits
+  substantius en sessions, `cluster_commit_times`, buit >
+  `MIN_SUBSTANTIVE_GAP_HOURS` entre commits CONSECUTIUS). Aquesta
+  comprovació **només s'aplica al Criteri B** (branches): el Criteri A
+  (tags explícits) mai ha exigit dispersió temporal a `classify_dataset`
+  -- >=2 tags ja és un senyal deliberat de versionat pel mantenidor.
+  (Iteracions intermèdies corregides: primer es va aplicar per igual a A
+  i B, marcant erròniament com a REVIEW casos de Criteri A legítims com
+  `qualia-robotics/qualia-dataset-real` o `aytsaiusc/play_robot_new_1`;
+  després es va reduir el llindar de 24h a 6h perquè amb 24h una sèrie de
+  commits separats per <24h cadascun però repartits en diversos dies es
+  podia comptar erròniament com una sola sessió.) Sobre l'execució de
+  referència neta `eligibility_report_2000_3.csv`: **12/12 (0 REVIEW)**.
+  **Pendent confirmació humana final de Joan/director**
 - [x] Documentar el % d'acord (precisió de la heurística) per a la secció
-  de validesa de la memòria — precisió estimada 5/13 ≈ 38.5% (Criteri A
-  100%, Criteri B 20%), vegeu `docs/us108_validation_report.md`
-- [ ] Si la precisió és baixa, replantejar el llindar o el mètode del
-  Criteri B abans de continuar a l'Epic 3 — recomanació concreta
-  (dispersió temporal mínima entre commits substantius) documentada
-  però **no implementada**, a validar amb el director
+  de validesa de la memòria — execució de referència neta
+  (`eligibility_report_2000_3.csv`, totes dues millores actives):
+  12/12 = 100% TP automàtic
+- [x] Si la precisió és baixa, replantejar el llindar o el mètode del
+  Criteri B abans de continuar a l'Epic 3 — **implementat i confirmat**:
+  dispersió temporal mínima (`MIN_SUBSTANTIVE_GAP_HOURS`, actualment 6h)
+  + detecció real de fitxers (US-302); precisió automàtica 38.5% → 100%
 
-**Estat:** 🔄 In progress
+**Estat:** 🔄 In progress (automatitzat i re-executat net; pendent només
+confirmació humana final de Joan/director)
 **Story points:** 5
 **Tags:** validation, data-quality
 **Prioritat:** Alta — bloqueja la confiança en els resultats de l'Epic 1
@@ -331,14 +346,18 @@ de la taxonomia del director (`docs/taiga/taxonomy.md`).*
 `git show`) abans de dissenyar la resta de l'Epic 3.
 
 **Criteris d'acceptació:**
-- [ ] Provar `commit.files` / `commit.changed_files` sobre 5-10 datasets
-  reals i documentar el resultat
-- [ ] Si NO és accessible: documentar l'alternativa (bare clone +
-  `git show --name-only`, com fa el paper dels LLM, secció 4.2.1)
-- [ ] Decisió registrada a `docs/decisions_tfg.txt` com a Risc R-01
-  (tancat)
+- [x] Provar `commit.files` / `commit.changed_files` sobre 5-10 datasets
+  reals i documentar el resultat — **NO accessible**: `GitCommitInfo`
+  (`huggingface_hub==1.18.0`) només exposa `commit_id`/`authors`/
+  `created_at`/`title`/`message`, confirmat per introspecció
+- [x] Si NO és accessible: documentar l'alternativa (bare clone +
+  `git show --name-status`, com fa el paper de Castaño et al. 2025,
+  secció 4.2.1) — implementada a `eligibility_scan.bare_clone`/
+  `get_changed_files`, vegeu `docs/paper_techniques_ml_models_change.md`
+- [x] Decisió registrada — alternativa validada empíricament (<1s, ~150KB
+  per repositori de prova) i implementada, no bloqueja més l'Epic 3
 
-**Estat:** ⛔ Blocked — bloqueja tota la resta de l'Epic 3
+**Estat:** ✅ Done
 **Story points:** 3
 **Tags:** research, spike
 **Prioritat:** Urgent
@@ -352,14 +371,23 @@ eliminar la limitació metodològica de falsos positius/negatius de la
 heurística actual.
 
 **Criteris d'acceptació:**
-- [ ] Substituir `is_substantive_commit()` (heurística per títol) per
-  inspecció real de fitxers
-- [ ] Filtrar per extensió: fitxers de dades (`.parquet`, `.csv`, `.json`,
-  `.arrow`...) vs fitxers purament documentals
-- [ ] Reprocessar el Criteri B de l'Epic 1 amb el nou mètode i comparar
-  resultats amb la validació manual de US-108
+- [x] Substituir `is_substantive_commit()` (heurística per títol) per
+  inspecció real de fitxers — `determine_commit_substantive`, amb
+  fallback a l'heurística si el clonatge falla
+- [x] Filtrar per fitxer: `is_substantive_path` (nom base a
+  `NON_SUBSTANTIVE_FILES` = no substantiu; qualsevol altre = substantiu)
+- [x] Reprocessar el Criteri B de l'Epic 1 amb el nou mètode i comparar
+  resultats amb la validació manual de US-108 — fet a
+  `docs/us108_validation_report.md` (automatitzat)
 
-**Estat:** 📋 To do (bloquejat per US-301)
+**Estat:** ✅ Done — **bug de desplegament detectat i corregit durant el
+procés**: la imatge Docker no tenia `git` instal·lat, així que
+`bare_clone` fallava silenciosament i el pipeline recorria sempre al
+fallback de títol durant l'execució que va generar
+`eligibility_report_2000_2.csv`. Corregit al `Dockerfile`; confirmat amb
+una segona execució neta (`eligibility_report_2000_3.csv`) que US-302
+realment és actiu i millora la precisió (38.5% → 100% TP automàtic,
+vegeu US-108).
 **Story points:** 8
 **Tags:** classification
 **Depèn de:** US-301

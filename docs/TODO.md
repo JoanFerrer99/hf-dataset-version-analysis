@@ -12,17 +12,22 @@ https://tree.taiga.io/project/joanferrer-estudi-canvis-datasets-hf-1/timeline
 
 ## Ara mateix (Sprint actual)
 
-- [x] **US-108** (parcial) — Evidència (tags/commits) recollida per als 13
-      datasets elegibles i primera classificació TP/FP raonada a
-      `docs/us108_validation_report.md` (precisió estimada: 5/13 ≈ 38.5%,
-      Criteri A 100% vs Criteri B 20%). **Pendent decisió de replantajament de criteri**
-
+- [x] **US-108** — `notebooks/validate_eligible.py` genera automàticament
+      `docs/us108_validation_report.md` a cada execució (criteri
+      d'acceptació 4: automatització), amb un veredicte TP/REVIEW/ERROR
+      per dataset. La comprovació de "sessions de treball"
+      (`cluster_commit_times`, buit >`MIN_SUBSTANTIVE_GAP_HOURS` entre
+      commits CONSECUTIUS) **només s'aplica al Criteri B**: el Criteri A
+      (tags explícits) mai ha exigit dispersió temporal a
+      `classify_dataset` -- la presència de >=2 tags ja és un senyal
+      deliberat de versionat pel mantenidor, i la validació manual
+      original ja el va trobar 100% fiable sense cap comprovació temporal.
+      (Primer s'havia aplicat la comprovació de sessions per igual a A i
+      B -- un criteri més estricte que el que realment decideix
+      l'elegibilitat -- i es va corregir.)
+      
 ## Següent (Fase 2 — desbloqueig urgent)
 
-- [ ] **US-301** — Investigar si `commit.files`/`commit.changed_files` és
-      accessible a la versió instal·lada de `huggingface_hub`. Provar
-      sobre 5-10 datasets reals. Si no ho és: documentar alternativa
-      (bare clone + `git show --name-only`). _Bloqueja US-302 i US-305._
 - [ ] **US-303** (nova) — Decidir amb el director l'abast de detecció
       automàtica: 15 codis complets (requereix contingut real de dades)
       vs 7 codis schema-level (sense descarregar dades). Vegeu taula a
@@ -34,12 +39,6 @@ https://tree.taiga.io/project/joanferrer-estudi-canvis-datasets-hf-1/timeline
 
 ## Pendent (no bloquejat, però darrere de l'anterior)
 
-- [ ] **US-302** — Implementar detecció real de fitxers de dades
-      modificats per commit (substituir l'heurística de títol actual).
-      Vegeu `docs/us108_validation_report.md`: 8/13 falsos positius
-      identificats venen del mateix patró (commits automàtics d'una sola
-      sessió de pujada); una millora barata i prèvia a considerar és
-      exigir dispersió temporal mínima entre commits substantius.
 - [ ] **US-305** (abans US-303) — Mapar cada canvi detectat als 15 codis
       oficials (C100–C530).
 - [ ] **US-201** — Extreure llista completa de tags per dataset elegible.
@@ -61,3 +60,23 @@ https://tree.taiga.io/project/joanferrer-estudi-canvis-datasets-hf-1/timeline
 - [x] US-105 — Errors permanents (403/404) distingits dels transitoris
 - [x] US-106 — Estadístiques de l'embut amb denominadors correctes
 - [x] US-107 — Metodologia documentada al README amb dades reals
+- [x] **US-301** — Confirmat: `commit.files`/`commit.changed_files` NO és
+      accessible a `huggingface_hub==1.18.0` (`GitCommitInfo` només té
+      `commit_id`/`authors`/`created_at`/`title`/`message`). Alternativa
+      validada empíricament: clonatge "bare" + filtratge de blobs (`git
+      clone --bare --filter=blob:none` + `git show --name-status`),
+      implementada a `eligibility_scan.bare_clone`/`get_changed_files`.
+- [x] **US-302** — Detecció real de fitxers implementada
+      (`determine_commit_substantive`, amb fallback a l'heurística de
+      títol si el clonatge falla). **Bug de desplegament detectat i
+      corregit durant el procés**: la imatge Docker no tenia `git`
+      instal·lat, així que `bare_clone` fallava silenciosament per a TOTS
+      els datasets durant la primera execució via Docker amb les
+      millores (`data/eligibility_report_2000_2.csv`) — aquell run només
+      es va beneficiar de la dispersió temporal, no de la detecció real
+      de fitxers. Corregit a `Dockerfile` (`apt-get install git`) i
+      `bare_clone` ara registra un avís (`log.error`, un sol cop per
+      procés) si `git` no és al `PATH`. **Confirmat amb una segona
+      execució neta** (`eligibility_report_2000_3.csv`): US-302
+      realment actiu, precisió automàtica 38.5% → 100% sobre l'execució
+      de referència vigent.

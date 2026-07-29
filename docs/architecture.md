@@ -25,16 +25,84 @@ errors.py         (a crear)         (a crear)                DuckDB/Postgres)
 
 ## Fase 0 — Mostreig i elegibilitat (`eligibility_scan.py`, `errors.py`)
 
-**Estat: pràcticament tancat.** US-108 (validació manual dels elegibles
-trobats) té un primer esborrany fet: `docs/us108_validation_report.md`
-reporta una precisió estimada de 5/13 ≈ 38.5% sobre l'execució de
-referència (Criteri A 3/3 = 100%, Criteri B 2/10 = 20%), amb 8/13 falsos
+**Estat: pràcticament tancat.** Sobre la mostra original de 13 elegibles
+(n=1000), la validació manual (`docs/us108_validation_report.md`, versió
+històrica) va trobar una precisió de 5/13 ≈ 38.5%, amb 8/13 falsos
 positius atribuïbles a un únic patró (eines com LeRobot que generen
-desenes de commits automàtics en una sola sessió de pujada, sense
-representar versions reals). **Pendent**: confirmació final de Joan (i,
-si escau, el director) sobre la classificació TP/FP de cada dataset, i
-decisió sobre la recomanació derivada (exigir dispersió temporal mínima
-entre commits substantius del Criteri B) — no implementada encara.
+desenes de commits automàtics en una sola sessió de pujada). Això va
+motivar dues millores, totes dues implementades:
+
+1. **Dispersió temporal mínima al Criteri B** (`MIN_SUBSTANTIVE_GAP_HOURS`,
+   actualment 6h, entre el commit substantiu més antic i el més recent).
+2. **Detecció real de fitxers per commit (US-302)**, en lloc de
+   l'heurística de títol: clonatge "bare" + filtratge de blobs
+   (`bare_clone`/`get_changed_files`/`determine_commit_substantive`),
+   amb fallback a l'heurística de títol si el clonatge falla.
+
+**Bug de desplegament detectat i corregit**: la primera execució via
+Docker amb les millores (`eligibility_report_2000_2.csv`) es va
+beneficiar només de la millora (1) -- la imatge Docker no tenia `git`
+instal·lat, així que `bare_clone` fallava silenciosament per a TOTS els
+datasets i el pipeline recorria sempre al fallback de títol. Corregit al
+`Dockerfile` (s'hi instal·la `git`) i `bare_clone` ara registra un
+`log.error` (un sol cop per procés) si `git` no és al `PATH`. Una segona
+execució neta (`eligibility_report_2000_3.csv`, amb `git` disponible i
+totes dues millores realment actives) confirma la correcció.
+
+`notebooks/validate_eligible.py` genera automàticament
+`docs/us108_validation_report.md` a cada execució (US-108, criteri
+d'acceptació 4), amb un veredicte TP/REVIEW per dataset. La comprovació
+de sessions de treball (`cluster_commit_times`, buit >
+`MIN_SUBSTANTIVE_GAP_HOURS` entre commits CONSECUTIUS -- el MATEIX
+llindar que decideix l'elegibilitat via Criteri B) **només s'aplica al
+Criteri B**: el Criteri A (tags explícits) mai ha exigit dispersió
+temporal a `classify_dataset` -- la presència de >=2 tags ja és un
+senyal deliberat de versionat pel mantenidor, independent de quan es van
+crear, i la validació manual original de US-108 ja el va trobar 100%
+fiable sense cap comprovació temporal.
+
+**Iteracions de disseny durant el desenvolupament**:
+1. Primer es va aplicar la comprovació de sessions per igual al Criteri
+   A i B, amb el llindar unificat a 24h (abans encara hi havia un segon
+   llindar propi d'1h només per a l'informe, més permissiu i confús amb
+   el del Criteri B -- també corregit). Això marcava com a REVIEW casos
+   de Criteri A legítims (p.e. `qualia-robotics/qualia-dataset-real`, 3
+   tags del mateix dia natural; o `aytsaiusc/play_robot_new_1`, creat i
+   acabat de pujar amb ~6h de diferència), inventant un criteri més
+   estricte a la capa de l'informe que el que realment decideix
+   l'elegibilitat. Corregit: la comprovació de sessions ara només
+   s'aplica al Criteri B.
+2. `MIN_SUBSTANTIVE_GAP_HOURS` reduït de 24h a 6h: com que el mateix
+   llindar serveix per a dues coses (l'interval mínim/màxim del Criteri
+   B, i el buit entre commits CONSECUTIUS del recompte de sessions), amb
+   24h una sèrie de commits separats per <24h cadascun però repartits en
+   diversos dies (p.e. un cada ~20h durant una setmana) es podia comptar
+   com UNA sola sessió -- el recompte de sessions només mira parells
+   consecutius, no l'interval total. Amb 6h aquest fals negatiu és molt
+   menys probable. L'anàlisi de sensibilitat original (mostra de 13
+   elegibles) dona la mateixa precisió a 6h que a 24h (83.3%, 1/8 falsos
+   positius conservats): no reintrodueix cap dels falsos positius ja
+   identificats (patrons LeRobot densos, tots per sota de 6h).
+
+Sobre `eligibility_report_2000_3.csv` (execució neta, totes dues
+millores de US-302 realment actives, però classificada amb el llindar
+antic de 24h -- vegeu nota més avall): **12/12 (100%) TP automàtic, 0
+REVIEW** -- Criteri A (3 datasets) sempre TP; Criteri B (9 datasets) amb
+totes les sessions >=2, també a resolució de 6h (reduir el llindar només
+pot augmentar el recompte de sessions, mai disminuir-lo). Revisió manual
+puntual (Claude Code) confirma que el resultat és coherent, no un
+artefacte: p.e. `AG42/lerobot_dataset_try1` usa el mateix patró d'eines
+LeRobot que els falsos positius originals, però aquest cas concret
+(Criteri B) té commits substantius genuïnament repartits en 3 dies
+diferents (11, 13 i 16 de gener).
+
+**Pendent**: `eligibility_report_2000_3.csv` es va generar amb el
+llindar antic de 24h per a l'ELEGIBILITAT del Criteri B (no només per a
+l'informe); com que 6h és més PERMISSIU per a l'elegibilitat (tot i ser
+més ESTRICTE per al recompte de sessions -- efectes en sentits oposats
+del mateix llindar unificat), caldria una execució neta amb 6h per
+confirmar si sorgeixen nous elegibles que abans no complien el llindar
+de 24h. I, com sempre, confirmació final de Joan/director.
 
 ### Flux
 
@@ -49,8 +117,13 @@ entre commits substantius del Criteri B) — no implementada encara.
    - **Criteri A**: ≥2 tags de Git **amb** ≥2 commits substantius
      associats (evita comptar tags "buits" sense canvi real).
    - **Criteri B** (fallback): ≥2 branches i ≥2 commits substantius
-     (heurística per títol, `is_substantive_commit`; **limitació
-     coneguda**: no inspecciona fitxers reals, vegeu Fase 2 / US-301).
+     **separats en el temps ≥6h** (`MIN_SUBSTANTIVE_GAP_HOURS`).
+   - Un commit es considera substantiu si toca fitxers de dades reals
+     (`determine_commit_substantive`, US-302: clonatge "bare" local +
+     `git show --name-status`, amb fallback a l'heurística de títol
+     `is_substantive_commit` si el clonatge falla -- **cal `git`
+     instal·lat al sistema/imatge**, vegeu nota de bug de Docker més
+     amunt).
    - Mode `--tags-only`: només Criteri A original (1 crida per dataset),
      per a escanejos ràpids amb menys pressió sobre l'API.
 4. `write_results()` — CSV + JSON amb `FunnelCounts`/`compute_funnel_stats`
@@ -76,15 +149,28 @@ entre commits substantius del Criteri B) — no implementada encara.
 - Mida de mostra per defecte: 2000 (±0.51pp, 95% confiança, p=0.0137
   observat a N=949.991).
 
-### Resultat de referència (execució real, sample n=1000)
+### Resultats d'execucions reals
 
-| Mètrica | Valor |
-|---|---|
-| Població escanejada | 949.991 |
-| Elegibles | 13 |
-| No elegibles | 938 |
-| Accés restringit (403) | 49 |
-| Proporció elegible | 1.37% |
+| Execució | Mostra | Població | Elegibles | Accés restringit | Proporció | Millores actives |
+|---|---|---|---|---|---|---|
+| `eligibility_report_1000_3` (baseline històric, esborrat de `data/`, vegeu historial de git) | 1000 | 949.991 | 13 | 49 | 1.37% | Cap (pipeline original, pre-US-302) |
+| `eligibility_report_2000_2` | 2000 | 979.377 | 11 | 74 | 0.58% | Només dispersió temporal (bug de Docker) |
+| **`eligibility_report_2000_3` (execució de referència vigent)** | 2000 | 979.480 | 12 | 87 | 0.63% | Totes dues (dispersió temporal + US-302) |
+
+La proporció d'elegibles (~0.6%) es manté estable entre les dues
+execucions amb dispersió temporal activa, molt per sota del baseline
+històric (1.37%): la major part de la reducció ve de la dispersió
+temporal, i la detecció real de fitxers (US-302) afina encara més la
+qualitat de la classificació. Precisió automàtica (`docs/
+us108_validation_report.md`, comprovació de sessions només per al Criteri
+B, llindar unificat i actualment a 6h): **12/12 = 100%** sobre
+`eligibility_report_2000_3` (totes dues millores actives; execució
+classificada amb el llindar antic de 24h, vegeu nota més amunt), molt per
+sobre del 38.5% del
+baseline històric. (Els percentatges de 81.8%/83.3% citats en versions
+anteriors d'aquest document es van calcular amb metodologies intermèdies
+de l'informe (llindar de sessió d'1h, o comprovació de sessions aplicada
+també al Criteri A) ja corregides -- no comparables directament.)
 
 ## Fase 1 — Extracció de versions (pendent d'implementar)
 
@@ -96,10 +182,13 @@ ordenada de tags/versions amb metadades (data, autor, mida aproximada).
 Mòdul previst: `version_extractor.py`. Ha de reutilitzar `errors.py`
 (mateix sistema de retry/classificació d'errors que Fase 0).
 
-## Fase 2 — Classificació de canvis / taxonomia (pendent, parcialment bloquejat)
+## Fase 2 — Classificació de canvis / taxonomia (pendent)
 
-**Estat: bloquejat.** US-301 (investigar si `commit.files` és accessible
-via `huggingface_hub`) condiciona tot el disseny d'aquesta fase.
+**Estat: desbloquejat.** US-301 ja no condiciona el disseny d'aquesta
+fase: confirmat que `commit.files` no és accessible via `huggingface_hub`,
+i implementada l'alternativa (clonatge "bare" + `git show --name-status`,
+US-302, ja integrada a `eligibility_scan.py`). Pendent: US-303 (decidir
+abast amb el director) i US-304/US-305.
 
 ### Taxonomia (font: paper del director, `docs/taiga/taxonomy.md`)
 

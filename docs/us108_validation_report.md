@@ -1,123 +1,52 @@
-# US-108 — Validació manual dels 13 datasets elegibles (execució de referència)
+# US-108 — Validació (semi-)automàtica dels datasets elegibles
 
-> **Estat: primer esborrany (Claude Code), pendent de confirmació final
-> per Joan.** Aquest document recull l'evidència real (tags/commits,
-> extreta en directe de l'API de HF) per als 13 datasets marcats elegibles
-> a `data/eligibility_report_1000_3.csv` (N=949.991, n=1000, execució de
-> referència citada a `docs/architecture.md`), i una primera classificació
-> raonada de cadascun com a vertader positiu (TP) o fals positiu (FP). La
-> classificació es basa en un criteri objectiu i verificable (dispersió
-> temporal dels commits substantius, vegeu metodologia), però la decisió
-> final de si aquest document tanca el criteri d'acceptació 2 de US-108
-> correspon a Joan (i, si cal, al director) — no a aquest assistent.
+> **Generat automàticament** per `notebooks/validate_eligible.py` (2026-07-29T20:21:23.952669), a partir de `/app/data/eligibility_report_2000_4.csv` (10 datasets elegibles). **Aquest fitxer es regenera sencer a cada execució del script -- no l'editis manualment**, els canvis es perdrien a la següent execució.
 
 ## Metodologia
 
-Per a cada dataset elegible, `notebooks/validate_eligible.py` ha recollit:
+Per cada dataset elegible, `notebooks/validate_eligible.py` recull:
 - Tots els tags (per Criteri A).
-- Fins a 50 commits (`list_repo_commits`, mateix límit que
-  `classify_dataset`), cadascun anotat amb `is_substantive_commit`
+- Fins a 50 commits, anotats amb `eligibility_scan.determine_commit_substantive` -- LA MATEIXA lògica que decideix l'elegibilitat a `classify_dataset` (inspecció real de fitxers via clonatge "bare", US-302, amb fallback a l'heurística de títol si el clonatge falla).
 
-Evidència completa: `data/us108_validation_worksheet.json` (no seguit
-encara per git en aquesta branca, reproduïble executant
-`python notebooks/validate_eligible.py`; els altres fitxers `data/*.csv`/
-`*.json` d'execucions anteriors ja estan versionats com a evidència, així
-que caldrà decidir si aquest es committeja igual quan es tanqui US-108).
+Els commits substantius s'agrupen en **sessions de treball** (`cluster_commit_times`): un cop ordenats cronològicament, una nova sessió comença quan dos commits CONSECUTIUS estan separats per més de 6.0h -- el MATEIX llindar que decideix l'elegibilitat via Criteri B (`eligibility_scan.MIN_SUBSTANTIVE_GAP_HOURS` = 6.0h), un únic concepte de "separació genuïna" en lloc de dos llindars independents que es puguin desincronitzar.
 
-**Criteri de classificació aplicat (nou, no forma part encara del
-pipeline):** un dataset es considera **TP (vertader positiu)** si els
-seus commits substantius estan **separats en el temps per esdeveniments
-d'actualització clarament diferenciats** (típicament, hores/dies/mesos de
-diferència, amb un patró de treball reprès, no una ràfega contínua). Es
-considera **FP (fals positiu)** quan TOTS els commits substantius formen
-part d'una **única sessió de pujada/creació** (segons a minuts de
-diferència), encara que el nombre de commits sigui alt: moltes eines
-d'anotació/captura de dades (p.e. LeRobot) generen desenes de commits
-automàtics en una sola sessió, cadascun amb un títol que passa l'heurística
-(`"Upload folder using huggingface_hub"`, `"Delete folder ..."`) sense
-representar cap "versió" nova en el sentit que interessa a l'estudi.
+Tot i fer servir el mateix llindar, el recompte de sessions NO és redundant amb el Criteri B: aquest només exigeix que l'interval entre el primer i l'últim commit substantiu sigui prou gran (pot complir-se amb una sola sessió densa + un commit outlier allunyat, o amb diversos salts petits que sumen un interval gran sense que cap parell CONSECUTIU superi 6.0h). El recompte de sessions ho detecta.
 
-Aquest criteri (dispersió temporal) **no estava implementat** a
-`classify_dataset()` -- és exactament la limitació que motiva la
-recomanació de la secció "Conclusions" més avall.
+**Aquesta comprovació NOMÉS s'aplica al Criteri B.** El Criteri A (tags explícits) mai ha exigit dispersió temporal a `classify_dataset` -- la presència de >=2 tags ja és un senyal deliberat de versionat per part del mantenidor, i la validació manual original de US-108 el va trobar 100% fiable sense cap comprovació temporal. Aplicar el recompte de sessions també al Criteri A seria un criteri més estricte, inventat a la capa de l'informe, que no reflectiria fidelment el disseny real del pipeline.
+
+- **TP** (automàtic): Criteri A sempre, o Criteri B amb >=2 sessions clarament diferenciades.
+- **REVIEW**: Criteri B amb només 1 sessió -- cal revisió humana (no vol dir necessàriament fals positiu).
+- **ERROR**: no s'ha pogut recollir evidència (accés restringit, xarxa, etc.).
 
 ## Resultat per dataset
 
-| # | Dataset | Criteri | Classificació | Raonament (evidència) |
-|---|---|---|---|---|
-| 1 | [ni25y/training-pick-up](https://huggingface.co/datasets/ni25y/training-pick-up) | B (19/20 subst.) | **FP** | Els 19 commits substantius cauen tots entre 00:22 i 02:22 del mateix dia (2026-04-08), ~1.5h. Patró LeRobot (`Upload folder`/`Delete files data/chunk*`): una sola sessió d'exportació. |
-| 2 | [selvamask/SelvaMask](https://huggingface.co/datasets/selvamask/SelvaMask) | B (13/21 subst.) | **FP** | Tots els commits substantius (create/upload/delete d'imatges) cauen entre 19:30 i 20:28 del 2026-01-27 (~1h). Els commits del 29/01 (26h després) són tots "Update README.md", NO substantius. |
-| 3 | [manro99/pusht_xarm_video](https://huggingface.co/datasets/manro99/pusht_xarm_video) | B (16/16 subst.) | **FP** | Tots els 16 commits entre 22:06 i 22:38 del mateix dia (2024-05-25), ~32 min. Sessió única. |
-| 4 | [riversnow/jenga_training_dataset](https://huggingface.co/datasets/riversnow/jenga_training_dataset) | B (7/7 subst.) | **FP** | Tots els 7 commits entre 20:26 i 20:28 del mateix dia (2025-07-01), ~2 min. Sessió única. |
-| 5 | [triton7777/eval_so100_test_pi0_mix_orange](https://huggingface.co/datasets/triton7777/eval_so100_test_pi0_mix_orange) | B (2/3 subst.) | **FP** | Els 3 commits (incl. "initial commit") entre 14:51:30 i 14:51:38, 8 segons. Un sol esdeveniment de creació dividit en 3 commits. |
-| 6 | [AdilZtn/grab_red_cube_test_25](https://huggingface.co/datasets/AdilZtn/grab_red_cube_test_25) | A (tags v2.1/v3.0) | **TP** | Dos grups de commits clarament separats: 2025-07-16 (creació, tag v2.1) i 2025-09-16 (~2 mesos després: delete files antics + upload nous, tag v3.0). Actualització real i diferenciada. |
-| 7 | [sucrammal/plant_square_pour_2](https://huggingface.co/datasets/sucrammal/plant_square_pour_2) | B (50/50 subst., **límit de 50 assolit**) | **FP** | Els 50 commits revisats (pot haver-n'hi més enllà del límit) formen un flux continu i dens ("Upload folder"/"Delete folder ./data,./videos,./meta") entre 00:39 i 02:50 del mateix dia (2025-04-20), ~2h10. Sense separació real entre "versions". |
-| 8 | [hyzhang01/GCA_instruction](https://huggingface.co/datasets/hyzhang01/GCA_instruction) | A (tags v2.1/v3.0) | **TP** | Mateix patró que #6: dos grups clarament separats, 2025-11-07 i 2025-11-12 (5 dies), cadascun amb upload+delete+readme, i tag propi per grup. |
-| 9 | [autobio-bench/screw_loose-blender](https://huggingface.co/datasets/autobio-bench/screw_loose-blender) | B (4/5 subst.) | **TP** | Commits separats per ~2 mesos (2025-05-14 creació, 2025-07-10 actualització amb delete de `meta/stats.json` + nou upload). Actualització real i diferenciada en el temps. |
-| 10 | [filwsyl/video_tags](https://huggingface.co/datasets/filwsyl/video_tags) | A (tags 1.1.3/v1.4/v1.5) | **TP** | Historial genuí de **2+ anys** (2022-05 a 2024-09), amb missatges de commit descriptius i no automàtics ("Remove deprecated tasks", "Fix `license` metadata"). El cas més convincent dels 13. |
-| 11 | [cgeorgiaw/merfish](https://huggingface.co/datasets/cgeorgiaw/merfish) | B (41/45 subst.) | **FP** | Els commits substantius repeteixen LITERALMENT el mateix títol ("trying yet again to make work for both streaming settings") desenes de vegades en ~20 minuts (2025-05-20, 15:59–16:16). Sessió de depuració iterativa, no versions. |
-| 12 | [imageomics/TreeOfLife-200M](https://huggingface.co/datasets/imageomics/TreeOfLife-200M) | B (18/21 subst.) | **TP** | Historial genuí de **7+ mesos** (2025-10 a 2026-05), commits tipus PR ben descrits ("Add text embeddings...", "BioCLIP 2.5 Huge Training Data Update..."). Dataset mantingut activament. |
-| 13 | [oakwood/efe_br-54](https://huggingface.co/datasets/oakwood/efe_br-54) | B (4/5 subst.) | **FP** | Els 5 commits entre 05:40:44 i 05:40:52, 8 segons. Creació atòmica única. |
+| # | Dataset | Criteri | Veredicte | Evidència | Raonament |
+|---|---|---|---|---|---|
+| 1 | [dl-qft-team/DeepSeek-R1-Distill-Llama-8B-dvts-prm-completions](https://huggingface.co/datasets/dl-qft-team/DeepSeek-R1-Distill-Llama-8B-dvts-prm-completions) | B | **TP** | 12 subst. / 4 sessions | 4 sessions de treball clarament diferenciades (>6.0h de buit entre commits substantius). |
+| 2 | [mothnaZl/QwQ-32B-best_of_n-VLLM-Skywork-o1-Open-PRM-Qwen-2.5-7B-completions](https://huggingface.co/datasets/mothnaZl/QwQ-32B-best_of_n-VLLM-Skywork-o1-Open-PRM-Qwen-2.5-7B-completions) | B | **TP** | 3 subst. / 3 sessions | 3 sessions de treball clarament diferenciades (>6.0h de buit entre commits substantius). |
+| 3 | [zacapa/SO101_FMB_ACT_08](https://huggingface.co/datasets/zacapa/SO101_FMB_ACT_08) | A | **TP** | 25 subst. / 6 sessions | Elegible via Criteri A (tags explícits) -- no s'exigeix dispersió temporal: la presència de >=2 tags ja és un senyal deliberat de versionat per part del mantenidor, independentment de quan es van crear. |
+| 4 | [BrunoM42/robocasa_target_HeatKebabSandwich](https://huggingface.co/datasets/BrunoM42/robocasa_target_HeatKebabSandwich) | A | **TP** | 3 subst. / 2 sessions | Elegible via Criteri A (tags explícits) -- no s'exigeix dispersió temporal: la presència de >=2 tags ja és un senyal deliberat de versionat per part del mantenidor, independentment de quan es van crear. |
+| 5 | [google-research-datasets/natural_questions](https://huggingface.co/datasets/google-research-datasets/natural_questions) | B | **TP** | 7 subst. / 5 sessions | 5 sessions de treball clarament diferenciades (>6.0h de buit entre commits substantius). |
+| 6 | [theayos/libero_spatial_image](https://huggingface.co/datasets/theayos/libero_spatial_image) | A | **TP** | 11 subst. / 3 sessions | Elegible via Criteri A (tags explícits) -- no s'exigeix dispersió temporal: la presència de >=2 tags ja és un senyal deliberat de versionat per part del mantenidor, independentment de quan es van crear. |
+| 7 | [FudgeTechLab/LeRobot_Blue_Cube_PnP](https://huggingface.co/datasets/FudgeTechLab/LeRobot_Blue_Cube_PnP) | B | **TP** | 50 subst. / 3 sessions | 3 sessions de treball clarament diferenciades (>6.0h de buit entre commits substantius). |
+| 8 | [GermanEval/germeval_14](https://huggingface.co/datasets/GermanEval/germeval_14) | B | **TP** | 5 subst. / 2 sessions | 2 sessions de treball clarament diferenciades (>6.0h de buit entre commits substantius). |
+| 9 | [BrunoM42/robocasa_target_SearingMeat](https://huggingface.co/datasets/BrunoM42/robocasa_target_SearingMeat) | A | **TP** | 3 subst. / 2 sessions | Elegible via Criteri A (tags explícits) -- no s'exigeix dispersió temporal: la presència de >=2 tags ja és un senyal deliberat de versionat per part del mantenidor, independentment de quan es van crear. |
+| 10 | [community-datasets/qa_zre](https://huggingface.co/datasets/community-datasets/qa_zre) | B | **TP** | 5 subst. / 3 sessions | 3 sessions de treball clarament diferenciades (>6.0h de buit entre commits substantius). |
 
 ## Agregat
 
 | Mètrica | Valor |
 |---|---|
-| Total elegibles revisats | 13 |
-| Vertaders positius (TP) | 5 (AdilZtn, hyzhang01, autobio-bench, filwsyl, imageomics) |
-| Falsos positius (FP) | 8 (ni25y, selvamask, manro99, riversnow, triton7777, sucrammal, cgeorgiaw, oakwood) |
-| **Precisió estimada** | **5/13 ≈ 38.5%** |
-| Precisió — només Criteri A | 3/3 = 100% (AdilZtn, hyzhang01, filwsyl) |
-| Precisió — només Criteri B | 2/10 = 20% (autobio-bench, imageomics) |
+| Total elegibles | 10 |
+| Criteri A | 4 |
+| Criteri B | 6 |
+| **TP** (Criteri A, o Criteri B amb >=2 sessions) | 10 |
+| **REVIEW** (Criteri B amb 1 sessió, cal revisió humana) | 0 |
+| ERROR | 0 |
+| Precisió automàtica estimada (TP / total) | 10/10 = 100.0% |
 
-## Patró identificat
+## Limitacions
 
-**8 dels 13 elegibles (61.5%) provenen d'un únic patró de fals positiu:**
-datasets de robòtica/captura de dades en format LeRobot
-(`chunk*/episode_*`, missatges `"Upload folder using huggingface_hub"` /
-`"Delete folder ..."`) on una eina automàtica genera desenes de commits en
-una sola sessió de pujada (segons/minuts de diferència). Cada commit
-individual és tècnicament "substantiu" segons `is_substantive_commit`
-(no conté cap paraula clau de manteniment/documentació), però el conjunt
-representa **una sola versió del dataset**, no múltiples.
-
-**Nota destacable**: el Criteri A (100% de precisió en aquesta mostra, 3/3)
-és molt més fiable que el Criteri B (20%, 2/10) en aquesta mostra. Com que
-el Criteri A ja exigeix ≥2 commits substantius (des del canvi documentat a
-`docs/architecture.md`), la diferència de precisió no ve d'aquest
-requisit, sinó que els datasets amb tags explícits tendeixen a tenir
-actualitzacions genuïnament espaiades en el temps (els seus mantenidors
-tagegen versions reals), mentre que el Criteri B (fallback sense tags) cau
-sovint en aquest patró d'"un sol esdeveniment, molts commits".
-
-## Conclusions i recomanació (criteri d'acceptació 4 de US-108)
-
-Amb una precisió estimada del ~38.5% (i només ~20% per al Criteri B en
-solitari), **es recomana replantejar el Criteri B abans de continuar a
-l'Epic 3**, tal com preveu el criteri d'acceptació 4 de la user story.
-
-**Proposta concreta:**
-afegir un requisit de **dispersió temporal mínima** entre els commits
-substantius comptats pel Criteri B (p.e., que almenys 2 commits
-substantius estiguin separats per més d'una hora, o d'un dia), en lloc de
-comptar-los sense considerar quan es van fer. Aquest canvi:
-- Eliminaria els 6 falsos positius de "sessió única" (#1, #3, #4, #5, #7,
-  #13) i el cas de repetició literal (#11, `cgeorgiaw/merfish`).
-- És coherent amb -- i probablement un pas previ barat a -- US-301/US-302
-  (detecció real de fitxers modificats), ja que no requereix inspeccionar
-  contingut, només reordenar la lògica existent per timestamp.
-- Es podria implementar i re-executar sobre la mostra de referència en
-  poc temps per confirmar si la precisió millora abans d'escalar-ho.
-
-## Limitacions d'aquesta validació
-
-- Mostra petita (13 datasets): els percentatges no són generalitzables amb
-  gaire marge d'error; útils com a senyal de disseny, no com a mètrica
-  final per a la memòria sense ampliar la mostra.
-- `sucrammal/plant_square_pour_2` (#7) va assolir el límit de 50 commits
-  revisats: podria tenir història anterior no vista (encara que, donat el
-  patró dens i continu observat, és improbable que canviï la conclusió).
-- La classificació TP/FP d'aquest document és un primer pas raonat fet per
-  Claude Code a partir de timestamps i títols de commit -- NO una
-  inspecció del contingut real de cada dataset. Coincideix amb el criteri
-  d'acceptació 2 de US-108 ("confirmar/desmentir el criteri assignat").
+- El veredicte **TP** és una inferència automàtica basada en la dispersió temporal de sessions, no una inspecció manual del contingut real de cada versió. Segueix sent una heurística -- més robusta que la versió purament basada en títol, però no una confirmació humana definitiva (US-108, criteri d'acceptació 2).
+- El veredicte **REVIEW** no implica necessàriament un fals positiu: una sola actualització real posterior a la creació és legítimament una segona versió encara que només generi una separació d'un sol "salt" -- cal ull humà per confirmar-ho.
+- Aquest informe substitueix qualsevol versió anterior de `docs/us108_validation_report.md` a cada execució; si es vol conservar una anàlisi concreta, cal desar-la a part (o consultar l'historial de git) abans de tornar a executar `validate_eligible.py`.
