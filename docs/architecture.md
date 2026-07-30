@@ -124,8 +124,10 @@ de 24h. I, com sempre, confirmació final de Joan/director.
      `is_substantive_commit` si el clonatge falla -- **cal `git`
      instal·lat al sistema/imatge**, vegeu nota de bug de Docker més
      amunt).
-   - Mode `--tags-only`: només Criteri A original (1 crida per dataset),
-     per a escanejos ràpids amb menys pressió sobre l'API.
+   - Mode `--tags-only`: només permet elegibilitat via Criteri A (el
+     Criteri B mai s'avalua), però segueix verificant els commits
+     substantius (`list_repo_commits` + clonatge) -- només estalvia
+     crides quan `tags < 2` (cas en què cap criteri pot aplicar-se).
 4. `write_results()` — CSV + JSON amb `FunnelCounts`/`compute_funnel_stats`
    (dues mètriques diferenciades: `eligible_proportion` i
    `eligible_proportion_of_attempts`, vegeu decisió D-de-disseny més avall).
