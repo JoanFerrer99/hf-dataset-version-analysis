@@ -79,18 +79,6 @@ NON_SUBSTANTIVE_TITLE_KEYWORDS = {
     "license", "citation", "typo", "fix typo", "update docs",
 }
 
-# Separació temporal mínima, en hores, entre dos commits substantius
-# CONSECUTIUS perquè es considerin sessions de treball diferents (Criteri
-# B, `has_time_dispersed_substantive_commits`; i, per coherència,
-# `validate_eligible.cluster_commit_times` -- vegeu docs/
-# us108_validation_report.md). Abans era 24h: amb un llindar tan gran,
-# una sèrie de commits separats per <24h cadascun però repartits en
-# diversos dies (p.e. un cada ~20h durant una setmana) es podia comptar
-# com UNA sola sessió, ja que la comprovació només mira el buit entre
-# parells CONSECUTIUS, no l'interval total. Reduït a 6h per fer que
-# aquest fals negatiu de "sessió única" sigui molt menys probable, sense
-# tornar-lo tan permissiu com per confondre commits d'una mateixa
-# jornada de treball normal.
 MIN_SUBSTANTIVE_GAP_HOURS = 6.0
 GIT_CLONE_TIMEOUT_S = 30
 GIT_SHOW_TIMEOUT_S = 10
@@ -236,11 +224,12 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
                d'un dataset amb >=2 tags on els commits associats només
                toquen README/metadades: sense prou commits substantius,
                els tags no representen canvis reals de dataset i no
-               compten com a Criteri A. Excepció: en mode `tags_only=True`
-               només es demana >=2 tags (vegeu més avall).
+               compten com a Criteri A. S'avalua igual amb `tags_only=True`
+               o `False` (vegeu més avall).
     Criteri B: >= 2 branches I >= 2 commits substancials (canvis reals de
                dataset, no purament documentals) SEPARATS EN EL TEMPS per
-               almenys `MIN_SUBSTANTIVE_GAP_HOURS` hores
+               almenys `MIN_SUBSTANTIVE_GAP_HOURS` hores. MAI s'avalua en
+               mode `tags_only=True` (vegeu més avall).
 
     Un commit es considera substantiu si TOCA REALMENT algun fitxer de
     dades (no purament de metadades/documentació): `determine_commit_
@@ -251,20 +240,18 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
     clonatge o `git show` fallen per aquest dataset/commit (git no
     instal·lat, timeout, xarxa...).
 
-    Si `tags_only=True`, només s'avalua el Criteri A ORIGINAL (>=2 tags,
-    sense verificar commits substantius; una sola crida a l'API): útil per
-    fer un escaneig complet més ràpid i amb molt menys risc de rate
-    limiting quan només interessa una estimació ràpida.
-
     :param dataset_id: identificador del dataset a classificar, format
         `owner/name` (p.e. `"allenai/c4"`).
-    :param tags_only: si `True`, avalua només el Criteri A original (>=2
-        tags, sense verificar commits substantius ni consultar el Criteri
-        B): una sola crida a l'API (`list_repo_refs`), sense la crida
-        addicional a `list_repo_commits`. Pensat per a escanejos on
-        interessa minimitzar el rate limiting a costa de perdre precisió
-        (no detecta elegibilitat via Criteri B, ni verifica que els tags
-        estiguin backats per canvis reals).
+    :param tags_only: si `True`, el dataset NOMÉS pot ser elegible via
+        Criteri A (el Criteri B mai s'avalua, encara que `branches >= 2`).
+        El Criteri A es verifica igual de rigorosament que en mode normal
+        (es crida `list_repo_commits` i es comprova `num_commits_
+        substantive >= 2`) -- `tags_only` restringeix QUIN criteri pot
+        concedir elegibilitat, no si es verifiquen els commits. Estalvia
+        crides (`list_repo_commits` + clonatge) només en el cas en què el
+        dataset no pot ser elegible per cap dels dos criteris en aquest
+        mode (`tags < 2` i, com que el Criteri B està desactivat, no cal
+        mirar `branches`).
     :return: diccionari amb els camps del CSV final:
         - dataset_id (str): l'id rebut per paràmetre.
         - num_tags (int): nombre de tags trobats (0 si ha fallat abans
@@ -310,20 +297,12 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
         result["num_tags"] = len(tags)
         result["num_branches"] = len(branches)
 
-        if len(tags) >= 2 and tags_only:
-            result["eligible"] = True
-            result["eligibility_reason"] = "Criteri A: tags>=2"
-            return result
-
-        if tags_only:
-            result["eligibility_reason"] = "ineligible: tags<2 (tags_only, Criteri B omès)"
-            return result
-
         commits_scanned = 0
         num_commits_substantive = 0
-        substantive_commit_times: list[datetime | None] = []
+        earliest_substantive_time: datetime | None = None
+        latest_substantive_time: datetime | None = None
 
-        if len(tags) >= 2 or len(branches) >= 2:
+        if len(tags) >= 2 or (not tags_only and len(branches) >= 2):
             commits_iter = errors.with_retry(
                 list_repo_commits, repo_id=dataset_id, repo_type="dataset", token=HF_TOKEN,
                 **RETRY_CONFIG,
@@ -334,7 +313,12 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
 
                     if determine_commit_substantive(commit, clone_dir):
                         num_commits_substantive += 1
-                        substantive_commit_times.append(getattr(commit, "created_at", None))
+                        commit_time = getattr(commit, "created_at", None)
+                        if commit_time is not None:
+                            if earliest_substantive_time is None or commit_time < earliest_substantive_time:
+                                earliest_substantive_time = commit_time
+                            if latest_substantive_time is None or commit_time > latest_substantive_time:
+                                latest_substantive_time = commit_time
 
                     if len(tags) >= 2 and num_commits_substantive >= 2:
                         result["eligible"] = True
@@ -342,8 +326,8 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
                         result["num_commits_substantive"] = num_commits_substantive
                         return result
 
-                    if len(branches) >= 2 and has_time_dispersed_substantive_commits(
-                        substantive_commit_times
+                    if not tags_only and len(branches) >= 2 and has_time_dispersed_substantive_commits(
+                        [earliest_substantive_time, latest_substantive_time]
                     ):
                         result["eligible"] = True
                         result["eligibility_reason"] = (
@@ -868,7 +852,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--tags-only", action="store_true",
-        help="Avalua només el Criteri A (tags). Una crida per dataset, molt menys rate limiting.",
+        help=(
+            "Nomes permet elegibilitat via Criteri A (tags); el Criteri B mai "
+            "s'avalua. Segueix verificant els commits substantius del Criteri A."
+        ),
     )
     parser.add_argument(
         "--sample-size", "-n",

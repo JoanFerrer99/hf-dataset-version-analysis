@@ -398,9 +398,42 @@ class TestClassifyDatasetResultShape:
         assert result["status"] == "classified"
         assert result["eligible"] is False
 
-    def test_tags_only_mode_skips_the_substantive_commit_check(self, monkeypatch, tmp_path):
-        # tags_only=True: >=2 tags n'hi ha prou, sense consultar commits.
+    def test_tags_only_still_verifies_substantive_commits_for_criteria_a(self, monkeypatch, tmp_path):
+        # tags_only=True NO evita list_repo_commits: el Criteri A es
+        # verifica amb el mateix rigor que en mode normal.
         monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1", "v2"]))
+        monkeypatch.setattr(
+            es, "list_repo_commits",
+            lambda **kw: iter([_FakeCommit("Add new records"), _FakeCommit("Fix labeling errors")]),
+        )
+        monkeypatch.setattr(es, "bare_clone", _no_git_clone)
+        monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
+
+        result = es.classify_dataset("org/ds", tags_only=True)
+
+        assert result["eligible"] is True
+        assert result["eligibility_reason"] == "Criteri A: tags>=2 amb commits substantius"
+
+    def test_tags_only_with_insufficient_substantive_commits_is_not_eligible(self, monkeypatch, tmp_path):
+        # >=2 tags per si sols ja NO n'hi ha prou (a diferència del
+        # comportament antic de "camí ràpid").
+        monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1", "v2"]))
+        monkeypatch.setattr(
+            es, "list_repo_commits",
+            lambda **kw: iter([_FakeCommit("Update README"), _FakeCommit("Add new records")]),
+        )
+        monkeypatch.setattr(es, "bare_clone", _no_git_clone)
+        monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
+
+        result = es.classify_dataset("org/ds", tags_only=True)
+
+        assert result["eligible"] is False
+
+    def test_tags_only_never_eligible_via_criteria_b(self, monkeypatch, tmp_path):
+        # tags<2 amb tags_only=True: el Criteri B mai pot aplicar-se en
+        # aquest mode, així que ni s'ha d'entrar al bucle de commits
+        # (list_repo_commits no s'hauria de cridar).
+        monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(branches=["main", "dev"]))
         monkeypatch.setattr(
             es, "list_repo_commits",
             lambda **kw: (_ for _ in ()).throw(AssertionError("no s'hauria de cridar")),
@@ -409,8 +442,7 @@ class TestClassifyDatasetResultShape:
 
         result = es.classify_dataset("org/ds", tags_only=True)
 
-        assert result["eligible"] is True
-        assert result["eligibility_reason"] == "Criteri A: tags>=2"
+        assert result["eligible"] is False
 
     def test_status_is_classified_when_ineligible(self, monkeypatch, tmp_path):
         monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs())
