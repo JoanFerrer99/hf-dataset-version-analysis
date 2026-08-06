@@ -11,7 +11,7 @@ main (v1.0, v1.1...)      ← PRODUCCIÓ (estable)
   │
   └─ develop              ← INTEGRACIÓ (principal development)
       ├─ feature/xyz      ← Noves funcionalitats
-      └─ hotfix/bug-123   ← Correccions crítiques
+      └─ fix/bug-123   ← Correccions crítiques
 ```
 
 ---
@@ -19,7 +19,7 @@ main (v1.0, v1.1...)      ← PRODUCCIÓ (estable)
 ## Branques Permanents
 
 ### **main**
-- **Source**: Merge de `release/` o `hotfix/`
+- **Source**: Merge de `release/` o `fix/`
 - **Protecció**: ✅ Require PR + CI en verd (sense aprovació obligatòria — projecte d'una sola persona, GitHub no permet auto-aprovar la pròpia PR)
 - **Tags**: Versionat (v1.0.0, v1.1.0...)
 - **Política**: `git merge --no-ff` per mantenir històric de merge
@@ -50,7 +50,6 @@ git merge --no-ff feature/random-sampling-unbiased
 ### **feature/\***
 - **Origen**: Branch des de `develop`
 - **Naming**: `feature/descriptive-name` o `feature/TASK-123-description`
-- **Merger**: PR a `develop` (autorevisat — sense aprovació obligatòria, vegeu secció "Branques Permanents")
 - **Cleanup**: Eliminar després de merge
 
 Flux complet:
@@ -70,12 +69,6 @@ git push origin feature/random-sampling-unbiased
 git branch -d feature/random-sampling-unbiased
 git push origin --delete feature/random-sampling-unbiased
 ```
-
-### **release/\***
-- **Origen**: Branch des de `develop`
-- **Naming**: `release/v1.0.0` o `release/vX.Y.Z`
-- **Merger**: PR a `main` + merge back a `develop`
-- **Activitats**: Bump version, fix release-critical bugs, actualitzar CHANGELOG
 
 Flux:
 ```bash
@@ -169,23 +162,6 @@ integrat de l'Action.
 
 ---
 
-## Versioning & Tags
-
-Usem **Semantic Versioning**: `vMAJOR.MINOR.PATCH`
-
-```
-v1.0.0      - Release estable (main)
-v1.0.1      - Hotfix (main)
-v1.1.0      - Minor feature release (main)
-v2.0.0      - Major breaking changes (main)
-
-develop     - Sens versió (pre-release versions es 1.X.0-rc1)
-```
-
-Crear tag:
-```bash
-git tag -a v1.0.0 -m "Release version 1.0.0"
-git push origin v1.0.0
 ```
 
 ## Commit Style
@@ -272,7 +248,7 @@ git push origin --delete release/v1.2.0
 ```bash
 # 1. Create hotfix
 git checkout main
-git checkout -b hotfix/critical-bug-fix
+git checkout -b fix/critical-bug-fix
 
 # 2. Fix & test
 # ... fix ...

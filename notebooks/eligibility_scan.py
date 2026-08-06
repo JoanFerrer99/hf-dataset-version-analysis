@@ -235,7 +235,7 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
     dades (no purament de metadades/documentació): `determine_commit_
     substantive` inspecciona els fitxers reals afegits/modificats/
     eliminats per cada commit via un clonatge "bare" local
-    (`bare_clone`/`get_changed_files`/`is_substantive_path`, US-302), i
+    (`bare_clone`/`get_changed_files`/`is_substantive_path`), i
     només recorre a l'heurística de títol (`is_substantive_commit`) si el
     clonatge o `git show` fallen per aquest dataset/commit (git no
     instal·lat, timeout, xarxa...).
@@ -499,10 +499,6 @@ def get_changed_files(clone_dir: str, commit_sha: str) -> list[str] | None:
             line = line.strip()
             if not line:
                 continue
-            # Format "git show --name-status": "<estat>\t<ruta>" per a
-            # afegits/modificats/eliminats, o "<estat>\t<ruta_antiga>\t
-            # <ruta_nova>" per a renombrats -- l'última columna sempre és
-            # la ruta rellevant per decidir si el commit és substantiu.
             columns = line.split("\t")
             if len(columns) >= 2:
                 paths.append(columns[-1])

@@ -176,8 +176,6 @@ també al Criteri A) ja corregides -- no comparables directament.)
 
 ## Fase 1 — Extracció de versions (pendent d'implementar)
 
-**Estat: no iniciat.** Depèn de US-108 (llista d'elegibles validada).
-
 Objectiu: per cada dataset elegible, obtenir la seqüència completa i
 ordenada de tags/versions amb metadades (data, autor, mida aproximada).
 
@@ -189,8 +187,7 @@ Mòdul previst: `version_extractor.py`. Ha de reutilitzar `errors.py`
 **Estat: desbloquejat.** US-301 ja no condiciona el disseny d'aquesta
 fase: confirmat que `commit.files` no és accessible via `huggingface_hub`,
 i implementada l'alternativa (clonatge "bare" + `git show --name-status`,
-US-302, ja integrada a `eligibility_scan.py`). Pendent: US-303 (decidir
-abast amb el director) i US-304/US-305.
+US-302, ja integrada a `eligibility_scan.py`).
 
 ### Taxonomia (font: paper del director, `docs/taiga/taxonomy.md`)
 

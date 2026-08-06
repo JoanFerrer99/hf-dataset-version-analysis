@@ -1,9 +1,5 @@
 # TODO — sincronitzat amb Taiga
 
-> Els IDs (US-XXX) són els mateixos que `docs/taiga/taiga_user_stories.md`
-> i `.csv`. Si Claude Code marca alguna cosa com feta aquí, actualitza
-> també l'estat corresponent al CSV/MD de Taiga (i viceversa) — aquest
-> fitxer i Taiga han de dir sempre el mateix.
 
 ## Seguiment del projecte
 

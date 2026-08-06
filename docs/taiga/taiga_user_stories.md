@@ -2,9 +2,7 @@
 ## User Stories per a Taiga — Pla teòric + recorregut real
 
 Format: cada user story segueix l'esquema INVEST (As a / I want / So that)
-amb criteris d'acceptació. L'estat reflecteix el que ja està implementat al
-codi (`eligibility_scan.py`, `errors.py`) i el que resta pendent segons el
-pla teòric acordat amb el director.
+amb criteris d'acceptació. 
 
 Llegenda d'estat: `✅ Done` · `🔄 In progress` · `⛔ Blocked` · `📋 To do`
 
@@ -258,18 +256,7 @@ positius sistemàtics.
   — AUTOMATITZAT: `validate_eligible.py` genera un veredicte
   TP/REVIEW/ERROR per dataset a cada execució (agrupació de commits
   substantius en sessions, `cluster_commit_times`, buit >
-  `MIN_SUBSTANTIVE_GAP_HOURS` entre commits CONSECUTIUS). Aquesta
-  comprovació **només s'aplica al Criteri B** (branches): el Criteri A
-  (tags explícits) mai ha exigit dispersió temporal a `classify_dataset`
-  -- >=2 tags ja és un senyal deliberat de versionat pel mantenidor.
-  (Iteracions intermèdies corregides: primer es va aplicar per igual a A
-  i B, marcant erròniament com a REVIEW casos de Criteri A legítims com
-  `qualia-robotics/qualia-dataset-real` o `aytsaiusc/play_robot_new_1`;
-  després es va reduir el llindar de 24h a 6h perquè amb 24h una sèrie de
-  commits separats per <24h cadascun però repartits en diversos dies es
-  podia comptar erròniament com una sola sessió.) Sobre l'execució de
-  referència neta `eligibility_report_2000_3.csv`: **12/12 (0 REVIEW)**.
-  **Pendent confirmació humana final de Joan/director**
+  `MIN_SUBSTANTIVE_GAP_HOURS` entre commits CONSECUTIUS).
 - [x] Documentar el % d'acord (precisió de la heurística) per a la secció
   de validesa de la memòria — execució de referència neta
   (`eligibility_report_2000_3.csv`, totes dues millores actives):
