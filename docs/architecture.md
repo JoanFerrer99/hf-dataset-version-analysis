@@ -104,6 +104,52 @@ del mateix llindar unificat), caldria una execució neta amb 6h per
 confirmar si sorgeixen nous elegibles que abans no complien el llindar
 de 24h. I, com sempre, confirmació final de Joan/director.
 
+### Detecció de fitxers substantius: de denylist pura a allowlist+prefix (agost 2026)
+
+**Problema detectat**: `is_substantive_path()` (US-302) determinava si un
+fitxer era substantiu amb una única llista negra de noms exactes
+(`NON_SUBSTANTIVE_FILES`): tot el que NO hi era explícitament es
+considerava substantiu per defecte ("fail-open total"). Aquest disseny és
+estructuralment incapaç de ser complet -- un denylist enumera exclusions
+d'un espai obert (qualsevol nom de fitxer possible), així que sempre hi
+ha convencions noves que se n'escapen (`CARD.md`, `pyproject.toml`,
+`changelog.json`, etc.).
+
+**Calibratge empíric** (4 datasets reals clonats i inspeccionats:
+`AG42/lerobot_dataset_try1`, `villekuosmanen/close_shoebox`,
+`unitreerobotics/G1_Dex3_ObjectPlacement_Dataset`,
+`AndreaBozzo/ceres-open-data-index`): es va explorar fer servir la MIDA
+del fitxer com a desempat per a extensions ambigües (`.json`/`.txt`),
+llegint la mida real via el punter LFS (el "blob" que git guarda per a un
+fitxer LFS és només ~130 bytes de text amb un camp `size:`, així que
+llegir-lo no trenca la garantia de "mai descarregar dades reals" de
+`bare_clone`). **Resultat descartat**: la mida NO separa bé metadada de
+dades reals -- fitxers de metadades poden ser MÉS GRANS que fitxers de
+dades genuïns del mateix dataset (`meta/episodes_stats.jsonl` de
+villekuosmanen pesa 393KB, més que la majoria dels
+`data/chunk-*/episode_*.parquet` del mateix dataset; `meta/episodes/
+chunk-000/file-000.parquet` d'unitreerobotics pesa 482KB, també metadada
+tot i l'extensió `.parquet`). El senyal que SÍ va separar-ho de forma
+consistent en els 4 datasets: el **prefix de la ruta** (`meta/` conté
+sempre metadada, `data/`/`videos/` sempre contingut real).
+
+**Disseny final** (`NON_SUBSTANTIVE_PATH_PREFIXES`,
+`NON_SUBSTANTIVE_EXTENSIONS`, `SUBSTANTIVE_DATA_EXTENSIONS`,
+`NON_SUBSTANTIVE_FILES`), en ordre de decisió dins `is_substantive_path`:
+1. Prefix de ruta a `meta/`/`meta_data/`/`.github/` → NO substantiu,
+   **independentment de l'extensió** (comprovat abans que l'extensió a
+   propòsit: un `.parquet` sota `meta/` és metadada, no dades).
+2. Nom exacte a `NON_SUBSTANTIVE_FILES` (inclou `changelog.json`, trobat
+   al calibratge), o extensió a `NON_SUBSTANTIVE_EXTENSIONS` (`.md`,
+   `.yml`, `.yaml`, `.toml`, `.cfg`, `.ini`, `.lock` -- generalitzat per
+   extensió, no només `README.md`/`setup.cfg` un per un) → NO substantiu.
+3. Extensió a `SUBSTANTIVE_DATA_EXTENSIONS` (parquet, csv, arrow, tensors,
+   multimèdia, arxius) → substantiu.
+4. Qualsevol altre cas (p.e. `.json`/`.txt` fora de `meta/`, o una
+   extensió no prevista) → substantiu per defecte (fail-open), però
+   registrat (`log.debug`) perquè es pugui revisar i ampliar les llistes
+   amb dades reals més endavant, en lloc d'endevinar-les.
+
 ### Flux
 
 1. `iter_all_dataset_ids()` — genera ids de tota la població de HF
@@ -123,7 +169,9 @@ de 24h. I, com sempre, confirmació final de Joan/director.
      `git show --name-status`, amb fallback a l'heurística de títol
      `is_substantive_commit` si el clonatge falla -- **cal `git`
      instal·lat al sistema/imatge**, vegeu nota de bug de Docker més
-     amunt).
+     amunt). Un fitxer concret es considera substantiu segons
+     `is_substantive_path` (prefix de ruta + extensió, vegeu secció
+     "Detecció de fitxers substantius" més avall).
    - Mode `--tags-only`: només permet elegibilitat via Criteri A (el
      Criteri B mai s'avalua), però segueix verificant els commits
      substantius (`list_repo_commits` + clonatge) -- només estalvia

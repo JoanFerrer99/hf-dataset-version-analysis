@@ -2,7 +2,7 @@
 DECISIONS DEL TFG — How do HuggingFace Datasets Change?
 Joan [Cognom]  |  Grau en Enginyeria Informàtica (GEI) — Esp. Enginyeria del Software
 Director: Alberto Abelló (UPC - FIB)
-Última actualització: juny 2026
+Última actualització: agost 2026
 ================================================================================
 
 Aquest document registra totes les decisions tècniques, metodològiques i
@@ -27,24 +27,36 @@ automatitzat que, mitjançant l'API pública de HF, permeti identificar els
 datasets amb múltiples versions, extreure'n les diferències rellevants entre
 versions consecutives i classificar el tipus de canvi produït.
 
-OBJECTIUS ESPECÍFICS (OE)
---------------------------
+OBJECTIUS ESPECÍFICS (OE) — ESTAT ACTUAL
+------------------------------------------
 OE1. Identificar de manera automàtica quants datasets de HuggingFace tenen
      múltiples versions detectables, i quina proporció de la població total
      representen. [Fase 0 — Filtratge previ i mostreig]
+     ESTAT: ✅ Pràcticament tancat. Pipeline complet i validat (vegeu Bloc 2,
+     M-02, i Bloc 6). Proporció d'elegibles observada: ~0.6% (execució de
+     referència `eligibility_report_2000_3.csv`, N≈979.480).
 
 OE2. Dissenyar un pipeline ETL que extregui, per a cada dataset elegible,
      les diferències entre versions consecutives de forma automatitzada.
      [Fase 1 — Extracció; Fase 2 — Transformació]
+     ESTAT: 🔲 No iniciat. Depèn de OE1 (llista d'elegibles ja disponible).
 
 OE3. Definir i implementar criteris de classificació que distingeixin canvis
      que afecten el contingut o l'esquema de les dades (canvis substantius /
      "breaking") dels canvis que afecten només metadades o documentació.
      [Fase 2 — Classificació; Fase 3 — Validació]
+     ESTAT: 🔲 No iniciat pel que fa a la taxonomia de 15 codis (Fase 2),
+     però el risc tècnic clau que la bloquejava (R-01, accés a la llista de
+     fitxers per commit) ja està resolt (vegeu Bloc 5).
 
 OE4. Avaluar la cobertura i fiabilitat del pipeline sobre la població
      elegible completa o una mostra estratificada si la mida ho requereix.
      [Fase 3 — Validació i anàlisi descriptiva]
+     ESTAT: 🔲 No iniciat pel que fa a l'anàlisi final, però ja s'ha fet una
+     primera validació de fiabilitat de la Fase 0 (US-108): precisió
+     automàtica del criteri d'elegibilitat millorada de 38.5% a 100% sobre
+     l'execució de referència, després d'identificar i corregir un patró
+     sistemàtic de falsos positius (vegeu M-02 i R-04).
 
 COMPETÈNCIES TÈCNIQUES (inscripció FIB)
 ----------------------------------------
@@ -68,6 +80,7 @@ BLOC 2 — DECISIONS METODOLÒGIQUES
 DECISIÓ M-01: Metodologia de mostreig
 Data: juny 2026
 Responsable: Joan + Director
+Estat: ✅ Implementat i sense canvis
 
 Decisió: Reservoir sampling (algorisme R de Vitter) sobre TOTA la població
 de datasets de HF, sense ordenar per popularitat.
@@ -83,36 +96,127 @@ Referència: Paper "Lessons Learned from Mining the Hugging Face Repository"
 
 Alternativa descartada: Ordenació per downloads/likes (biaix de popularitat).
 Alternativa futura: Si la població elegible és gran, aplicar estratificació
-per domini + quartil de versions + quartil de popularitat.
+per domini + quartil de versions + quartil de popularitat. DECIDIT (vegeu
+A-01 actualitzada): NO ha calgut, la proporció observada (~0.6-1.37% segons
+l'execució) és molt per sota del llindar del 5% que hauria activat aquesta
+alternativa.
+
+Implementació: `iter_all_dataset_ids()` genera ids de tota la població
+(~980K) sense materialitzar-la a memòria, amb `expand=["disabled"]` per
+minimitzar la transferència de dades. `reservoir_sample_dataset_ids()`
+guarda NOMÉS strings (ids) al reservori, mai l'objecte `DatasetInfo`
+complet — requisit explícit del director per evitar problemes de memòria.
 
 
 DECISIÓ M-02: Criteri d'elegibilitat d'un dataset
-Data: juny 2026
+Data: juny 2026 (revisada substancialment: juliol-agost 2026)
 Responsable: Joan + Director
+Estat: ✅ Implementat, validat empíricament (US-108) i corregit
 
-Un dataset és elegible (inclòs en l'estudi) si compleix UN dels dos criteris:
-  Criteri A — Versionat explícit: el repo té >= 2 tags de Git (equivalent
-              a "releases" en el paper dels LLM, secció 4.2.1).
-  Criteri B — Commits substantius (fallback): >= 2 commits el títol dels
-              quals no és purament documental (README, llicència, citació).
+Versió ACTUAL del criteri (post-validació, substitueix la versió original
+de juny 2026 descrita més avall):
 
-Raonament: La majoria de datasets de HF no fan servir tags explícits (a
-diferència dels models LLM). El Criteri B és una heurística de fallback per
-capturar datasets amb historial de canvis real però sense versionat formal.
-Cal validar empíricament quin % d'elegibles prové de cada criteri per
-avaluar la robustesa de la heurística.
+  Criteri A — Versionat explícit: >= 2 tags de Git I >= 2 commits
+              substantius associats als tags (evita comptar tags "buits"
+              sense canvi real de dataset). NO exigeix cap dispersió
+              temporal entre els tags: la presència de >=2 tags ja és un
+              senyal deliberat de versionat pel mantenidor.
 
-Limitació coneguda: La detecció per títol de commit (Criteri B) és una
-heurística que pot generar falsos positius (commits substantius que en
-realitat només canvien metadades). Caldrà validació manual d'una mostra.
+  Criteri B (fallback) — >= 2 branches I >= 2 commits substantius
+              SEPARATS EN EL TEMPS per almenys `MIN_SUBSTANTIVE_GAP_HOURS`
+              (actualment 6 hores, entre el commit substantiu més antic i
+              el més recent).
+
+  Un commit es considera "substantiu" (per a tots dos criteris) si TOCA
+  REALMENT algun fitxer de dades, no purament de metadades/documentació.
+  Es determina per INSPECCIÓ REAL dels fitxers afectats pel commit (clonatge
+  "bare" local + `git show --name-status`, vegeu R-01 més avall), amb
+  fallback a una heurística de títol només si el clonatge falla.
+
+Versió ORIGINAL (juny 2026, per registre històric):
+  Criteri A — >= 2 tags de Git (sense verificar cap commit substantiu).
+  Criteri B — >= 2 commits el títol dels quals no és purament documental.
+  (Sense requisit de dispersió temporal, sense inspecció real de fitxers.)
+
+CANVIS RESPECTE A LA VERSIÓ ORIGINAL i per què:
+
+  1. Criteri A ara exigeix també >=2 commits substantius (no només tags):
+     cobreix el cas (improbable però possible) de tags "buits" sense canvi
+     real associat.
+
+  2. Criteri B ara exigeix dispersió temporal mínima entre commits
+     substantius: la VALIDACIÓ MANUAL de US-108 (vegeu més avall) va trobar
+     que el Criteri B original tenia una precisió de només 20% (2/10) sobre
+     la mostra de referència. La causa identificada: eines d'exportació
+     automàtica de dades (p.e. LeRobot, per a datasets de robòtica) generen
+     desenes de commits en una única sessió de pujada de segons/minuts
+     (`"Upload folder using huggingface_hub"`, `"Delete folder ..."`); cada
+     commit individual passa l'heurística de títol, però el conjunt
+     representa UNA sola versió, no múltiples. Exigir que els commits
+     substantius estiguin repartits en el temps (no en una sola sessió)
+     elimina la major part d'aquest patró de fals positiu.
+
+  3. Detecció real de fitxers en lloc de l'heurística de títol pura
+     (RISC R-01, ara resolt): en lloc de confiar només en el títol del
+     commit (que pot ser genèric o enganyós), s'inspeccionen els fitxers
+     REALS afectats via un clonatge "bare" del repositori (`git clone
+     --bare --filter=blob:none`, sense descarregar el contingut real de
+     les dades) i `git show --name-status <sha>` per cada commit — la
+     mateixa tècnica que el paper dels LLM (Castaño et al. 2025, secció
+     4.2.1) fa servir per al mateix problema exacte. Un fitxer es considera
+     "substantiu" si NO és purament de metadades/documentació (README,
+     .gitattributes, dataset_infos.json, LICENSE, CITATION.cff, .github/,
+     etc.).
+
+RESULTAT DE LA VALIDACIÓ (US-108):
+  Sobre l'execució de referència neta (`eligibility_report_2000_3.csv`,
+  N≈979.480, 12 elegibles), amb totes dues millores actives, la precisió
+  automàtica ESTIMADA (basada en agrupació de commits substantius en
+  "sessions de treball" — >=2 sessions clarament diferenciades pel Criteri
+  B, el Criteri A és sempre considerat correcte pel seu propi disseny) va
+  passar de 38.5% (5/13, execució original pre-correccions) a 100% (12/12).
+  Aquesta xifra és una heurística automàtica de coherència, NO una
+  confirmació manual definitiva — pendent de revisió final per Joan/el
+  director (vegeu `docs/us108_validation_report.md`, regenerat
+  automàticament a cada execució de `validate_eligible.py`).
+
+  Limitació residual identificada explícitament (no "corregida" ajustant
+  paràmetres a mida): datasets amb múltiples tags creats el mateix dia
+  natural (separats només per hores) es classifiquen com a elegibles via
+  Criteri A tot i que podrien representar una sola sessió de publicació
+  esglaonada en lloc de versions independents — es deixa per a judici humà
+  explícit en lloc de "resoldre's" silenciosament amb un llindar ad hoc.
+
+Limitació coneguda (residual, no eliminable del tot): la detecció de
+fitxers substantius per commit segueix sent una aproximació al concepte de
+"versió real" — no inspecciona el CONTINGUT de les dades (només quins
+fitxers han canviat), així que no distingeix, p.e., un canvi cosmètic d'un
+fitxer de dades d'un canvi substancial del seu contingut. Aquesta limitació
+és exactament l'abast de l'OE3/Fase 2 (taxonomia de canvis), encara no
+iniciada.
 
 
 DECISIÓ M-03: Definició de "canvi substantiu" (taxonomia)
 Data: juny 2026
 Responsable: Director
+Estat: ⚠️ SUBSTITUÏDA per una versió formal i codificada (juliol 2026)
 
-Base: Taxonomia de canvis de datasets definida pel professor (paper PROFES
-2026 en preparació). Estructura de la taxonomia:
+Aquesta secció descriu la taxonomia INFORMAL original (mapa mental, sense
+codis), conservada per registre històric. HA ESTAT SUBSTITUÏDA per la
+taxonomia formal codificada del paper del director (15 codis C100-C530 en
+5 perspectives, amb ground truth validat sobre el dataset Census Income —
+9 versions reals de HF), documentada a `docs/taiga/taxonomy.md`. Els canvis
+principals respecte a aquesta versió informal:
+  - "Arity" (dins de Columns Set) eliminada com a categoria classificable
+    pròpia — ara es tracta com a "impacte", no com a tipus de canvi.
+  - "Column Type → Categorical → Order" eliminada explícitament (informació
+    no disponible al propi dataset).
+  - "Cardinality" (dins de Rows Set) eliminada com a categoria pròpia.
+  - "Target → Concept drift / Balance" NO són codis nous: són
+    interpretacions de C520/C530 quan la columna afectada és el target
+    del pipeline (la taxonomia classifica el dataset, no l'ús que se'n fa).
+
+Base històrica (mapa mental original, ja substituït):
 
   Dataset changes
   ├── Metadata
@@ -131,40 +235,128 @@ Base: Taxonomia de canvis de datasets definida pel professor (paper PROFES
       ├── Features → Missings / Correlations / Distribution
       └── Target   → Concept drift / Balance
 
-NOTA IMPORTANT (decisió de classificació):
-  - Canvis de Metadata SÍ compten com a canvi del dataset (poden trencar
-    pipelines si canvia file format o field delimiter).
-  - Canvis de README.md, LICENSE, CITATION.cff NO compten (documentació
-    pura, no afecten l'execució del pipeline).
-  - Canvis de dataset_infos.json: a valorar per cas (pot ser metadata
-    substantiva o documentació automàtica).
+Taxonomia formal ACTUAL (15 codis, `docs/taiga/taxonomy.md`):
+  C100 Metadata | C210 Columns order | C221 Add column | C222 Remove column
+  | C223 Rename column | C311 Categorical col. type | C312 Categorical col.
+  values | C321 Numerical col. type | C322 Numerical col. values | C410 Rows
+  order | C421 Add row | C422 Remove row | C510 Missings | C520 Correlation
+  | C530 Data distribution
 
-Aquesta taxonomia és la base per al classificador automàtic (Fase 2, OE3).
+Decisió d'abast encara PENDENT (US-303, vegeu "Pròximes decisions"):
+detectar les 15 categories completes (requereix contingut real de les
+dades) o només les 7 detectables per esquema/metadades sense descarregar
+contingut (C100, C210, C221, C222, C223, C311, C321).
+
+Aquesta taxonomia és la base per al classificador automàtic (Fase 2, OE3),
+encara no iniciada.
+
+
+DECISIÓ M-04 (NOVA): Detecció de fitxers substantius — de denylist pura a
+                      allowlist + prefix de ruta
+Data: agost 2026
+Responsable: Joan
+Estat: ✅ Implementat i validat empíricament
+
+Problema: `is_substantive_path()` (introduïda a US-302, M-02) determinava
+si un fitxer canviat per un commit era "substantiu" amb una única llista
+negra de noms exactes (`NON_SUBSTANTIVE_FILES`) — tot el que NO hi era
+explícitament es considerava substantiu per defecte. Aquest disseny és
+estructuralment incapaç de ser complet: un denylist enumera exclusions
+d'un espai obert (qualsevol nom de fitxer possible), així que sempre hi
+ha convencions noves que se n'escapen (`CARD.md`, `pyproject.toml`,
+`changelog.json`, etc.) i es compten erròniament com a canvis substantius.
+
+Hipòtesi inicial explorada i DESCARTADA amb evidència: fer servir la MIDA
+del fitxer com a desempat per a extensions ambigües (`.json`/`.txt`).
+Es va provar de llegir la mida real via el punter Git-LFS (el "blob" que
+git guarda localment per a un fitxer LFS és només ~130 bytes de text amb
+un camp `size:` — llegir-lo no trenca la garantia de "mai descarregar
+dades reals" del clonatge bare, US-302).
+
+Calibratge empíric: 4 datasets reals clonats i inspeccionats
+(`AG42/lerobot_dataset_try1`, `villekuosmanen/close_shoebox`,
+`unitreerobotics/G1_Dex3_ObjectPlacement_Dataset`,
+`AndreaBozzo/ceres-open-data-index`). RESULTAT: la mida NO separa bé
+metadada de dades reals — un fitxer de metadades pot ser MÉS GRAN que un
+fitxer de dades genuí del mateix dataset:
+  - `meta/episodes_stats.jsonl` (villekuosmanen): 393KB — metadada, més
+    gran que la majoria dels `data/chunk-*/episode_*.parquet` del mateix
+    dataset.
+  - `meta/episodes/chunk-000/file-000.parquet` (unitreerobotics): 482KB —
+    metadada, tot i l'extensió `.parquet` (normalment fiable com a "dades
+    reals").
+  - `changelog.json` (AndreaBozzo): 62KB — metadada (un canvi de registre).
+El senyal que SÍ va separar-ho de forma consistent en els 4 datasets: el
+PREFIX DE LA RUTA (`meta/`/`meta_data/` conté sempre metadada,
+`data/`/`videos/` sempre contingut real).
+
+Decisió final (implementada a `eligibility_scan.py`): ordre de decisió en
+"defensa en profunditat" dins `is_substantive_path()`:
+  1. Prefix de ruta a `NON_SUBSTANTIVE_PATH_PREFIXES` (`meta/`,
+     `meta_data/`, `.github/`) → NO substantiu, INDEPENDENTMENT de
+     l'extensió (comprovat abans que l'extensió a propòsit).
+  2. Nom exacte a `NON_SUBSTANTIVE_FILES`, o extensió a
+     `NON_SUBSTANTIVE_EXTENSIONS` (`.md`, `.yml`, `.yaml`, `.toml`,
+     `.cfg`, `.ini`, `.lock` — generalitzat per extensió, no només noms
+     exactes com abans) → NO substantiu.
+  3. Extensió a `SUBSTANTIVE_DATA_EXTENSIONS` (parquet, csv, arrow,
+     tensors, multimèdia, arxius) → substantiu.
+  4. Qualsevol altre cas (p.e. `.json`/`.txt` fora de `meta/`, o una
+     extensió no prevista) → substantiu per defecte (fail-open), però
+     REGISTRAT (`log.debug`) per revisió i ampliació futura de les
+     llistes amb dades reals, en lloc d'endevinar-les.
+
+Validat amb 87 tests unitaris (inclosos els casos límit del calibratge:
+`.parquet` sota `meta/` vs sota `data/`).
+
+Lliçó metodològica general (aplicable a qualsevol decisió de disseny
+futura del pipeline): abans d'implementar una heurística basada en una
+intuïció (aquí, "més gran = més probable que sigui substantiu"), calibrar
+amb dades reals. La intuïció inicial es va descartar amb evidència
+concreta en lloc de forçar-la a "funcionar" ajustant un llindar a mida.
 
 
 ================================================================================
 BLOC 3 — DECISIONS TÈCNIQUES
 ================================================================================
 
-DECISIÓ T-01: Llibreries principals
-Data: juny 2026
+DECISIÓ T-01: Llibreries i eines principals
+Data: juny 2026 (ampliada: juliol-agost 2026)
+Estat: ✅ Implementat
 
   huggingface_hub  — Accés a l'API de HF (list_datasets, list_repo_commits,
-                     list_repo_refs). Alternativa a crides HTTP directes.
+                     list_repo_refs). Nota: internament fa servir `httpx`
+                     (no `requests`) des de la v1.x.
   pandas           — Manipulació de dades tabulars i escriptura de CSV.
   tqdm             — Barres de progrés per a operacions llargues.
-  argparse         — Gestió d'arguments de línia de comandes.
+  argparse         — Gestió d'arguments de línia de comandes. Mostra l'ajuda
+                     automàticament si no es passa cap argument.
   python-dotenv    — Gestió del token HF_TOKEN via fitxer .env.
   concurrent.futures (ThreadPoolExecutor) — Paral·lelització de les crides
                      a l'API (classificació de datasets).
+  git (binari del sistema, via `subprocess`) — NOU (US-302): clonatge
+                     "bare" + filtratge de blobs per inspeccionar fitxers
+                     reals modificats per commit, sense dependre de cap
+                     llibreria Python addicional (`GitPython` etc.).
+  pytest           — NOU: 84 tests unitaris, sense cap crida real a
+                     l'API/xarxa (tot mockejat).
+  ruff             — NOU: linter, executat a CI.
+  Docker / docker-compose — NOU: contenidorització del pipeline
+                     (`eligibility_scan.py` i `validate_eligible.py`) per
+                     executar-lo sense dependre de l'entorn Python de la
+                     màquina host.
 
 Raonament: Segueix l'arquitectura del replication package del paper
 "Analyzing the Evolution and Maintenance of ML Models on HF" (Castaño
-et al., MSR 2024), adaptat per a datasets en lloc de models.
+et al., MSR 2024), adaptat per a datasets en lloc de models. La tècnica
+de clonatge bare per obtenir fitxers reals per commit ve del paper
+posterior del mateix grup, "How do Machine Learning Models Change?"
+(Castaño et al. 2025, arXiv:2411.09645, secció 4.2.1) — vegeu R-01.
 
 
-DECISIÓ T-02: Estratègia de paral·lelització
-Data: juny 2026
+DECISIÓ T-02: Estratègia de paral·lelització i gestió d'errors
+Data: juny 2026 (ampliada: juliol 2026)
+Estat: ✅ Implementat i validat empíricament
 
   Fase de mostreig (reservoir sampling): seqüencial. El sampling és un
   procés inherentment seqüencial (cal veure cada element en ordre).
@@ -173,29 +365,63 @@ Data: juny 2026
   no CPU-bound, per tant threads > multiprocessing).
 
   Nombre de threads per defecte: 4. Ajustable via --threads.
-  Rate limit de HF: cada thread inclou un sleep implícit via les crides
-  a l'API; si apareixen errors 429, reduir el nombre de threads.
+
+  Gestió de rate limiting (HTTP 429) — AMPLIADA respecte a la decisió
+  original ("sleep implícit"): implementat `errors.with_retry()` amb
+  backoff exponencial + jitter, després d'avaluar 4 alternatives (cap
+  reintent / espera fixa / backoff sense jitter / backoff amb jitter).
+  Validat empíricament: taxa d'errors 429 reduïda d'~59% a ~0% en
+  execucions reals. Els errors 403 (accés restringit/gated) es tracten
+  per separat: NO es reintenten (condició permanent, no transitòria) i
+  s'exclouen tant del numerador com del denominador de la proporció
+  d'elegibles. Detall complet a `notebooks/errors.py` (docstring de
+  disseny inclosa al mateix mòdul).
 
 
 DECISIÓ T-03: Estructura de fitxers del projecte
-Data: juny 2026
+Data: juny 2026 — ACTUALITZADA COMPLETAMENT (juliol-agost 2026)
+Estat: ✅ Estructura real, substitueix la proposta original de juny 2026
+
+L'estructura proposada originalment (`src/extraction/`,
+`src/transformation/`, `src/storage/`) NO es va seguir tal qual; el
+projecte va convergir cap a una estructura més senzilla, de dos mòduls
+principals per fase, en lloc de paquets separats per capa:
 
   hf-dataset-version-analysis/
-  ├── src/
-  │   ├── extraction/          # Scripts de connexió i extracció via API
-  │   ├── transformation/      # Classificació de canvis per taxonomia
-  │   └── storage/             # Capa de base de dades / data warehouse
-  ├── data/
-  │   ├── raw/                 # Dades tal com arriben de l'API (bronze)
-  │   └── processed/           # Dades netejades i classificades (silver/gold)
-  ├── notebooks/               # Exploració i anàlisi descriptiva
-  ├── tests/                   # Tests de validació del pipeline
-  ├── docs/                    # Documentació (incl. aquest fitxer)
-  └── requirements.txt
+  ├── notebooks/
+  │   ├── eligibility_scan.py    # Fase 0: mostreig + classificació d'elegibilitat
+  │   ├── errors.py              # Gestió d'errors (retry/backoff, categories)
+  │   └── validate_eligible.py   # US-108: validació + informe automàtic
+  ├── tests/
+  │   ├── test_eligibility_scan.py
+  │   ├── test_errors.py
+  │   └── test_validate_eligible.py
+  ├── data/                      # CSV/JSON de resultats (eligibility_report_*,
+  │                               #   funnel_summary_*, failures.csv, worksheet)
+  ├── docs/
+  │   ├── architecture.md        # Font de veritat de com està fet el pipeline
+  │   ├── TODO.md                # Sincronitzat amb Taiga
+  │   ├── GIT_FLOW.md            # Estratègia de branques i CI/CD
+  │   ├── us108_validation_report.md  # Generat automàticament, no editar a mà
+  │   ├── decisions_tfg.txt      # Aquest fitxer
+  │   └── taiga/                 # Taxonomia, user stories (.md i .csv)
+  ├── Dockerfile / docker-compose.yml
+  ├── .github/workflows/         # CI (lint+tests) i publicació d'imatge Docker
+  ├── requirements.txt
+  └── README.md
+
+Raonament del canvi: separar per "capa" (extraction/transformation/storage)
+tenia sentit quan es preveia un pipeline de 3 fases actives simultàniament;
+a la pràctica, cada FASE del projecte (0, 1, 2, 3) és pràcticament
+independent i seqüencial, així que agrupar per fase dins de `notebooks/`
+(amb un únic mòdul d'errors compartit) ha estat més senzill de mantenir.
+Els mòduls de Fase 1/2/3 (`version_extractor.py`, `change_classifier.py`,
+`warehouse/`) encara no s'han creat.
 
 
 DECISIÓ T-04: Esquema en estrella (data warehouse)
 Data: juny 2026
+Estat: 🔲 Pendent (sense canvis, Fase 3 no iniciada)
 
 Proposta inicial del professor. Esquema bàsic:
 
@@ -212,12 +438,32 @@ Proposta inicial del professor. Esquema bàsic:
     - KindOfChange (kind_id, category, subcategory, is_breaking,
                     taxonomy_level_1, taxonomy_level_2, taxonomy_level_3)
 
-  La dimensió KindOfChange s'alineará directament amb la taxonomia del
-  professor (Decisió M-03).
+  La dimensió KindOfChange s'alineará directament amb la taxonomia FORMAL
+  de 15 codis (Decisió M-03 actualitzada), no amb el mapa mental informal
+  original.
 
-  Pendent de decisió: PostgreSQL vs DuckDB com a motor.
+  Pendent de decisió: PostgreSQL vs DuckDB com a motor (US-401, encara
+  oberta).
   DuckDB és més adequat per a anàlisi local sense servidor (estil TFG);
   PostgreSQL és millor si es vol desplegar o escalar.
+
+
+DECISIÓ T-05: Git Flow i protecció de branques (NOVA)
+Data: agost 2026
+Responsable: Joan
+Estat: ✅ Implementat
+
+Adoptat Git Flow complet (`main`/`develop` permanents, `feature/*` temporals)
+amb protecció de branques activada a GitHub (PR + check de CI "Lint & tests"
+en verd obligatoris). Com que el projecte el manté una sola persona i GitHub
+no permet auto-aprovar la pròpia PR, es va desactivar el requisit
+d'aprovació obligatòria (`required_approving_review_count=0`) mantenint el
+requisit de PR + CI en verd. `enforce_admins` es manté a `false`
+deliberadament: com a únic admin, permet fer push directe a `develop` quan
+convé (canvis ràpids de documentació) sense perdre la possibilitat d'exigir
+CI passant un PR quan es vulgui validar un canvi de codi més gran.
+
+Detall complet i comandes exactes a `docs/GIT_FLOW.md`.
 
 
 ================================================================================
@@ -225,37 +471,66 @@ BLOC 4 — DECISIONS D'ABAST
 ================================================================================
 
 DECISIÓ A-01: Mida de mostra per al filtratge previ
-Data: juny 2026
+Data: juny 2026 — DECISIÓ FINAL PRESA (juliol 2026)
+Estat: ✅ Tancada
 
-  Primera execució de prova: --sample-size 200 --max-scanned 5000
-  Execució completa per estimar proporció: --sample-size 1000 (sense max-scanned)
+  Decisió original (pendent): --sample-size 1000, amb estratificació a
+  decidir segons `eligible_proportion` observada.
 
-  Decisió sobre estratificació: PENDENT dels resultats de l'execució.
-  Si eligible_proportion < 5% → treballar amb tota la població elegible.
-  Si eligible_proportion > 15% → aplicar estratificació per domini,
-  quartil de versions i quartil de popularitat.
+  DECISIÓ FINAL: --sample-size 2000, per defecte, JUSTIFICADA
+  ESTADÍSTICAMENT (no arbitràriament): marge d'error ±0.51pp a 95% de
+  confiança, assumint p=0.0137 (proporció real observada en una execució
+  pilot de 1000, no l'assumpció conservadora p=0.5). Detall complet i
+  taula de marge d'error segons mida de mostra a `README.md`, secció
+  "Mida de la mostra i interval de confiança".
+
+  Estratificació: NO ha calgut. La proporció d'elegibles observada en
+  totes les execucions (~0.58%-1.37% segons la versió del pipeline) és
+  molt per sota del llindar del 5% definit originalment com a criteri
+  per activar l'estratificació — es treballa amb el conjunt complet
+  d'elegibles trobats, sense subdividir per domini/popularitat.
+
+  Full-scan de tota la població: DESCARTAT explícitament. Sense pla de
+  pagament de HF, el rate limiting fa inviable escanejar tota la població
+  (~980K datasets); només s'implementa el mode mostreig (reservoir
+  sampling). El codi relacionat amb un mode "full-scan" que es va explorar
+  inicialment s'ha eliminat del repositori.
 
   Referència: Paper dels LLM — de 1.657.941 models, 1.655 tenien tags
-  detectables, i van acabar amb 202 amb almenys 5 tags vàlids. Si el
-  patró es repeteix per a datasets, la població elegible seria manejable
-  sense estratificació.
+  detectables, i van acabar amb 202 amb almenys 5 tags vàlids. El patró
+  observat per a datasets és similar en ordre de magnitud (població
+  elegible petita respecte al total), confirmant que no calia
+  estratificació.
 
 
 DECISIÓ A-02: Abast del pipeline (fase actual)
-Data: juny 2026
+Data: juny 2026 — ESTAT ACTUALITZAT (agost 2026)
+Estat: Fase 0 pràcticament tancada; Fase 1-3 no iniciades
 
-  INCLOU:
-    - Detecció automàtica de datasets amb múltiples versions (Fase 0)
-    - Extracció de diferències entre versions via API de HF (Fase 1)
-    - Classificació automàtica de canvis per taxonomia (Fase 2)
-    - Emmagatzematge en data warehouse (Fase 2)
-    - Anàlisi descriptiva bàsica dels canvis trobats (Fase 3)
+  INCLOU (fet):
+    - Detecció automàtica de datasets amb múltiples versions (Fase 0) ✅
+    - Validació manual/semi-automàtica d'una mostra d'elegibles (US-108,
+      criteri nou no previst originalment, però necessari per confiar en
+      Fase 0 abans d'avançar) ✅
 
-  NO INCLOU (en aquesta versió):
+  INCLOU (pendent, sense bloqueig tècnic conegut):
+    - Extracció de diferències entre versions via API de HF (Fase 1) 🔲
+    - Classificació automàtica de canvis per taxonomia (Fase 2) 🔲 —
+      el risc tècnic que la bloquejava (R-01) ja està resolt.
+    - Emmagatzematge en data warehouse (Fase 2/3) 🔲
+    - Anàlisi descriptiva bàsica dels canvis trobats (Fase 3) 🔲
+
+  NO INCLOU (en aquesta versió, sense canvis):
     - Anàlisi estadística inferencial (Bayesian Networks com en el paper LLM)
-    - Classificació automàtica via LLM dels missatges de commit
-      (pot ser extensió futura si hi ha temps)
-    - Descàrrega dels fitxers de dades complets (massa volum, Git-LFS)
+    - Classificació automàtica via LLM dels missatges de commit (possible
+      extensió futura — el paper de Castaño et al. 2025 en fa un ús
+      rigorós amb validació Kappa entre anotadors humans, documentat com a
+      referència metodològica a `docs/paper_techniques_ml_models_change.md`
+      si es decideix explorar aquesta via)
+    - Descàrrega dels fitxers de dades complets (massa volum, Git-LFS) —
+      es manté descartat fins i tot per a la inspecció de fitxers per
+      commit (US-302 usa `--filter=blob:none`, mai descarrega contingut
+      real).
 
 
 ================================================================================
@@ -264,41 +539,112 @@ BLOC 5 — PROBLEMES I RISCOS IDENTIFICATS
 
 RISC R-01: Endpoint de llista de fitxers per commit
 Detectat: juny 2026
-Estat: OBERT
+Estat: ✅ RESOLT (juliol 2026)
 
 L'API pública de HF no exposa de forma estable i documentada la llista
-completa de fitxers modificats per commit via REST (a diferència de l'SDK
-de Python, que ho suporta parcialment). Si la detecció de canvis substantius
-per títol de commit no és prou precisa, caldrà adoptar l'estratègia de
-clonació bare del repo i `git show --name-only` per commit (com fa el paper
-dels LLM a la secció 4.2.1 del paper arXiv:2411.09645).
+completa de fitxers modificats per commit via REST. CONFIRMAT
+empíricament (juliol 2026): `GitCommitInfo` (`huggingface_hub==1.18.0`)
+només exposa `commit_id`/`authors`/`created_at`/`title`/`message` — cap
+camp de fitxers.
 
-Impacte: Afecta la precisió del Criteri B d'elegibilitat i la classificació
-de canvis. Pot augmentar significativament el temps d'execució.
+Resolució implementada: exactament l'alternativa prevista en aquest risc
+—clonatge "bare" del repo (`git clone --bare --filter=blob:none`, sense
+contingut real dels fitxers) + `git show --name-status <sha>` per commit,
+com fa el paper dels LLM (Castaño et al. 2025, secció 4.2.1). Validat
+empíricament: <1s i ~150KB per repositori de prova. Implementat a
+`eligibility_scan.bare_clone`/`get_changed_files`/`determine_commit_
+substantive`. Requereix `git` instal·lat al sistema/imatge (vegeu R-05).
 
-Mitigació: Validació manual d'una mostra de 50-100 datasets per comprovar
-si la heurística de títol és suficientment precisa (> 80% accuracy).
+Impacte final: ha permès substituir l'heurística de títol pel Criteri B
+(M-02), millorant la precisió automàtica de 38.5% a 100% sobre l'execució
+de referència (vegeu R-04).
 
 
 RISC R-02: Rate limits de l'API de HF
 Detectat: juny 2026
-Estat: VIGILAT
+Estat: ✅ MITIGAT i validat empíricament (juny-juliol 2026)
 
-L'API de HF té rate limits que varien amb el token. Si apareixen errors
-HTTP 429 durant l'execució paral·lela, cal reduir --threads o afegir
-exponential backoff. El replication package del paper (Castaño et al.)
-implementa lògica de reintent que es pot adaptar.
+L'API de HF té rate limits que varien amb el token. Implementat
+`errors.with_retry()` amb backoff exponencial + jitter (4 alternatives
+avaluades: cap reintent / espera fixa / backoff sense jitter / backoff amb
+jitter — la quarta és la implementada). Validat en execucions reals: taxa
+d'errors HTTP 429 reduïda d'~59% a ~0%. Els errors HTTP 403 (accés
+restringit/gated) es tracten com a categoria separada, NO transitòria: no
+es reintenten i s'exclouen del càlcul de la proporció d'elegibles.
+
+Nota descartada explícitament: es va investigar la hipòtesi (suggerida en
+un fòrum de HF) que el rol del token (read vs write) causava els errors
+403; es va descartar amb evidència empírica (100% dels 403 capturats
+coincideixen amb el patró "gated repo... not in authorized list", no amb
+cap missatge de permisos/rol). Detall complet a `notebooks/errors.py`.
 
 
 RISC R-03: Canvis a l'API de HF
 Detectat: juny 2026
-Estat: VIGILAT
+Estat: 🟡 VIGILAT (sense canvis, risc obert per naturalesa)
 
 L'API de HF és activa i pot canviar. Tots els resultats s'han de guardar
 amb timestamp. Si es torna a executar el pipeline mesos més tard, els
 resultats no seran idèntics (la població de HF canvia constantment).
-Solució: fixar --seed per a reproduïbilitat del mostreig, i guardar
-snapshots de les dades raw a data/raw/.
+Mitigació: --seed per a reproduïbilitat del mostreig (quan es fixa), i
+cada execució genera fitxers de sortida numerats (`run_id`) sense
+sobreescriure execucions prèvies.
+
+
+RISC R-04 (NOU): Falsos positius sistemàtics al Criteri B — patró LeRobot
+Detectat: agost 2026 (validació manual US-108)
+Estat: ✅ MITIGAT (vegeu M-02)
+
+La validació manual de la mostra de referència (13 datasets elegibles,
+execució original) va trobar que el Criteri B tenia una precisió de només
+20% (2/10). Causa arrel identificada: eines d'exportació automàtica de
+dades (p.e. LeRobot, format estàndard per a datasets de robòtica) generen
+desenes de commits amb títols que passen trivialment l'heurística de
+títol (`"Upload folder using huggingface_hub"`), tots dins d'una única
+sessió de pujada de segons/minuts — representen UNA versió, no múltiples.
+
+Mitigació implementada: exigir dispersió temporal mínima (actualment 6h)
+entre els commits substantius del Criteri B, més la detecció real de
+fitxers (R-01). Resultat: precisió automàtica 38.5% → 100% sobre
+l'execució de referència neta. Limitació residual documentada
+explícitament a M-02 (casos límit de tags creats el mateix dia natural),
+deixada per a judici humà en lloc de "corregir-se" ajustant llindars a
+mida dels casos observats.
+
+
+RISC R-05 (NOU): Bug de desplegament — `git` no instal·lat a la imatge Docker
+Detectat: agost 2026
+Estat: ✅ RESOLT
+
+La primera execució via Docker amb la millora de detecció real de fitxers
+(R-01) es va beneficiar només de la millora de dispersió temporal (R-04):
+la imatge Docker (`python:3.12-slim`) no tenia `git` instal·lat, així que
+el clonatge fallava SILENCIOSAMENT per a TOTS els datasets i el pipeline
+recorria sempre al fallback d'heurística de títol, sense cap avís visible
+als logs.
+
+Lliçó apresa i mitigació: 1) Corregit el `Dockerfile` (`apt-get install
+git`). 2) `bare_clone()` ara registra un `log.error` (un sol cop per
+procés, no un cop per dataset, per no inundar els logs) si `git` no és al
+`PATH`, perquè aquest tipus de fallada de desplegament sigui detectable
+immediatament als logs en comptes de requerir investigació manual
+posterior. Confirmat amb una segona execució neta que la correcció
+funciona.
+
+
+RISC R-06 (NOU): Falsos positius del "push protection" de GitHub (secret scanning)
+Detectat: juliol-agost 2026 (recurrent)
+Estat: 🟡 VIGILAT (friction point conegut, no un risc real de seguretat)
+
+Alguns noms de dataset de HF (generats automàticament per usuaris, p.e.
+`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`) coincideixen per atzar amb el
+patró d'un token d'accés de HF, i el "push protection" de GitHub bloqueja
+el `git push` de fitxers `data/*.csv` que els contenen. CONFIRMAT en més
+d'una ocasió que és sempre un fals positiu (nom de dataset, no una
+credencial real) — mai s'ha trobat un secret real filtrat. Resolució:
+seguir el flux oficial de GitHub (marcar "false positive" a la URL de
+desbloqueig que proporciona l'error), MAI reescriure l'historial de git
+ni esborrar dades reals per aquest motiu.
 
 
 ================================================================================
@@ -313,17 +659,51 @@ v0.1 — juny 2026 — Creació inicial del document
   - Decisió A-01 a A-02: Abast del pipeline
   - Riscos R-01 a R-03 identificats
 
+v0.2 — agost 2026 — Actualització major: Fase 0 tancada, US-108 completada
+  - M-02 revisada substancialment: Criteri B amb dispersió temporal +
+    detecció real de fitxers (US-302); precisió automàtica 38.5% → 100%
+  - M-03 anotada: taxonomia informal substituïda per la formal (15 codis)
+  - T-01/T-02 ampliades: git/pytest/ruff/Docker, retry+backoff+jitter validat
+  - T-03 reescrita completament: estructura real del projecte
+  - T-05 nova: Git Flow i protecció de branques
+  - A-01 tancada: sample-size=2000 justificat estadísticament, sense
+    estratificació (proporció observada molt per sota del llindar del 5%)
+  - A-02 actualitzada: estat per fase
+  - R-01 i R-02 marcats RESOLTS, amb resultats empírics
+  - R-04, R-05, R-06 nous: falsos positius LeRobot, bug de Docker,
+    falsos positius de secret scanning de GitHub
+  - OE1-OE4 anotats amb estat actual
+
+v0.3 — agost 2026 — Detecció de fitxers substantius calibrada empíricament
+  - M-04 nova: `is_substantive_path()` substitueix el denylist pur per
+    prefix de ruta (`meta/` vs `data/`) + allowlist/denylist d'extensions,
+    calibrat clonant 4 datasets reals. Hipòtesi inicial (mida de fitxer
+    com a desempat) explorada i descartada amb evidència: un fitxer de
+    metadades pot ser més gran que un de dades reals del mateix dataset.
+
 ================================================================================
 PRÒXIMES DECISIONS PENDENTS
 ================================================================================
 
-[ ] Escollir motor de base de dades: PostgreSQL vs DuckDB
+[x] Tancar abast definitiu de la mostra (Decisió A-01) — sample-size=2000,
+    sense estratificació.
+[x] Resoldre l'accés a la llista de fitxers per commit (Risc R-01) —
+    clonatge bare + git show.
+[ ] Escollir motor de base de dades: PostgreSQL vs DuckDB (US-401)
 [ ] Decidir si classificar canvis via regles deterministes o via LLM
-[ ] Tancar abast definitiu de la mostra un cop tinguem els resultats del
-    filtratge previ (Decisió A-01 pendent)
-[ ] Definir format exacte de la taula KindOfChange alineada amb la taxonomia
+    (Epic 3 encara no iniciat)
+[ ] Decidir amb el director l'abast de detecció automàtica de la taxonomia:
+    15 codis complets (requereix contingut real) vs 7 codis schema-level
+    (US-303)
+[ ] Definir format exacte de la taula KindOfChange alineada amb la
+    taxonomia formal de 15 codis (no la informal original)
+[ ] Validar l'enfocament de classificació contra el ground truth del
+    Census Income — 9 versions reals de HF ja etiquetades pel director
+    (US-304), abans d'escalar a tota la població elegible
+[ ] Confirmació humana final (Joan + director) de la classificació TP/REVIEW
+    de US-108 — l'automatització és una heurística, no una validació
+    manual tancada
 [ ] Acordar amb director quines preguntes descriptives ha de respondre
     l'anàlisi final (equivalents als RQ del paper dels LLM)
 
 ================================================================================
-
