@@ -6,11 +6,22 @@ amb criteris d'acceptació.
 
 Llegenda d'estat: `✅ Done` · `🔄 In progress` · `⛔ Blocked` · `📋 To do`
 
-**v2 (aquesta versió):** taxonomia actualitzada amb els 15 codis oficials
-del paper del director (C100–C530). Vegeu `docs/taiga/taxonomy.md` per al
-detall complet. Canvis principals respecte a v1: US-003 tancada, Epic 3
+**v2:** taxonomia actualitzada amb els 15 codis oficials del paper del
+director (C100–C530). Vegeu `docs/taiga/taxonomy.md` per al detall
+complet. Canvis principals respecte a v1: US-003 tancada, Epic 3
 reestructurat (noves US-303/US-304, antiga US-303 renumerada a US-305),
 US-402 actualitzada.
+
+**v3 (aquesta versió, agost 2026) — Fase 0 i Fase 1 tancades:** US-108
+tancada (validació automàtica 11/11 = 100% TP sobre `eligibility_report_
+2000_5.csv`, referència vigent). US-201/US-202 tancades amb ampliació
+d'abast decidida durant la implementació (`notebooks/version_extractor.py`):
+~70% dels elegibles no tenen tags (Criteri B), així que el concepte de
+"versió" també cobreix sessions de commits inferides, no només tags
+explícits (Criteri A) — vegeu la nota a US-201 i `docs/architecture.md`
+(Fase 1) per al disseny complet. Situació actual: desbloquejar Fase 2
+(Epic 3) és el següent pas actiu, pendent de les decisions d'abast amb el
+director a US-303/US-304.
 
 ---
 
@@ -284,16 +295,29 @@ ordenada de versions amb les seves metadades.*
 comprovar que n'hi ha ≥2) de cada dataset elegible, **per tal de** tenir
 la seqüència completa de versions a analitzar.
 
-**Criteris d'acceptació:**
-- [ ] Per cada dataset de la llista d'elegibles (Epic 1), cridar
-  `list_repo_refs` i extreure tots els tags
-- [ ] Ordenar els tags cronològicament (per data de commit associat, no
-  per ordre alfabètic del nom del tag)
-- [ ] Gestionar el mateix sistema de retry/error de l'Epic 1
-  (reutilitzar `errors.py`)
-- [ ] Output: taula `dataset_id, tag_name, commit_sha, tag_order`
+**Ampliació d'abast (decidida durant la implementació)**: sobre
+`eligibility_report_2000_5.csv`, 8/11 (~70%) dels datasets elegibles ho
+són via Criteri B i NO tenen cap tag — una implementació literal d'aquesta
+story hauria deixat buida la majoria de la població elegible. En lloc de
+restringir l'abast només als datasets amb tags i deferir la resta, es va
+decidir en aquell mateix moment estendre el concepte de "versió" també als
+datasets sense tags: cada SESSIÓ de treball (`validate_eligible.
+cluster_commit_times`, mateixa lògica que US-108) es tracta com una versió
+inferida. Vegeu `docs/architecture.md` (Fase 1) per al disseny complet.
 
-**Estat:** 📋 To do
+**Criteris d'acceptació:**
+- [x] Per cada dataset de la llista d'elegibles (Epic 1), cridar
+  `list_repo_refs` i extreure tots els tags
+- [x] Ordenar els tags cronològicament (per data de commit associat, no
+  per ordre alfabètic del nom del tag)
+- [x] Gestionar el mateix sistema de retry/error de l'Epic 1
+  (reutilitzar `errors.py`)
+- [x] Output: taula `dataset_id, version_label, commit_sha, version_order`
+  (`version_label`/`version_order` en lloc de `tag_name`/`tag_order` —
+  cobreix també les versions inferides per sessió, vegeu ampliació
+  d'abast més amunt)
+
+**Estat:** ✅ Done
 **Story points:** 5
 **Tags:** extraction
 **Depèn de:** US-108 (llista d'elegibles validada)
@@ -305,15 +329,26 @@ la seqüència completa de versions a analitzar.
 aproximada de cada versió, **per tal de** alimentar les dimensions del
 data warehouse (Epic 4).
 
-**Criteris d'acceptació:**
-- [ ] Per cada tag, extreure data del commit associat
-- [ ] Extreure autor/committer del commit
-- [ ] Extreure mida aproximada del dataset en aquella versió (via API,
-  sense descarregar els fitxers complets — Git-LFS fa inviable la
-  descàrrega completa a escala)
-- [ ] Output persistit a `data/raw/versions_<run_id>.csv`
+**Limitació coneguda**: `huggingface_hub` no distingeix autor de committer
+com el git natiu — `GitCommitInfo.authors` (`list[str]` de noms d'usuari)
+és l'únic camp que exposa l'API. El criteri d'acceptació "autor/committer"
+es cobreix amb aquest únic camp disponible, no és una decisió de disseny
+pròpia.
 
-**Estat:** 📋 To do
+**Criteris d'acceptació:**
+- [x] Per cada tag, extreure data del commit associat
+- [x] Extreure autor/committer del commit (limitació de l'API documentada
+  més amunt: només `authors`, sense distinció autor/committer)
+- [x] Extreure mida aproximada del dataset en aquella versió (via API,
+  sense descarregar els fitxers complets — `list_repo_tree(recursive=
+  True)`/`RepoFile.size`, ja resolt per a LFS, sense cap tècnica de
+  lectura de punter)
+- [x] Output persistit a `data/versions_<run_id>.csv` (no
+  `data/raw/versions_<run_id>.csv`: cap altra sortida del projecte fa
+  servir una subcarpeta `raw/`, s'ha mantingut la mateixa convenció plana
+  que la resta de `data/`)
+
+**Estat:** ✅ Done
 **Story points:** 5
 **Tags:** extraction
 **Depèn de:** US-201

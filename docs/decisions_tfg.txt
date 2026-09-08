@@ -338,13 +338,14 @@ Estat: ✅ Implementat
                      "bare" + filtratge de blobs per inspeccionar fitxers
                      reals modificats per commit, sense dependre de cap
                      llibreria Python addicional (`GitPython` etc.).
-  pytest           — NOU: 84 tests unitaris, sense cap crida real a
+  pytest           — 111 tests unitaris, sense cap crida real a
                      l'API/xarxa (tot mockejat).
-  ruff             — NOU: linter, executat a CI.
-  Docker / docker-compose — NOU: contenidorització del pipeline
-                     (`eligibility_scan.py` i `validate_eligible.py`) per
-                     executar-lo sense dependre de l'entorn Python de la
-                     màquina host.
+  ruff             — linter, executat a CI.
+  Docker / docker-compose — contenidorització del pipeline
+                     (`eligibility_scan.py`, `validate_eligible.py` i,
+                     des d'agost 2026, `version_extractor.py` -- servei
+                     `version-extractor`) per executar-lo sense dependre
+                     de l'entorn Python de la màquina host.
 
 Raonament: Segueix l'arquitectura del replication package del paper
 "Analyzing the Evolution and Maintenance of ML Models on HF" (Castaño
@@ -391,11 +392,13 @@ principals per fase, en lloc de paquets separats per capa:
   ├── notebooks/
   │   ├── eligibility_scan.py    # Fase 0: mostreig + classificació d'elegibilitat
   │   ├── errors.py              # Gestió d'errors (retry/backoff, categories)
-  │   └── validate_eligible.py   # US-108: validació + informe automàtic
+  │   ├── validate_eligible.py   # US-108: validació + informe automàtic
+  │   └── version_extractor.py   # Fase 1 (US-201/US-202): versions + metadades
   ├── tests/
   │   ├── test_eligibility_scan.py
   │   ├── test_errors.py
-  │   └── test_validate_eligible.py
+  │   ├── test_validate_eligible.py
+  │   └── test_version_extractor.py
   ├── data/                      # CSV/JSON de resultats (eligibility_report_*,
   │                               #   funnel_summary_*, failures.csv, worksheet)
   ├── docs/
@@ -415,8 +418,8 @@ tenia sentit quan es preveia un pipeline de 3 fases actives simultàniament;
 a la pràctica, cada FASE del projecte (0, 1, 2, 3) és pràcticament
 independent i seqüencial, així que agrupar per fase dins de `notebooks/`
 (amb un únic mòdul d'errors compartit) ha estat més senzill de mantenir.
-Els mòduls de Fase 1/2/3 (`version_extractor.py`, `change_classifier.py`,
-`warehouse/`) encara no s'han creat.
+`version_extractor.py` (Fase 1) ja s'ha creat (vegeu T-06); els mòduls de
+Fase 2/3 (`change_classifier.py`, `warehouse/`) encara no.
 
 
 DECISIÓ T-04: Esquema en estrella (data warehouse)
@@ -466,6 +469,66 @@ CI passant un PR quan es vulgui validar un canvi de codi més gran.
 Detall complet i comandes exactes a `docs/GIT_FLOW.md`.
 
 
+DECISIÓ T-06: Fase 1 — mòdul d'extracció de versions i metadades (US-201/US-202)
+Data: agost 2026
+Responsable: Joan
+Estat: ✅ Implementat (`notebooks/version_extractor.py`)
+
+  QUÈ s'extreu, per cada dataset elegible i cada versió detectada:
+    - `commit_date` (data del commit representatiu de la versió)
+    - `authors` (noms d'usuari del commit, via `GitCommitInfo.authors`)
+    - `approx_size_bytes` (mida real de tot l'arbre en aquella revisió,
+      via `list_repo_tree(recursive=True)` -- `RepoFile.size`, ja resolta
+      per a LFS, sense descarregar contingut real)
+    - `version_order`/`version_source` (ordre cronològic i si la versió
+      ve d'un tag explícit o d'una sessió de commits inferida, Criteri
+      A/B respectivament)
+
+  PER QUÈ (justificació lligada al futur data warehouse, DECISIÓ T-04):
+
+    - `commit_date` alimenta DIRECTAMENT la dimensió `DateOfChange`
+      (date_id, date, year, quarter, month) i el càlcul de l'atribut
+      `age_days` de la taula de fets `Change` (DateOfChange - CreationDate,
+      o entre versions consecutives del mateix dataset) -- sense la data
+      de cada versió, l'eix temporal de l'anàlisi (US-403: "evolució
+      temporal dels tipus de canvi") no existeix. És l'única de les tres
+      metadades que l'esquema en estrella ja exigeix explícitament.
+
+    - `authors` NO surt com a atribut explícit a la proposta original de
+      T-04, però és una metadada barata d'obtenir (ja ve inclosa a la
+      mateixa crida que dona `commit_date`, cap crida addicional) que
+      s'ha decidit capturar ara per no haver de re-clonar/re-consultar
+      l'API més endavant si l'anàlisi final (US-403, o la memòria) vol
+      distingir canvis fets pel mantenidor original de canvis fets per
+      col·laboradors externs -- p.e. per matisar si un patró de canvi és
+      "intern" o "extern" al projecte. És una decisió de "capturar-ho ara
+      que és gratis" (principi de disseny de dades: el cost marginal de
+      guardar un camp ja disponible en la resposta és pràcticament zero,
+      mentre que re-obtenir-lo després requeriria tornar a iterar tots
+      els datasets elegibles), no un requisit ja confirmat de l'esquema.
+      Limitació documentada a US-202: l'API no distingeix autor de
+      committer (`GitCommitInfo.authors` és l'únic camp).
+
+    - `approx_size_bytes` tampoc surt explícitament a T-04, mateixa lògica
+      de "capturar-ho ara que és gratis" (una crida `list_repo_tree` per
+      versió, ja necessària per comptar fitxers). Candidata a alimentar
+      la dimensió `Dataset` (que sí preveu `num_downloads`/`num_versions`,
+      atributs de mida/popularitat del dataset, no només del canvi puntual)
+      o a servir com a variable de control a l'anàlisi (p.e. si els canvis
+      de tipus "afegir dades" es correlacionen amb salts grans de mida
+      entre versions consecutives).
+
+    Resum: `commit_date` és un requisit dur de l'esquema ja acordat amb el
+    director (T-04); `authors`/`approx_size_bytes` són metadades
+    d'oportunitat, capturades ara pel cost marginal ~0 de fer-ho durant
+    l'extracció, per no bloquejar decisions d'anàlisi encara no preses
+    (Fase 3, US-403) darrere d'una nova ronda de crides a l'API. Si
+    finalment no s'usen a la memòria, no calen migracions ni reprocessat.
+
+  Detall complet del disseny (bifurcació tag/sessió, `list_repo_tree` com
+  a generador lazy, etc.) a `docs/architecture.md`, secció "Fase 1".
+
+
 ================================================================================
 BLOC 4 — DECISIONS D'ABAST
 ================================================================================
@@ -505,16 +568,19 @@ Estat: ✅ Tancada
 
 DECISIÓ A-02: Abast del pipeline (fase actual)
 Data: juny 2026 — ESTAT ACTUALITZAT (agost 2026)
-Estat: Fase 0 pràcticament tancada; Fase 1-3 no iniciades
+Estat: Fase 0 i Fase 1 tancades; Fase 2-3 no iniciades
 
   INCLOU (fet):
     - Detecció automàtica de datasets amb múltiples versions (Fase 0) ✅
     - Validació manual/semi-automàtica d'una mostra d'elegibles (US-108,
       criteri nou no previst originalment, però necessari per confiar en
       Fase 0 abans d'avançar) ✅
+    - Extracció de la seqüència de versions i metadades (Fase 1, US-201/
+      US-202, `version_extractor.py`) ✅ — ampliació d'abast decidida
+      durant la implementació: també cobreix els datasets sense tags
+      (~70% dels elegibles) via sessions de commits, vegeu T-06.
 
   INCLOU (pendent, sense bloqueig tècnic conegut):
-    - Extracció de diferències entre versions via API de HF (Fase 1) 🔲
     - Classificació automàtica de canvis per taxonomia (Fase 2) 🔲 —
       el risc tècnic que la bloquejava (R-01) ja està resolt.
     - Emmagatzematge en data warehouse (Fase 2/3) 🔲
@@ -681,6 +747,20 @@ v0.3 — agost 2026 — Detecció de fitxers substantius calibrada empíricament
     com a desempat) explorada i descartada amb evidència: un fitxer de
     metadades pot ser més gran que un de dades reals del mateix dataset.
 
+v0.4 — agost 2026 — Fase 1 tancada: extracció de versions i metadades
+  - T-06 nova: `version_extractor.py` (US-201/US-202), amb la justificació
+    de per què s'extreu `commit_date`/`authors`/`approx_size_bytes` de
+    cara al data warehouse (T-04) — `commit_date` és un requisit dur de
+    l'esquema ja acordat; `authors`/`approx_size_bytes` són metadades
+    d'oportunitat (cost marginal ~0 durant l'extracció).
+  - T-01/T-03 actualitzades: `version_extractor.py` creat, 111 tests,
+    servei Docker `version-extractor`
+  - A-02 actualitzada: Fase 1 tancada (incloent l'ampliació d'abast a
+    versions inferides per sessió de commits per als datasets sense tags)
+  - M-04 (`meta/` com a prefix universal de metadada): la generalització
+    es va qüestionar (calibratge de només 4 datasets, 3 del mateix format
+    LeRobot) — queda com a pendent obert, vegeu `docs/architecture.md`
+
 ================================================================================
 PRÒXIMES DECISIONS PENDENTS
 ================================================================================
@@ -705,5 +785,9 @@ PRÒXIMES DECISIONS PENDENTS
     manual tancada
 [ ] Acordar amb director quines preguntes descriptives ha de respondre
     l'anàlisi final (equivalents als RQ del paper dels LLM)
+[ ] Confirmar si `authors`/`approx_size_bytes` (T-06) acaben tenint ús
+    real a l'esquema en estrella (T-04) o a l'anàlisi final (US-403), o
+    si es descarten en no aportar-hi res — capturats per cost marginal
+    baix, no perquè l'esquema ja els exigeixi
 
 ================================================================================

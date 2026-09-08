@@ -1,6 +1,6 @@
 # US-108 — Validació (semi-)automàtica dels datasets elegibles
 
-> **Generat automàticament** per `notebooks/validate_eligible.py` (2026-08-26T15:36:51.288026), a partir de `/app/data/eligibility_report_2000_5.csv` (11 datasets elegibles). **Aquest fitxer es regenera sencer a cada execució del script -- no l'editis manualment**, els canvis es perdrien a la següent execució.
+> **Generat automàticament** per `notebooks/validate_eligible.py` (2026-09-08T17:35:43.969477), a partir de `/home/joanferrer/Documentos/UNIVERSITAT/TFG/hf-dataset-version-analysis/data/eligibility_report_2000_5.csv` (11 datasets elegibles). **Aquest fitxer es regenera sencer a cada execució del script -- no l'editis manualment**, els canvis es perdrien a la següent execució.
 
 ## Metodologia
 
@@ -22,15 +22,15 @@ Tot i fer servir el mateix llindar, el recompte de sessions NO és redundant amb
 
 | # | Dataset | Criteri | Veredicte | Evidència | Raonament |
 |---|---|---|---|---|---|
-| 1 | [adalat-ai/fleurs-ro](https://huggingface.co/datasets/adalat-ai/fleurs-ro) | A | **TP** | 11 subst. / 3 sessions | Elegible via Criteri A (tags explícits) -- no s'exigeix dispersió temporal: la presència de >=2 tags ja és un senyal deliberat de versionat per part del mantenidor, independentment de quan es van crear. |
-| 2 | [theayos/libero_spatial_image](https://huggingface.co/datasets/theayos/libero_spatial_image) | A | **TP** | 11 subst. / 3 sessions | Elegible via Criteri A (tags explícits) -- no s'exigeix dispersió temporal: la presència de >=2 tags ja és un senyal deliberat de versionat per part del mantenidor, independentment de quan es van crear. |
+| 1 | [adalat-ai/fleurs-ro](https://huggingface.co/datasets/adalat-ai/fleurs-ro) | A | **TP** | 5 subst. / 2 sessions | Elegible via Criteri A (tags explícits) -- no s'exigeix dispersió temporal: la presència de >=2 tags ja és un senyal deliberat de versionat per part del mantenidor, independentment de quan es van crear. |
+| 2 | [theayos/libero_spatial_image](https://huggingface.co/datasets/theayos/libero_spatial_image) | A | **TP** | 4 subst. / 2 sessions | Elegible via Criteri A (tags explícits) -- no s'exigeix dispersió temporal: la presència de >=2 tags ja és un senyal deliberat de versionat per part del mantenidor, independentment de quan es van crear. |
 | 3 | [joung/example_dataset](https://huggingface.co/datasets/joung/example_dataset) | B | **TP** | 16 subst. / 2 sessions | 2 sessions de treball clarament diferenciades (>6.0h de buit entre commits substantius). |
 | 4 | [edinburghcstr/ami](https://huggingface.co/datasets/edinburghcstr/ami) | B | **TP** | 13 subst. / 5 sessions | 5 sessions de treball clarament diferenciades (>6.0h de buit entre commits substantius). |
 | 5 | [xlangai/spider](https://huggingface.co/datasets/xlangai/spider) | B | **TP** | 8 subst. / 4 sessions | 4 sessions de treball clarament diferenciades (>6.0h de buit entre commits substantius). |
-| 6 | [Team-DIANA/green-probe-dataset](https://huggingface.co/datasets/Team-DIANA/green-probe-dataset) | B | **TP** | 5 subst. / 3 sessions | 3 sessions de treball clarament diferenciades (>6.0h de buit entre commits substantius). |
+| 6 | [Team-DIANA/green-probe-dataset](https://huggingface.co/datasets/Team-DIANA/green-probe-dataset) | B | **TP** | 4 subst. / 3 sessions | 3 sessions de treball clarament diferenciades (>6.0h de buit entre commits substantius). |
 | 7 | [nwu-ctext/nchlt](https://huggingface.co/datasets/nwu-ctext/nchlt) | B | **TP** | 2 subst. / 2 sessions | 2 sessions de treball clarament diferenciades (>6.0h de buit entre commits substantius). |
 | 8 | [lt-s/BAC_PIC_HOSPITAL](https://huggingface.co/datasets/lt-s/BAC_PIC_HOSPITAL) | A | **TP** | 4 subst. / 2 sessions | Elegible via Criteri A (tags explícits) -- no s'exigeix dispersió temporal: la presència de >=2 tags ja és un senyal deliberat de versionat per part del mantenidor, independentment de quan es van crear. |
-| 9 | [QFIN/FCMBench-Data](https://huggingface.co/datasets/QFIN/FCMBench-Data) | B | **TP** | 16 subst. / 9 sessions | 9 sessions de treball clarament diferenciades (>6.0h de buit entre commits substantius). |
+| 9 | [QFIN/FCMBench-Data](https://huggingface.co/datasets/QFIN/FCMBench-Data) | B | **TP** | 12 subst. / 7 sessions | 7 sessions de treball clarament diferenciades (>6.0h de buit entre commits substantius). |
 | 10 | [AILAB-VNUHCM/vivos](https://huggingface.co/datasets/AILAB-VNUHCM/vivos) | B | **TP** | 9 subst. / 5 sessions | 5 sessions de treball clarament diferenciades (>6.0h de buit entre commits substantius). |
 | 11 | [khrisyu/Qwen3-4B-Instruct-2507-best_of_n-prm-completions](https://huggingface.co/datasets/khrisyu/Qwen3-4B-Instruct-2507-best_of_n-prm-completions) | B | **TP** | 13 subst. / 4 sessions | 4 sessions de treball clarament diferenciades (>6.0h de buit entre commits substantius). |
 

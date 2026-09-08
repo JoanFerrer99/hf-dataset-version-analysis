@@ -1,10 +1,11 @@
 # syntax=docker/dockerfile:1
 #
-# Imatge per executar el pipeline (notebooks/eligibility_scan.py i
-# notebooks/validate_eligible.py) sense dependre de l'entorn Python de la
-# màquina host. Build en dues fases: "builder" instal·la les dependències
-# en un virtualenv aïllat; "runtime" copia només aquest venv + el codi a
-# una imatge slim, sense eines de build ni caché de pip.
+# Imatge per executar el pipeline (notebooks/eligibility_scan.py,
+# notebooks/validate_eligible.py i notebooks/version_extractor.py) sense
+# dependre de l'entorn Python de la màquina host. Build en dues fases:
+# "builder" instal·la les dependències en un virtualenv aïllat; "runtime"
+# copia només aquest venv + el codi a una imatge slim, sense eines de
+# build ni caché de pip.
 
 FROM python:3.12-slim AS builder
 

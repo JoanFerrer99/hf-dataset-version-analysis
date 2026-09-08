@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-08-26T15:36:51.288026",
-  "source_csv": "/app/data/eligibility_report_2000_5.csv",
+  "generated_at": "2026-09-08T17:35:43.969477",
+  "source_csv": "/home/joanferrer/Documentos/UNIVERSITAT/TFG/hf-dataset-version-analysis/data/eligibility_report_2000_5.csv",
   "n_datasets": 11,
   "datasets": [
     {
@@ -23,7 +23,7 @@
           "sha": "871124da075ea66892012ccc856b3f655b751d18",
           "title": "Publish Hindi curation prompt; update paper status to accepted at Interspeech 2026",
           "created_at": "2026-08-14T09:58:46+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "623564fd231805c28051e01c2ae10d0a7d84295b",
@@ -35,13 +35,13 @@
           "sha": "dd20a44668cc254acaba0fa4665b185721dcb8d4",
           "title": "Docs: correct raw_transcription provenance (hi/kn from normalized transcription column) and QC rejection rate (1 clip, not ~10%)",
           "created_at": "2026-08-14T09:26:16+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "d4195bf41552b9454342a89b7b4b13f606a63f45",
           "title": "Update DATASHEET.md",
           "created_at": "2026-05-20T09:14:04+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "00c2515bb7386b6c31b046e596e1fa2c6dcba1dd",
@@ -53,19 +53,19 @@
           "sha": "13c33e1d67a7a1c2bb0a00888e5874184920e137",
           "title": "Defer Hindi prompt to v1.1",
           "created_at": "2026-05-20T07:01:10+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "18771869bfb67ae5ae70e3075676e2a309cf81da",
           "title": "Add datasheet",
           "created_at": "2026-05-20T07:00:53+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "15e88113ce09e24edb64000ca9011b5f9cb47380",
           "title": "Add curation recipe",
           "created_at": "2026-05-11T11:15:38+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "ddcaed1f37ee12eec032575da0764f841971659f",
@@ -98,8 +98,8 @@
           "is_substantive": false
         }
       ],
-      "num_substantive": 11,
-      "num_sessions": 3,
+      "num_substantive": 5,
+      "num_sessions": 2,
       "error": ""
     },
     {
@@ -122,31 +122,31 @@
           "sha": "88df22c315e6c9e41867d967e92ee40fd3e12149",
           "title": "Delete files data/chunk*/episode_* meta/*.jsonl videos/chunk* with huggingface_hub",
           "created_at": "2026-02-25T11:51:17+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "ebce8ddc13d6dec28f81c37d897455783ba95868",
           "title": "Delete meta/stats.json with huggingface_hub",
           "created_at": "2026-02-03T16:33:47+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "f2b3a56ad897b06232fe25f86f2bc21aa5d1eff4",
           "title": "Upload folder using huggingface_hub",
           "created_at": "2026-02-03T16:33:46+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "865b9212155b5aaa87bf10ed1e1ac0de6f179e13",
           "title": "Delete meta/stats.json with huggingface_hub",
           "created_at": "2026-02-03T16:30:04+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "5894c4e80b9c51dc9868542737f6ac0bc2c3f508",
           "title": "Upload folder using huggingface_hub",
           "created_at": "2026-02-03T16:30:02+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "2be7b93fd70854fa0829cf671c3d717a651711f0",
@@ -170,13 +170,13 @@
           "sha": "2e1e73a7059b9abf14059a8586575ef01e1c8e54",
           "title": "Delete meta/stats.json with huggingface_hub",
           "created_at": "2026-01-29T09:27:12+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "0bd702b1ec7151f766d324c3a71df3ffc417b8e8",
           "title": "Upload folder using huggingface_hub",
           "created_at": "2026-01-29T09:27:10+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "62d57cee0c39f76c2a08be92665ece7cda7f0e7b",
@@ -185,8 +185,8 @@
           "is_substantive": true
         }
       ],
-      "num_substantive": 11,
-      "num_sessions": 3,
+      "num_substantive": 4,
+      "num_sessions": 2,
       "error": ""
     },
     {
@@ -568,7 +568,7 @@
           "sha": "b90566cfde0414287466e1ebf5a4106b5a3d441f",
           "title": "Update config.yaml",
           "created_at": "2024-04-03T17:39:51+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "08b0ad513e675e13a2dc9dc750b555ec44c06007",
@@ -595,7 +595,7 @@
           "is_substantive": false
         }
       ],
-      "num_substantive": 5,
+      "num_substantive": 4,
       "num_sessions": 3,
       "error": ""
     },
@@ -766,13 +766,13 @@
           "sha": "d492955ede753a4a6c86dbbeabc18eb1de1af360",
           "title": "Add FCMBench-Video citation alongside FCMBench citation, with labels distinguishing Vision-Language and Video Understanding tracks",
           "created_at": "2026-04-29T07:28:42+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "1656b15fd6078273322e7a9fbd1c39241798d6fa",
           "title": "Update README to align with GitHub FCMBench: add FCMBench-Video info, restructure Tracks Overview table, replace HF link with GitHub project link",
           "created_at": "2026-04-29T06:46:02+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "865fdc53293c52166d15d436cd3596573f0ac833",
@@ -808,7 +808,7 @@
           "sha": "45949f2703181a68dc53e32fddb8670d1a6f0139",
           "title": "Upload 2 files",
           "created_at": "2026-03-16T10:29:16+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "a0ff7c1faa280d9cebfc887aed9af601d43412fc",
@@ -826,7 +826,7 @@
           "sha": "596f79b11ca69422d81e2f8e3b84a81750f4ab47",
           "title": "Create README_cn.md",
           "created_at": "2026-01-16T06:36:39+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "cff82273999459790eb17157112070f8c467c5b6",
@@ -889,8 +889,8 @@
           "is_substantive": false
         }
       ],
-      "num_substantive": 16,
-      "num_sessions": 9,
+      "num_substantive": 12,
+      "num_sessions": 7,
       "error": ""
     },
     {

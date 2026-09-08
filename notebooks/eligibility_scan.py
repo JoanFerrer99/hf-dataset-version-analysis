@@ -68,34 +68,13 @@ NON_SUBSTANTIVE_FILES = {
     ".gitmodules",
     "setup.py",
     "setup.cfg",
-    "changelog.json",  # trobat empíricament al calibratge (vegeu més avall)
+    "changelog.json",
 }
 
-# Prefixos de carpeta que, per convenció d'eines d'exportació estructurada
-# (p.e. LeRobot), contenen NOMÉS metadada -- mai dades reals d'observacions
-# -- independentment de l'extensió del fitxer. Es comprova SEMPRE abans de
-# l'extensió: un `.parquet` sota `meta/` és metadada, no dades.
-#
-# Calibratge empíric (agost 2026, 4 datasets reals clonats i inspeccionats):
-# la MIDA del fitxer es va descartar com a senyal de classificació perquè
-# un fitxer de metadades pot ser MÉS GRAN que un fitxer de dades real
-# (p.e. `meta/episodes_stats.jsonl` de villekuosmanen/close_shoebox pesa
-# 393KB, més que la majoria dels `data/chunk-*/episode_*.parquet` del
-# mateix dataset; `meta/episodes/chunk-000/file-000.parquet` d'
-# unitreerobotics pesa 482KB). El prefix de ruta, en canvi, va separar
-# metadada de dades reals de forma consistent en els 4 datasets provats.
 NON_SUBSTANTIVE_PATH_PREFIXES = ("meta/", "meta_data/", ".github/")
 
-# Extensions que MAI representen dades reals del dataset, en cap context.
 NON_SUBSTANTIVE_EXTENSIONS = (".md", ".yml", ".yaml", ".toml", ".cfg", ".ini", ".lock")
 
-# Extensions que, fora de NON_SUBSTANTIVE_PATH_PREFIXES, representen
-# gairebé sempre contingut real del dataset (formats tabulars/columnars,
-# tensors, multimèdia, arxius). `.json`/`.jsonl` "nu" (sense el prefix
-# `meta/`) i extensions desconegudes es deixen fora d'aquesta llista
-# deliberadament: `.json` és ambigu (pot ser config o dades) i, sense un
-# senyal fiable per desempatar-lo (la mida no ho és, vegeu més amunt),
-# `is_substantive_path` hi aplica el valor per defecte (substantiu).
 SUBSTANTIVE_DATA_EXTENSIONS = (
     ".parquet", ".csv", ".tsv", ".arrow", ".feather", ".orc",
     ".jsonl", ".ndjson",
@@ -439,11 +418,7 @@ def is_substantive_path(path: str) -> bool:
     3. Acaba amb una extensió de `SUBSTANTIVE_DATA_EXTENSIONS` ->
        substantiu.
     4. Qualsevol altre cas (p.e. `.json`/`.txt` fora de `meta/`, o una
-       extensió no prevista) -> substantiu per defecte. Deliberadament NO
-       es fa servir la mida del fitxer per desempatar aquest cas: el
-       calibratge empíric va trobar fitxers de metadades més grans que
-       fitxers de dades reals del mateix dataset, així que la mida no és
-       un senyal fiable aquí.
+       extensió no prevista) -> substantiu per defecte.
 
     :param path: ruta relativa dins del repositori tal com la retorna
         `git show --name-status` (p.e. `"data/chunk-000/file-000.parquet"`
