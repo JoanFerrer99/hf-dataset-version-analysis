@@ -8,6 +8,9 @@
 #   # 2. Passa'l a validate-eligible (substitueix <run_id> pel de l'ls anterior):
 #   docker compose run --rm validate-eligible --input data/eligibility_report_50_<run_id>.csv
 #
+#   # 3. Passa'l a version-extractor (Fase 1: seqüència de versions per dataset elegible):
+#   docker compose run --rm version-extractor --input data/eligibility_report_50_<run_id>.csv
+#
 # Requereix un fitxer .env a l'arrel amb HF_TOKEN=hf_xxx (vegeu README.md).
 
 services:
@@ -28,3 +31,12 @@ services:
     volumes:
       - ./data:/app/data
       - ./docs:/app/docs
+
+  version-extractor:
+    build: .
+    image: hf-dataset-version-analysis:latest
+    entrypoint: ["python", "notebooks/version_extractor.py"]
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data

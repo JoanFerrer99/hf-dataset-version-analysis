@@ -1,481 +1,105 @@
 {
-  "generated_at": "2026-07-29T20:21:23.952669",
-  "source_csv": "/app/data/eligibility_report_2000_4.csv",
-  "n_datasets": 10,
+  "generated_at": "2026-09-08T17:35:43.969477",
+  "source_csv": "/home/joanferrer/Documentos/UNIVERSITAT/TFG/hf-dataset-version-analysis/data/eligibility_report_2000_5.csv",
+  "n_datasets": 11,
   "datasets": [
     {
-      "dataset_id": "dl-qft-team/DeepSeek-R1-Distill-Llama-8B-dvts-prm-completions",
-      "eligibility_reason": "Criteri B: substantive_commits>=2 dispersos >=6.0h",
-      "url": "https://huggingface.co/datasets/dl-qft-team/DeepSeek-R1-Distill-Llama-8B-dvts-prm-completions",
-      "tags": [],
-      "commits": [
-        {
-          "sha": "d644beb639bffdc6b470e81a81e10b1e9230b961",
-          "title": "Upload dataset",
-          "created_at": "2025-01-30T22:41:37+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "d6eee6520023d88ec00d746167720c62aa552284",
-          "title": "Upload dataset",
-          "created_at": "2025-01-30T21:34:07+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "68e0a03b99ae4660d73ad6cb3e0ee144eb9d24b5",
-          "title": "Upload dataset",
-          "created_at": "2025-01-29T02:37:22+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "881b7b6b7fd3399a92ab7d5f6dd7b6cc93b85a89",
-          "title": "Upload dataset",
-          "created_at": "2025-01-29T01:24:24+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "2fca1470dfd07693fac7270a80c3203fba7fcb55",
-          "title": "Upload dataset",
-          "created_at": "2025-01-28T21:48:45+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "80f5bd6f6bca71706f24e53f6c5d894cf72ce2e1",
-          "title": "Upload dataset",
-          "created_at": "2025-01-28T14:39:08+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "61161db19d5068fd7ded499f81d80e081e52f7e0",
-          "title": "Upload dataset",
-          "created_at": "2025-01-28T04:22:03+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "e2781af1411e0a46c9662c8ce87116bc8f97c4f1",
-          "title": "Upload dataset",
-          "created_at": "2025-01-28T04:12:46+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "60630192e39697de585a8c7956b660c9176b5249",
-          "title": "Upload dataset",
-          "created_at": "2025-01-28T03:56:54+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "98cf0834051b16e9ef21176c66ecc5a196147cd1",
-          "title": "Upload dataset",
-          "created_at": "2025-01-28T03:39:40+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "2e8b0f64372c20ac608d375c578560b7478a13e9",
-          "title": "Upload dataset",
-          "created_at": "2025-01-28T03:27:46+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "e3e2f8c9630fbfb964f2d218a7218ee9cc01ca6f",
-          "title": "Upload dataset",
-          "created_at": "2025-01-27T22:31:23+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "b16f1400e19045d0f250f6a38ecc408e98d60661",
-          "title": "initial commit",
-          "created_at": "2025-01-27T22:16:53+00:00",
-          "is_substantive": false
-        }
-      ],
-      "num_substantive": 12,
-      "num_sessions": 4,
-      "error": ""
-    },
-    {
-      "dataset_id": "mothnaZl/QwQ-32B-best_of_n-VLLM-Skywork-o1-Open-PRM-Qwen-2.5-7B-completions",
-      "eligibility_reason": "Criteri B: substantive_commits>=2 dispersos >=6.0h",
-      "url": "https://huggingface.co/datasets/mothnaZl/QwQ-32B-best_of_n-VLLM-Skywork-o1-Open-PRM-Qwen-2.5-7B-completions",
-      "tags": [],
-      "commits": [
-        {
-          "sha": "3e3cbf0e844e69d939180e58db9714c906022e90",
-          "title": "Upload dataset",
-          "created_at": "2025-05-11T16:33:25+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "4c6cdad6c85c97f7e8beec75fff4b3d1ff484650",
-          "title": "Upload dataset",
-          "created_at": "2025-05-08T17:49:11+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "f0275341b444392f583b26febe01ee8024d52c8f",
-          "title": "initial commit",
-          "created_at": "2025-04-10T16:33:21+00:00",
-          "is_substantive": true
-        }
-      ],
-      "num_substantive": 3,
-      "num_sessions": 3,
-      "error": ""
-    },
-    {
-      "dataset_id": "zacapa/SO101_FMB_ACT_08",
+      "dataset_id": "adalat-ai/fleurs-ro",
       "eligibility_reason": "Criteri A: tags>=2 amb commits substantius",
-      "url": "https://huggingface.co/datasets/zacapa/SO101_FMB_ACT_08",
+      "url": "https://huggingface.co/datasets/adalat-ai/fleurs-ro",
       "tags": [
-        "v2.1",
-        "v3.0"
+        "v1.0",
+        "v1.1",
+        "v2.0"
       ],
       "commits": [
         {
-          "sha": "f9ca6a470f59347bb26e3aa5636c6d97e40c7733",
-          "title": "Delete videos/chunk-000",
-          "created_at": "2025-10-01T03:41:00+00:00",
+          "sha": "b952d79e607b5b1bf4d32e3b0ab394b838345439",
+          "title": "v2.0: add Telugu config (466 rows, self-hosted Gemma 4 31B curation) + docs (#2)",
+          "created_at": "2026-08-14T11:52:26+00:00",
           "is_substantive": true
         },
         {
-          "sha": "24bc780c88260e497683249d3b7c12c647446a10",
-          "title": "Delete data/chunk-000/file-000.parquet",
-          "created_at": "2025-10-01T03:39:31+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "7a108010be8e596a7a47459749b9981f0d2d25e0",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2025-10-01T03:37:37+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "a17c24dc0cc8d023e53e2466f64bb8507674023a",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2025-10-01T03:29:53+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "e754389c6de5eed50faba82dd2e3525cabc61700",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2025-10-01T03:22:24+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "b33c6d6977df91ed5e28f021c7a2a8989b35599c",
-          "title": "Upload README.md with huggingface_hub",
-          "created_at": "2025-09-26T05:42:01+00:00",
+          "sha": "871124da075ea66892012ccc856b3f655b751d18",
+          "title": "Publish Hindi curation prompt; update paper status to accepted at Interspeech 2026",
+          "created_at": "2026-08-14T09:58:46+00:00",
           "is_substantive": false
         },
         {
-          "sha": "833e4634ee3c7de5e31ff24cca05b9345062d237",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2025-09-26T05:42:01+00:00",
+          "sha": "623564fd231805c28051e01c2ae10d0a7d84295b",
+          "title": "Rename raw_transcription column to source_transcription (values unchanged); update docs",
+          "created_at": "2026-08-14T09:42:24+00:00",
           "is_substantive": true
         },
         {
-          "sha": "0f4fbfa2b024ee830f811d9cc21012f62acd744d",
-          "title": "Delete files data/chunk*/episode_* meta/*.jsonl videos/chunk* with huggingface_hub",
-          "created_at": "2025-09-26T05:41:53+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "26fbcbfb509c8d4a29ad4196df21c5792373436f",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2025-09-26T04:17:53+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "bc275451baa51654c347d5f4484b5e8a240b89b1",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2025-09-26T04:07:49+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "842ac2e86f07ef541dc48f29116b6283fc052884",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2025-09-26T03:58:41+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "e6eae6e0b9c3facd280a469df100464e7caadb68",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2025-09-08T03:54:42+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "ccd01f0922fba7b48ab961c5acc8d6e65c785fcc",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2025-09-08T03:37:35+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "4a83c960b048e5ffc0d6546a091503882ec419f5",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2025-09-08T03:01:10+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "6e9d30d8c94a8ad1d3cb7418afb5dc85ac878fa6",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2025-09-05T20:31:37+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "34868de1ad0528676286b0e2cce1ac99d8d2d54f",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2025-09-05T05:17:50+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "b1da70e67365e1a0aa02779129296605bc7b9ad3",
-          "title": "Update meta/episodes.jsonl",
-          "created_at": "2025-09-04T05:09:39+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "73beb16c08c767a280c3db347f3182b8daae41db",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2025-09-04T03:59:35+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "fdb19cfbe42dd5c742b87d03220d380b66ed7f34",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2025-09-04T03:44:01+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "dde4de70a522f544f3a2b4d890da9de341a08faf",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2025-09-04T03:41:59+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "4118c6198b5c0a4dc0d2ddd0341315ed17f9c8d9",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2025-09-04T03:22:26+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "e62a66fdb30a3fb1f34ca17e2104e5b5ceaf6134",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2025-09-04T03:11:36+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "1cfd77ad72f6107904d5a44459738b92379da20f",
-          "title": "Update meta/episodes.jsonl",
-          "created_at": "2025-09-04T02:38:34+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "2854775e6bfef7a1f430ae65acb9ead744c2d226",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2025-09-04T02:36:32+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "cb844fb31c91689e0f37e94a9db6c4ba9d93c681",
-          "title": "Upload README.md with huggingface_hub",
-          "created_at": "2025-09-04T02:32:38+00:00",
+          "sha": "dd20a44668cc254acaba0fa4665b185721dcb8d4",
+          "title": "Docs: correct raw_transcription provenance (hi/kn from normalized transcription column) and QC rejection rate (1 clip, not ~10%)",
+          "created_at": "2026-08-14T09:26:16+00:00",
           "is_substantive": false
         },
         {
-          "sha": "8340277bb27b91b78c248b261ec49bebda14b2b1",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2025-09-04T02:32:30+00:00",
+          "sha": "d4195bf41552b9454342a89b7b4b13f606a63f45",
+          "title": "Update DATASHEET.md",
+          "created_at": "2026-05-20T09:14:04+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "00c2515bb7386b6c31b046e596e1fa2c6dcba1dd",
+          "title": "Link datasheet from README",
+          "created_at": "2026-05-20T08:41:23+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "13c33e1d67a7a1c2bb0a00888e5874184920e137",
+          "title": "Defer Hindi prompt to v1.1",
+          "created_at": "2026-05-20T07:01:10+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "18771869bfb67ae5ae70e3075676e2a309cf81da",
+          "title": "Add datasheet",
+          "created_at": "2026-05-20T07:00:53+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "15e88113ce09e24edb64000ca9011b5f9cb47380",
+          "title": "Add curation recipe",
+          "created_at": "2026-05-11T11:15:38+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "ddcaed1f37ee12eec032575da0764f841971659f",
+          "title": "Add dataset card",
+          "created_at": "2026-05-11T11:15:38+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "55365c72f6b6b1dbe0392bbc115b959ee5912859",
+          "title": "Upload dataset",
+          "created_at": "2026-05-11T11:15:27+00:00",
           "is_substantive": true
         },
         {
-          "sha": "f8b86db5b10587393d6052add66ebbab63cad486",
-          "title": "Upload recorded dataset with 20 episodes",
-          "created_at": "2025-09-04T02:13:05+00:00",
+          "sha": "4f2735f649381ab8906173618da925961e02f99c",
+          "title": "Upload dataset",
+          "created_at": "2026-05-11T11:15:15+00:00",
           "is_substantive": true
         },
         {
-          "sha": "ca49db6162b76e55c20cc5783ae190207da2c9a2",
+          "sha": "c6ad290114e363b4160b85944f2f674841d3f498",
+          "title": "Upload dataset",
+          "created_at": "2026-05-11T11:15:03+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "f881e7e86d68d7b36d4470480368d83a3125be6f",
           "title": "initial commit",
-          "created_at": "2025-09-04T02:12:05+00:00",
+          "created_at": "2026-05-11T11:14:41+00:00",
           "is_substantive": false
         }
       ],
-      "num_substantive": 25,
-      "num_sessions": 6,
-      "error": ""
-    },
-    {
-      "dataset_id": "BrunoM42/robocasa_target_HeatKebabSandwich",
-      "eligibility_reason": "Criteri A: tags>=2 amb commits substantius",
-      "url": "https://huggingface.co/datasets/BrunoM42/robocasa_target_HeatKebabSandwich",
-      "tags": [
-        "v3.0",
-        "v2.1"
-      ],
-      "commits": [
-        {
-          "sha": "296f3164fce526399eaa51d64b01c6ae976ea07e",
-          "title": "Upload README.md with huggingface_hub",
-          "created_at": "2026-03-28T20:10:22+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "099894a87009250bd739af232844c79af22b2869",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-28T20:10:20+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "31a3aa2b592014047ab43851b14bec572dc52a8b",
-          "title": "Delete files data/chunk*/episode_* meta/*.jsonl videos/chunk* with huggingface_hub",
-          "created_at": "2026-03-28T19:56:34+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "da5dbebe6a78b2e5f64c3e8cae6876534394b510",
-          "title": "Upload README.md with huggingface_hub",
-          "created_at": "2026-03-27T10:30:26+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "11a49ade99e35c464bb5de83b584197edf96890b",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-27T10:29:42+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "3d577bc09a1d0f75a56e728b88d229c0cce06e6d",
-          "title": "initial commit",
-          "created_at": "2026-03-27T10:28:00+00:00",
-          "is_substantive": false
-        }
-      ],
-      "num_substantive": 3,
+      "num_substantive": 5,
       "num_sessions": 2,
-      "error": ""
-    },
-    {
-      "dataset_id": "google-research-datasets/natural_questions",
-      "eligibility_reason": "Criteri B: substantive_commits>=2 dispersos >=6.0h",
-      "url": "https://huggingface.co/datasets/google-research-datasets/natural_questions",
-      "tags": [],
-      "commits": [
-        {
-          "sha": "e8103d566bef4154c2c12b17c6095ec5275840cc",
-          "title": "Replace script with data files (#7)",
-          "created_at": "2024-03-11T16:19:34+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "19ba7767b174ad046a84f46af056517a3910ee57",
-          "title": "Delete legacy JSON metadata (#8)",
-          "created_at": "2024-01-18T11:10:09+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "4680ede6f5f8b799606e6ecfcaaf3711c659c2ab",
-          "title": "Convert dataset sizes from base 2 to base 10 in the dataset card (#5)",
-          "created_at": "2023-04-05T13:35:01+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "64c80202eaa8af01f6c61b2056e9859e0a94fa3f",
-          "title": "Replace YAML keys from int to str (#3)",
-          "created_at": "2023-01-25T14:41:14+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "3d1d4a0b43cd5a994838f68ffec260e59603579d",
-          "title": " add dataset_info in dataset metadata",
-          "created_at": "2022-11-03T16:31:11+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "86f88c01ce8f972707861471e6e50d4de047dcf4",
-          "title": " Remove apache_beam import from module level in natural_questions dataset (#4780)",
-          "created_at": "2022-08-02T16:03:49+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "efe2c92ce10557baf266c2a8eef4f2891ebf06e2",
-          "title": " Add long answer candidates to natural questions dataset (#4368)",
-          "created_at": "2022-07-26T20:19:06+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "2122f7b7ca93dae389d506538aa4fd3fdd2255c2",
-          "title": " Align more metadata with other repo types (models,spaces) (#4607)",
-          "created_at": "2022-07-01T11:54:26+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "1948c756df81121402b4ec9db2d3be2587c31194",
-          "title": " Remove config names as yaml keys (#4367)",
-          "created_at": "2022-05-20T09:36:50+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "c8d54af76e5041c06ae73a31a7bcd66c0e681344",
-          "title": " Remove a copy-paste sentence in dataset cards (#4281)",
-          "created_at": "2022-05-04T18:34:36+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "d4635b41dff656f1f29a2720dcb89fc314e3e5dd",
-          "title": " Fix typo in train split name (#3751)",
-          "created_at": "2022-02-18T14:29:48+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "789f9d65009f8941efab08cb78656879d901c2c2",
-          "title": " Update files from the datasets library (from 1.18.0)",
-          "created_at": "2022-01-25T15:52:53+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "7fec6c994ac272329e788822309c129f1f0bb879",
-          "title": " Update files from the datasets library (from 1.8.0)",
-          "created_at": "2022-01-25T15:46:17+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "f2e4bedc0177a23a854d7cac0bf8bb82c520decb",
-          "title": " Update files from the datasets library (from 1.7.0)",
-          "created_at": "2022-01-25T15:44:13+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "8a86a945762401ad42606bed647ac6305fb96bb2",
-          "title": " Update files from the datasets library (from 1.6.1)",
-          "created_at": "2022-01-25T15:42:26+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "a696b9f3b4c0f6636f43514111a6964de692861c",
-          "title": " Update files from the datasets library (from 1.6.0)",
-          "created_at": "2022-01-25T15:41:05+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "0defb137e116bfa81bbe80a2711ef2c7b0dcbe9c",
-          "title": " Update files from the datasets library (from 1.4.0)",
-          "created_at": "2022-01-25T15:39:13+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "31a153cd9a4ee51b852e935c71ca347020e1fa95",
-          "title": " Update files from the datasets library (from 1.3.0)",
-          "created_at": "2022-01-25T15:37:58+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "d4cca19c3a89ee3616b2cb63a1f7a868bc816404",
-          "title": " Update files from the datasets library (from 1.0.0)",
-          "created_at": "2022-01-25T15:34:08+00:00",
-          "is_substantive": true
-        }
-      ],
-      "num_substantive": 7,
-      "num_sessions": 5,
       "error": ""
     },
     {
@@ -498,31 +122,31 @@
           "sha": "88df22c315e6c9e41867d967e92ee40fd3e12149",
           "title": "Delete files data/chunk*/episode_* meta/*.jsonl videos/chunk* with huggingface_hub",
           "created_at": "2026-02-25T11:51:17+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "ebce8ddc13d6dec28f81c37d897455783ba95868",
           "title": "Delete meta/stats.json with huggingface_hub",
           "created_at": "2026-02-03T16:33:47+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "f2b3a56ad897b06232fe25f86f2bc21aa5d1eff4",
           "title": "Upload folder using huggingface_hub",
           "created_at": "2026-02-03T16:33:46+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "865b9212155b5aaa87bf10ed1e1ac0de6f179e13",
           "title": "Delete meta/stats.json with huggingface_hub",
           "created_at": "2026-02-03T16:30:04+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "5894c4e80b9c51dc9868542737f6ac0bc2c3f508",
           "title": "Upload folder using huggingface_hub",
           "created_at": "2026-02-03T16:30:02+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "2be7b93fd70854fa0829cf671c3d717a651711f0",
@@ -546,13 +170,13 @@
           "sha": "2e1e73a7059b9abf14059a8586575ef01e1c8e54",
           "title": "Delete meta/stats.json with huggingface_hub",
           "created_at": "2026-01-29T09:27:12+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "0bd702b1ec7151f766d324c3a71df3ffc417b8e8",
           "title": "Upload folder using huggingface_hub",
           "created_at": "2026-01-29T09:27:10+00:00",
-          "is_substantive": true
+          "is_substantive": false
         },
         {
           "sha": "62d57cee0c39f76c2a08be92665ece7cda7f0e7b",
@@ -561,583 +185,908 @@
           "is_substantive": true
         }
       ],
-      "num_substantive": 11,
-      "num_sessions": 3,
-      "error": ""
-    },
-    {
-      "dataset_id": "FudgeTechLab/LeRobot_Blue_Cube_PnP",
-      "eligibility_reason": "Criteri B: substantive_commits>=2 dispersos >=6.0h",
-      "url": "https://huggingface.co/datasets/FudgeTechLab/LeRobot_Blue_Cube_PnP",
-      "tags": [],
-      "commits": [
-        {
-          "sha": "17188ac49a99c2f5a7e017676c177d7745205fb0",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-27T10:27:16+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "07f8f402d4921d8e5f3e8c2b0d945793d1eaa1ba",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T16:21:49+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "a8bbccdae953b4f1ef0419ab5da1fdef7f51895e",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T16:20:52+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "7125bf002726f6d294c55883bfd55528657788f0",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T16:12:02+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "5005a2de282c2bcbc8f0d347fc465fbc0308c45b",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T16:10:55+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "6a067d3b614e51a99dd817eef6a6c86311efa4b5",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T16:08:22+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "e4f53946a2e6cc56225a833ae8d1a1f3ebc19a17",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T16:07:19+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "747524ab5fa0b24af13392c40dfecbabba7ba78b",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T16:05:35+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "4bf5cb0d544235d1b4949c29a548dfd5c89e6a5b",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T16:03:53+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "5a35165a78c74b851218a12eebdf9f4dd93da26e",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T15:57:29+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "d92257b4f32b357bde1a931eba76daf49198818d",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T15:56:45+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "389d87e29bc91598c764afa9796581b325464f3a",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T15:55:45+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "03bcc84d51011b1fe8272f757b2a8992513daf1b",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T15:54:07+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "0644cab960d9c2294bd766b728eb2ceecd2d3545",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T15:52:21+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "ec92628dff5998596ca09c6b7c8a6ebe575c3315",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T15:50:10+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "58d7a34f6c131cd5722ffdcfff5d01e2c904cb2f",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T15:49:15+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "45cabc829f74d083dcbc81a8a6ed842600803996",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T15:48:11+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "1a5a1e1da0d1d4ba9c1227d773bdec4964d439aa",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T15:44:48+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "2a59a9e6d357b121e332e1bb1ae80b81afd034aa",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T15:41:31+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "29e58ed003d22e0962511704941d3e8358d11d51",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T15:40:26+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "bf6fc26aa25f28932debfc9598156a2f39beda0a",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T15:39:00+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "7ea911c99095d12db4e5d46ae60f63731f043402",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T15:37:35+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "46fbb3056bc234a36ee67edc819a4ba3f4fd6412",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T15:31:55+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "d8f45fd9142c288bd53c2f77c16fe8ca04524d26",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T15:30:01+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "973e4041dc732f61560131873145d284a9ba8b6a",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T15:28:56+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "d845b46c7f9fd512d0d19c99a8a24308ea0a33ac",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T15:27:56+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "bd1ea37175c77f77ad8cae0e051ea1211efb9e30",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T15:26:22+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "252c0756140b644fe90153f055cfb441bb37493f",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T08:46:02+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "f421a9210f89bea6dd21e0f2494efbc81ec954d1",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T08:44:55+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "9aeb2b5ae78c467248c5f2f95e9918d5c89cc9c6",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T08:43:41+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "b27c8cae841d77ef5dd0194cd82351fc2f09e0f9",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T08:42:27+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "4f607038b2d6538e34da7ac0a392bb2e880e5314",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T08:40:42+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "31a43d408a8e4ce7e60438ed6e1a7176d3dfa3da",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T08:38:52+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "dee93ad40edd30ff1c78ea22e14b0f5c9fd425d4",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T08:37:25+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "f80f1eec6f0583d4b4b6ffed7f55a5a8f7e31d74",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T08:35:53+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "55be6edce4fb1a42e88291f045fec22e69305979",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T08:34:17+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "050119078ce0ed7ab949fc5bb50ad3a5caed569b",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T08:32:45+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "56487fdc6309bcb2eeb8e8890e06d4288027c87c",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T08:31:20+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "c9ec5075815eff93c787c56ff3eaeac2b15801d1",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T08:28:27+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "af103393e0642bbf927ee940f1ea55652bacc1b9",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T08:26:46+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "3c9f0a59b404142c21107cc11790a4d12e0a494c",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T08:24:33+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "d61b87820a67f77d7c1c2b0b836e395c623a4818",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T08:23:20+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "ac15c23b5eccef3cc2566a6767b09646ef76b49d",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T08:20:56+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "d0706daa18b210f703d46e4b588a515ceb5a122c",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T08:19:32+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "6dbce0fce954da037aa8268ac467cbc039da3a33",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T08:17:46+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "c027a94d4f9de0c868cd3f81d908f7f6c7fa139b",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T08:05:12+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "8a1d0f285fecf5ab46236353097da84f0bb6d642",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T08:03:56+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "e20e78666cacda134d5e2547f9e85d38aa796b2a",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T08:02:19+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "c99c1d14ac6e9b1dbdfefbb0c3baa3129fba6e4b",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T08:01:00+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "2866a4de99d116682c3422517ae64d73c8c84ba3",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-17T07:59:20+00:00",
-          "is_substantive": true
-        }
-      ],
-      "num_substantive": 50,
-      "num_sessions": 3,
-      "error": ""
-    },
-    {
-      "dataset_id": "GermanEval/germeval_14",
-      "eligibility_reason": "Criteri B: substantive_commits>=2 dispersos >=6.0h",
-      "url": "https://huggingface.co/datasets/GermanEval/germeval_14",
-      "tags": [],
-      "commits": [
-        {
-          "sha": "10b95435538d4ec829214e8beff4cb410b8118d7",
-          "title": "Delete legacy JSON metadata (#5)",
-          "created_at": "2024-01-18T11:04:11+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "a42b58956d04adac9e8e6adfda6f1a8ca9adb023",
-          "title": "Convert dataset sizes from base 2 to base 10 in the dataset card (#4)",
-          "created_at": "2023-04-05T10:06:39+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "e17e21a8a58cb1dfce5f18dc77138ca8acd0bc7d",
-          "title": "Replace YAML keys from int to str (#3)",
-          "created_at": "2023-01-25T14:30:56+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "da5bfe5dbc021615184be00dcac5e5c1f5b822b5",
-          "title": "Reorder split names (#2)",
-          "created_at": "2022-11-18T20:04:00+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "b242783706e4becaf4e8b91e3d7c53f060e5bc95",
-          "title": "Update README.md (#1)",
-          "created_at": "2022-11-18T10:42:10+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "668ca86d7a57ae68ef9d5a69f33868d428d89a5e",
-          "title": " add dataset_info in dataset metadata",
-          "created_at": "2022-11-03T16:46:41+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "7e6aa4f603a2fb26246b974683aaf2540a56c2ec",
-          "title": " remove dummmy data",
-          "created_at": "2022-10-28T16:35:03+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "001f29ecdaeefaa549cdb2193bb21290966daa43",
-          "title": " Remove a copy-paste sentence in dataset cards (#4281)",
-          "created_at": "2022-05-04T18:34:21+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "73eb996c43eb032e473175afde74e4e1553de34e",
-          "title": " Update files from the datasets library (from 1.18.0)",
-          "created_at": "2022-01-25T15:52:25+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "df4148bcc6dac2e36e003a40a74a2e58391903ec",
-          "title": " Update files from the datasets library (from 1.7.0)",
-          "created_at": "2022-01-25T15:43:38+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "18742f118303df8083b5e1e35cb3d42dfa85c6ad",
-          "title": " Update files from the datasets library (from 1.6.0)",
-          "created_at": "2022-01-25T15:40:41+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "8a79cf1c51c5c705ab887cec7737d2e7c67bb3a8",
-          "title": " Update files from the datasets library (from 1.4.0)",
-          "created_at": "2022-01-25T15:39:03+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "d3e58f75c61ff6022b54362ad42468599a566ae2",
-          "title": " Update files from the datasets library (from 1.3.0)",
-          "created_at": "2022-01-25T15:37:34+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "fba7825fed632700d22918d49f078d88f14e772b",
-          "title": " Update files from the datasets library (from 1.1.3)",
-          "created_at": "2022-01-25T15:34:42+00:00",
-          "is_substantive": true
-        },
-        {
-          "sha": "a4b90e0ceba17568ce3822e69f5ce61a79b3a886",
-          "title": " Update files from the datasets library (from 1.0.0)",
-          "created_at": "2022-01-25T15:34:02+00:00",
-          "is_substantive": true
-        }
-      ],
-      "num_substantive": 5,
+      "num_substantive": 4,
       "num_sessions": 2,
       "error": ""
     },
     {
-      "dataset_id": "BrunoM42/robocasa_target_SearingMeat",
+      "dataset_id": "joung/example_dataset",
+      "eligibility_reason": "Criteri B: substantive_commits>=2 dispersos >=6.0h",
+      "url": "https://huggingface.co/datasets/joung/example_dataset",
+      "tags": [],
+      "commits": [
+        {
+          "sha": "88cd7edc2c29df668560e0c7429e17a49e136f29",
+          "title": "Upload folder using huggingface_hub",
+          "created_at": "2026-02-26T08:59:57+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "94e44d35358700f27fabe3253064546c046e6cbb",
+          "title": "Upload folder using huggingface_hub",
+          "created_at": "2026-02-26T08:58:27+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "d9cfe0aecba1db7adf948071e8a40681d51009ac",
+          "title": "Upload folder using huggingface_hub",
+          "created_at": "2026-02-12T08:47:12+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "9692fb09eacb2f72ba46a19dc3010d245dae2765",
+          "title": "Upload folder using huggingface_hub",
+          "created_at": "2026-02-12T07:24:56+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "309bd72f8269b0a09f0ad69208e1e8dbc22ff6fa",
+          "title": "Upload folder using huggingface_hub",
+          "created_at": "2026-02-12T07:22:43+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "564e18673fa7c97304ac05c6607f659b9b973ac9",
+          "title": "Upload folder using huggingface_hub",
+          "created_at": "2026-02-12T04:29:08+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "fa5569753b7fe669cf210ea425cb1662a4729f60",
+          "title": "Upload folder using huggingface_hub",
+          "created_at": "2026-02-12T04:28:45+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "958d4959ab05ed400106ca3dc5204061e2327fca",
+          "title": "Upload folder using huggingface_hub",
+          "created_at": "2026-02-12T04:28:26+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "4b1c8dde6aeab5116539d1a1fbca7bde3fb7b56c",
+          "title": "Upload folder using huggingface_hub",
+          "created_at": "2026-02-12T04:27:58+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "37c1faff37e4aecbdb3e815285687439f1a56aa9",
+          "title": "Upload folder using huggingface_hub",
+          "created_at": "2026-02-12T04:27:31+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "5be7fd758b82737822e237e20199e37d66603fb6",
+          "title": "Upload folder using huggingface_hub",
+          "created_at": "2026-02-12T04:27:12+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "5af2e4e5255dddbc4bc361067b66e7b6db176743",
+          "title": "Upload folder using huggingface_hub",
+          "created_at": "2026-02-12T04:26:54+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "f70f4fb1506c65e31d5ed776c90bca91482e16da",
+          "title": "Upload folder using huggingface_hub",
+          "created_at": "2026-02-12T04:26:27+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "88075942759a31bade788f08de29ebc7cbd78406",
+          "title": "Upload folder using huggingface_hub",
+          "created_at": "2026-02-12T04:25:11+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "721abec00dcf53c86ebe1b01e9d9d5f1d2d24404",
+          "title": "Upload folder using huggingface_hub",
+          "created_at": "2026-02-12T04:23:32+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "15c0e0c417d6fdcd4e309ac8b9b596cb581fd44e",
+          "title": "Upload folder using huggingface_hub",
+          "created_at": "2026-02-12T03:34:45+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "02fab48ce4e5ae329dfe298720ef5bfc1ba1759a",
+          "title": "initial commit",
+          "created_at": "2026-02-12T03:34:42+00:00",
+          "is_substantive": false
+        }
+      ],
+      "num_substantive": 16,
+      "num_sessions": 2,
+      "error": ""
+    },
+    {
+      "dataset_id": "edinburghcstr/ami",
+      "eligibility_reason": "Criteri B: substantive_commits>=2 dispersos >=6.0h",
+      "url": "https://huggingface.co/datasets/edinburghcstr/ami",
+      "tags": [],
+      "commits": [
+        {
+          "sha": "46f28f2503e2ec48f8867a84eef356c70476beab",
+          "title": "Convert dataset to Parquet (part 00001-of-00002) (#9)",
+          "created_at": "2026-01-13T17:18:38+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "bb43445902f62021034a54b1cb2f014553823b08",
+          "title": "Convert dataset to Parquet (part 00000-of-00002) (#8)",
+          "created_at": "2026-01-13T17:18:30+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "831ea5d6035059ce66bf14f13e5ccdb222db48f9",
+          "title": "Update README.md",
+          "created_at": "2023-01-16T18:11:05+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "e93710fb4cd07c1f19214a63b6311383a8808894",
+          "title": "up",
+          "created_at": "2022-11-02T00:21:30+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "5cf3601fdd0fa0402447f0de7700f54461dfffd4",
+          "title": "up",
+          "created_at": "2022-11-02T00:11:13+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "1bf40cc4f1afadb8fb956f3b4ac89af39e55f144",
+          "title": "up",
+          "created_at": "2022-11-02T00:01:15+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "a03099e8a90490943fb9fb992899fc583fce39e1",
+          "title": "up",
+          "created_at": "2022-11-01T23:57:54+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "af6cedc509554a7c470e16bed629e8eb4ab744bf",
+          "title": "Merge branch 'main' of https://huggingface.co/datasets/edinburghcstr/ami into main",
+          "created_at": "2022-11-01T23:49:43+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "f1ae32929bd213500181a783f903a74d600a626e",
+          "title": "Add automatic-speech-recognition to task ids (#2)",
+          "created_at": "2022-11-01T23:40:32+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "69aa8912fe0a808cb065995be8ee86c0ab49e1ad",
+          "title": "add sdm",
+          "created_at": "2022-11-01T23:32:04+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "22abbdb2f7e0096e1796bf85d58aeb4a134a7f5c",
+          "title": "add-stream (#1)",
+          "created_at": "2022-10-12T12:40:38+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "24aa3f784a554a154d0c4a7ce814f809e3163031",
+          "title": "Update ami.py",
+          "created_at": "2022-09-02T10:56:33+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "9deaceeb0620c2094873104a30abbad60535cc64",
+          "title": "Update README.md",
+          "created_at": "2022-08-18T15:02:20+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "3b461013615985826a34c9ec79e822e2697a8687",
+          "title": "Update README.md",
+          "created_at": "2022-08-18T14:55:21+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "305afbb5496536ddf7c5770abc2fc0ca0ffd2a47",
+          "title": "Create new file",
+          "created_at": "2022-08-18T14:42:57+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "5523b83c403e6786c1aec93db65188067e42696d",
+          "title": "Create README.md",
+          "created_at": "2022-08-18T14:42:03+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "d3bb592c8e60a54edec055ec43642bacc7a52342",
+          "title": "finish",
+          "created_at": "2022-08-18T10:13:18+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "466f219275ef9450137565c71a4d320d43623c3f",
+          "title": "uP",
+          "created_at": "2022-08-18T09:31:26+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "a2f204930f7d34513c19c96fca11e9fad1173aa9",
+          "title": "Upload all chunked tar zipped files",
+          "created_at": "2022-08-18T06:33:41+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "51ec076b14d6ca7cf51e4f3274e25fdd710cda1c",
+          "title": "initial commit",
+          "created_at": "2022-08-17T22:02:08+00:00",
+          "is_substantive": false
+        }
+      ],
+      "num_substantive": 13,
+      "num_sessions": 5,
+      "error": ""
+    },
+    {
+      "dataset_id": "xlangai/spider",
+      "eligibility_reason": "Criteri B: substantive_commits>=2 dispersos >=6.0h",
+      "url": "https://huggingface.co/datasets/xlangai/spider",
+      "tags": [],
+      "commits": [
+        {
+          "sha": "0c350918f3f29ec754f1181c65cdce76cd6c133c",
+          "title": "Update metadata (#5)",
+          "created_at": "2024-03-27T13:38:42+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "fbb01a4f128231b111c4a047b6d0f6bf36d1f5a6",
+          "title": "Convert dataset to Parquet (#3)",
+          "created_at": "2024-01-04T16:28:08+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "6232cc3fad6d54c62b3ba23a364083a98ff36a17",
+          "title": " add dataset_info in dataset metadata",
+          "created_at": "2022-11-03T16:31:49+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "ae8f3271bb8c8206350a2b3477616da0b35e2804",
+          "title": " remove dummmy data",
+          "created_at": "2022-10-28T16:39:25+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "875f956904666571af9e9208f1c4bef907367ada",
+          "title": " fix task_ids",
+          "created_at": "2022-10-19T15:13:29+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "177e69f41c5e57dff0a01b4066fdddf819bbb534",
+          "title": " Align more metadata with other repo types (models,spaces) (#4607)",
+          "created_at": "2022-07-01T11:56:13+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "eb27f6b14c95967490e458ab29803597d70366ba",
+          "title": " Remove Google Drive URL in spider dataset (#4410)",
+          "created_at": "2022-05-26T06:40:43+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "33bb2d632e7e53f1f8150777ee7bfeda5c0853ab",
+          "title": "Add data file",
+          "created_at": "2022-05-26T06:02:58+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "7273639c36d010dda9ac220831716ac15cc6caa6",
+          "title": " Remove config names as yaml keys (#4367)",
+          "created_at": "2022-05-20T09:37:46+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "8f31431a478d7ba5be674b69e57a1b61a6068eaf",
+          "title": " Update datasets task tags to align tags with models (#4067)",
+          "created_at": "2022-04-13T19:14:25+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "edfa5a19747a9845a9260e671e741f2c5251a9be",
+          "title": " Update files from the datasets library (from 1.17.0)",
+          "created_at": "2022-01-25T15:51:34+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "35a95449a371cc425ed0c789441facd0a5945815",
+          "title": " Update files from the datasets library (from 1.16.0)",
+          "created_at": "2022-01-25T15:50:55+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "2a9654a108ae2e25a606181882454fe315d394a5",
+          "title": " Update files from the datasets library (from 1.7.0)",
+          "created_at": "2022-01-25T15:45:12+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "c8c4188bf76681f822dbe1673e336503bf415816",
+          "title": " Update files from the datasets library (from 1.6.0)",
+          "created_at": "2022-01-25T15:41:35+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "4f22bb7d59d3b6cfdbdbce931c027ce1385f9e7b",
+          "title": " Update files from the datasets library (from 1.4.0)",
+          "created_at": "2022-01-25T15:39:26+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "15d5d5b255d2abcd0e5bff461685370f1a9a4198",
+          "title": " Update files from the datasets library (from 1.3.0)",
+          "created_at": "2022-01-25T15:38:25+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "89a0cd8e4b4b1be3d238937a7c6aaee88401cc99",
+          "title": " Update files from the datasets library (from 1.2.0)",
+          "created_at": "2022-01-25T15:36:24+00:00",
+          "is_substantive": true
+        }
+      ],
+      "num_substantive": 8,
+      "num_sessions": 4,
+      "error": ""
+    },
+    {
+      "dataset_id": "Team-DIANA/green-probe-dataset",
+      "eligibility_reason": "Criteri B: substantive_commits>=2 dispersos >=6.0h",
+      "url": "https://huggingface.co/datasets/Team-DIANA/green-probe-dataset",
+      "tags": [],
+      "commits": [
+        {
+          "sha": "bad64882eaf8c0bfe755cd3a2701b73868a8f4d9",
+          "title": "randomly splitted",
+          "created_at": "2024-04-13T10:58:12+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "c226468e8b9c96528c3658c90bb48dba3024a58f",
+          "title": "Create README.md",
+          "created_at": "2024-04-03T17:43:03+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "b90566cfde0414287466e1ebf5a4106b5a3d441f",
+          "title": "Update config.yaml",
+          "created_at": "2024-04-03T17:39:51+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "08b0ad513e675e13a2dc9dc750b555ec44c06007",
+          "title": "Added validation file",
+          "created_at": "2024-04-03T16:39:35+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "19b53b79d21e6ca68f921fa41fedacb44ded5723",
+          "title": "Corrected missing files",
+          "created_at": "2024-04-03T15:56:45+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "9969d431ecbb4238bf7c6decb82ca84043b5a569",
+          "title": "Upload 200 files",
+          "created_at": "2024-03-22T18:07:09+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "9ed1a460afcabad74b280966458bbd9001ef5eab",
+          "title": "initial commit",
+          "created_at": "2024-03-22T16:02:26+00:00",
+          "is_substantive": false
+        }
+      ],
+      "num_substantive": 4,
+      "num_sessions": 3,
+      "error": ""
+    },
+    {
+      "dataset_id": "nwu-ctext/nchlt",
+      "eligibility_reason": "Criteri B: substantive_commits>=2 dispersos >=6.0h",
+      "url": "https://huggingface.co/datasets/nwu-ctext/nchlt",
+      "tags": [],
+      "commits": [
+        {
+          "sha": "0df99f2a81059e8a5785f9e80e70c8474faa564e",
+          "title": "Delete legacy JSON metadata (#2)",
+          "created_at": "2024-01-18T11:10:13+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "4a5386301d07762e1c61af68c62d5576e7da3810",
+          "title": "Replace YAML keys from int to str (#1)",
+          "created_at": "2023-01-25T14:41:21+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "a24b6ff363927295ec439aa4de7489c8b313f216",
+          "title": " add dataset_info in dataset metadata",
+          "created_at": "2022-11-03T16:32:13+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "6ba40e1c7b2ddb1a158730ff7946bee21419898b",
+          "title": " remove dummmy data",
+          "created_at": "2022-10-28T16:36:48+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "e311a08365ad0c8c878fba1b1a29fd7287c689c2",
+          "title": " Align more metadata with other repo types (models,spaces) (#4607)",
+          "created_at": "2022-07-01T11:54:26+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "51495d20acdd815f8a11bf48d3886ea305ab29a4",
+          "title": " Remove config names as yaml keys (#4367)",
+          "created_at": "2022-05-20T09:36:50+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "b9fcaf040b0e2e2ec6f0dba85e0bc54177d8c6a0",
+          "title": " Update datasets task tags to align tags with models (#4067)",
+          "created_at": "2022-04-13T18:45:38+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "1b3c18ba4857eabb0edd4982f2f3ad9a6036f7e0",
+          "title": " Update files from the datasets library (from 1.18.0)",
+          "created_at": "2022-01-25T15:52:53+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "c41f07bcbb831139b857ec7a8b3f601be4523f8d",
+          "title": " Update files from the datasets library (from 1.7.0)",
+          "created_at": "2022-01-25T15:44:14+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "d0ef35fc178777b33476c810cea0046402ac857f",
+          "title": " Update files from the datasets library (from 1.3.0)",
+          "created_at": "2022-01-25T15:37:58+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "a11a17acd1480a5dea1f12fcee27bf2686e03703",
+          "title": " Update files from the datasets library (from 1.2.0)",
+          "created_at": "2022-01-25T15:35:54+00:00",
+          "is_substantive": true
+        }
+      ],
+      "num_substantive": 2,
+      "num_sessions": 2,
+      "error": ""
+    },
+    {
+      "dataset_id": "lt-s/BAC_PIC_HOSPITAL",
       "eligibility_reason": "Criteri A: tags>=2 amb commits substantius",
-      "url": "https://huggingface.co/datasets/BrunoM42/robocasa_target_SearingMeat",
+      "url": "https://huggingface.co/datasets/lt-s/BAC_PIC_HOSPITAL",
       "tags": [
         "v3.0",
         "v2.1"
       ],
       "commits": [
         {
-          "sha": "b7dff9f24a9c8998ec58ab26f8469b9146611fe6",
+          "sha": "e170630dc5a2d457c1ac6ad8cf18b19c9c4b268a",
           "title": "Upload README.md with huggingface_hub",
-          "created_at": "2026-03-28T16:22:45+00:00",
+          "created_at": "2026-01-06T07:42:59+00:00",
           "is_substantive": false
         },
         {
-          "sha": "8b92e96a1b24ae128427b02b25b3823f20c2f7e2",
+          "sha": "cfe7c307df1866a44025cffe679a3cd531060ea2",
           "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-28T16:22:44+00:00",
+          "created_at": "2026-01-06T07:42:58+00:00",
           "is_substantive": true
         },
         {
-          "sha": "778fd718051d897da97d3b1e854cece215813076",
+          "sha": "9252f80ce76712be860d575c9b44b97c333850c9",
           "title": "Delete files data/chunk*/episode_* meta/*.jsonl videos/chunk* with huggingface_hub",
-          "created_at": "2026-03-28T16:12:26+00:00",
+          "created_at": "2026-01-06T07:17:27+00:00",
           "is_substantive": true
         },
         {
-          "sha": "d3af46cfc8c1d6bf538d216e8efe452d1774863b",
+          "sha": "7343e2daa6851c2e1195db19f0f2cc1774b1d2a0",
           "title": "Upload README.md with huggingface_hub",
-          "created_at": "2026-03-27T10:36:03+00:00",
+          "created_at": "2025-12-22T07:20:51+00:00",
           "is_substantive": false
         },
         {
-          "sha": "c90a41e71b3eca7eeb383d1d30e24f91fd9f9acd",
-          "title": "Upload folder using huggingface_hub",
-          "created_at": "2026-03-27T10:35:27+00:00",
+          "sha": "5a09f562fee13adc5a66f2c3607ca8c14c39cf11",
+          "title": "Add files using upload-large-folder tool",
+          "created_at": "2025-12-22T07:20:35+00:00",
           "is_substantive": true
         },
         {
-          "sha": "34d5b3a6089cd6449e01709760cb1516bca6026e",
+          "sha": "b915901a52bdc1331759c8232532e1b998914f4b",
+          "title": "Add files using upload-large-folder tool",
+          "created_at": "2025-12-22T07:20:29+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "cde9070bbc8219a6536167b04bdb8bccf46cb835",
           "title": "initial commit",
-          "created_at": "2026-03-27T10:33:59+00:00",
+          "created_at": "2025-12-22T07:15:49+00:00",
           "is_substantive": false
         }
       ],
-      "num_substantive": 3,
+      "num_substantive": 4,
       "num_sessions": 2,
       "error": ""
     },
     {
-      "dataset_id": "community-datasets/qa_zre",
+      "dataset_id": "QFIN/FCMBench-Data",
       "eligibility_reason": "Criteri B: substantive_commits>=2 dispersos >=6.0h",
-      "url": "https://huggingface.co/datasets/community-datasets/qa_zre",
+      "url": "https://huggingface.co/datasets/QFIN/FCMBench-Data",
       "tags": [],
       "commits": [
         {
-          "sha": "f659301d65a033b69ce7bdfa881baeb770971771",
-          "title": "Convert dataset to Parquet (#4)",
-          "created_at": "2024-06-26T05:49:49+00:00",
+          "sha": "0c097a495b6e926c3c0044f6b4799df9ae73f768",
+          "title": "Merge branch 'main' of https://huggingface.co/datasets/QFIN/FCMBench-Data",
+          "created_at": "2026-05-07T07:33:16+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "c93eee5cff97b4e796674f58bbe51fbe77778d00",
+          "title": "upload video track data",
+          "created_at": "2026-05-06T12:35:08+00:00",
           "is_substantive": true
         },
         {
-          "sha": "334431e0f9a9a8b09d5c0c42520bfa54a366edf6",
-          "title": "Delete legacy JSON metadata (#3)",
-          "created_at": "2024-01-18T11:13:50+00:00",
+          "sha": "c3dc8929db78f0d6e3f3cdf1317ee895743674e8",
+          "title": "fix video track docs and readme",
+          "created_at": "2026-05-06T12:28:05+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "1e9e39f24bd1fdd54f90c88841f7af2619cc0eec",
+          "title": "add video eval script",
+          "created_at": "2026-04-30T10:49:45+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "d492955ede753a4a6c86dbbeabc18eb1de1af360",
+          "title": "Add FCMBench-Video citation alongside FCMBench citation, with labels distinguishing Vision-Language and Video Understanding tracks",
+          "created_at": "2026-04-29T07:28:42+00:00",
           "is_substantive": false
         },
         {
-          "sha": "943fd2e7e663694a04b658417b955b4685161925",
-          "title": "Convert dataset sizes from base 2 to base 10 in the dataset card (#2)",
-          "created_at": "2023-04-05T13:37:03+00:00",
+          "sha": "1656b15fd6078273322e7a9fbd1c39241798d6fa",
+          "title": "Update README to align with GitHub FCMBench: add FCMBench-Video info, restructure Tracks Overview table, replace HF link with GitHub project link",
+          "created_at": "2026-04-29T06:46:02+00:00",
           "is_substantive": false
         },
         {
-          "sha": "5a5ac1fec0215de72332c83777c0d3074ba77c2c",
+          "sha": "865fdc53293c52166d15d436cd3596573f0ac833",
+          "title": "Upload assets/FCMBench_logo.jpg",
+          "created_at": "2026-04-21T10:08:54+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "026f84680a895da08391f8c7f6932d1563c3963e",
+          "title": "Delete vision_language/V1.0_TESTSET.zip",
+          "created_at": "2026-03-17T01:27:22+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "803d95b83326be11bc9defb1b1cb28477bcf7329",
+          "title": "Upload FCMBench_v1.1_Images.zip",
+          "created_at": "2026-03-16T11:27:10+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "c583a205fbb9386791f5199d9406bbdd413e9bc4",
+          "title": "Upload FCMBench_v1.1_testset_full.jsonl",
+          "created_at": "2026-03-16T10:33:25+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "4809679786541d9bbce0539584bb6ec04e7402c3",
+          "title": "Delete vision_language/FCMBench_v1.0_testset_full.jsonl",
+          "created_at": "2026-03-16T10:32:50+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "45949f2703181a68dc53e32fddb8670d1a6f0139",
+          "title": "Upload 2 files",
+          "created_at": "2026-03-16T10:29:16+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "a0ff7c1faa280d9cebfc887aed9af601d43412fc",
+          "title": "Update README.md",
+          "created_at": "2026-01-16T06:38:34+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "339faafdc4600984f5dd9466f1defc255b726d80",
+          "title": "Update README.md",
+          "created_at": "2026-01-16T06:37:44+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "596f79b11ca69422d81e2f8e3b84a81750f4ab47",
+          "title": "Create README_cn.md",
+          "created_at": "2026-01-16T06:36:39+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "cff82273999459790eb17157112070f8c467c5b6",
+          "title": "Update README.md",
+          "created_at": "2026-01-15T10:00:35+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "216b2254aff0c8b496aa402492ec53111e872a7c",
+          "title": "Update README.md",
+          "created_at": "2026-01-15T09:56:11+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "79ebf9b34519c644eec9b6c7e0bfb2233b3bbd76",
+          "title": "Update README.md",
+          "created_at": "2026-01-15T09:53:02+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "8205f87ddc44b4cf8769cc64135569915692cb1c",
+          "title": "Upload FCMBench_v1.0_testset_full.jsonl",
+          "created_at": "2026-01-15T09:50:40+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "fb2d59f0307f6d116d41a7d292967c67511033e0",
+          "title": "Update README.md",
+          "created_at": "2026-01-14T12:55:03+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "dbc6c3ef3722bacf56797c81affa25a4c437cd49",
+          "title": "Upload evaluation.py",
+          "created_at": "2026-01-14T11:43:22+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "5d215fe6da9415a43d898ced10b06cf4b5bc41fd",
+          "title": "Delete vision_language/.DS_Store",
+          "created_at": "2026-01-14T11:42:50+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "0dc55c068c595bd3757e13afc9b38c6f41d988dd",
+          "title": "Update README.md",
+          "created_at": "2026-01-14T11:32:25+00:00",
+          "is_substantive": false
+        },
+        {
+          "sha": "908fedbc1416c6f8eedabb479703bbf8a45ec192",
+          "title": "Upload 2 files",
+          "created_at": "2026-01-14T11:30:10+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "c9be30aa899c77b667c3a158e6a2ce3021ee5e00",
+          "title": "initial commit",
+          "created_at": "2026-01-14T10:50:16+00:00",
+          "is_substantive": false
+        }
+      ],
+      "num_substantive": 12,
+      "num_sessions": 7,
+      "error": ""
+    },
+    {
+      "dataset_id": "AILAB-VNUHCM/vivos",
+      "eligibility_reason": "Criteri B: substantive_commits>=2 dispersos >=6.0h",
+      "url": "https://huggingface.co/datasets/AILAB-VNUHCM/vivos",
+      "tags": [],
+      "commits": [
+        {
+          "sha": "3cbfb2502e5e84776b4b778b020a09759f723f52",
+          "title": "Fix hosting of data file (#4)",
+          "created_at": "2023-06-14T08:29:21+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "1c8df50511b6c867891b452298dc939105107209",
+          "title": "Host data files (#3)",
+          "created_at": "2023-06-14T08:04:13+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "bdec7a80c0bca224f9b56b3f4ca55f288a784206",
           "title": "Reorder split names (#1)",
-          "created_at": "2022-11-18T21:40:22+00:00",
+          "created_at": "2022-11-18T21:59:07+00:00",
           "is_substantive": false
         },
         {
-          "sha": "b40a5c12a0f472e0c8174bf5c41f832cdd6f6b65",
+          "sha": "ee479c69d1b2aa2dfc5d04de03efd597d27f014c",
           "title": " add dataset_info in dataset metadata",
-          "created_at": "2022-11-03T16:30:59+00:00",
+          "created_at": "2022-11-03T16:15:35+00:00",
           "is_substantive": false
         },
         {
-          "sha": "8fe87b9a54a79df40b020bd09b5497ad218af9df",
+          "sha": "092b6229ab000786c819445b1609c4babac19e01",
           "title": " remove dummmy data",
-          "created_at": "2022-10-28T16:38:56+00:00",
+          "created_at": "2022-10-28T16:41:56+00:00",
           "is_substantive": true
         },
         {
-          "sha": "177a189ac56d7e5d49fe7a94df62d389ecbb7dbd",
-          "title": " fix task_ids",
-          "created_at": "2022-10-19T15:20:10+00:00",
-          "is_substantive": false
+          "sha": "ecddd2af104300b6d4135ac34de4ef174af3c0f0",
+          "title": " Fix data URL and metadata of vivos dataset (#4969)",
+          "created_at": "2022-09-12T07:14:46+00:00",
+          "is_substantive": true
         },
         {
-          "sha": "54f6182045b71999fe8203c0577f8d2fb2648167",
+          "sha": "365472f67c5926796e830f18e12fc49016decc6c",
           "title": " Align more metadata with other repo types (models,spaces) (#4607)",
-          "created_at": "2022-07-01T11:55:22+00:00",
+          "created_at": "2022-07-01T11:57:11+00:00",
           "is_substantive": false
         },
         {
-          "sha": "566e72422fd88b708832d085f5ad088e9186ae91",
-          "title": " Remove a copy-paste sentence in dataset cards (#4281)",
-          "created_at": "2022-05-04T18:34:42+00:00",
+          "sha": "b6e6f8bd76b056a3cbc0711c39cdca4277e5ac39",
+          "title": " Remove config names as yaml keys (#4367)",
+          "created_at": "2022-05-20T09:38:18+00:00",
           "is_substantive": false
         },
         {
-          "sha": "d52175da2d4be5bcc9758fec1aa75e27978cee5b",
-          "title": " Fix typo in train split name (#3751)",
-          "created_at": "2022-02-18T14:30:01+00:00",
+          "sha": "319952a5b4280f266c3baecbb96f2e90b8a0ca77",
+          "title": " Update datasets task tags to align tags with models (#4067)",
+          "created_at": "2022-04-13T19:24:21+00:00",
           "is_substantive": false
         },
         {
-          "sha": "a58cbf54a85c33b28ee24f9ae98d5891e2d21cb5",
+          "sha": "5da959c1094b4925090596447022baa7440da3ed",
+          "title": " Release: 1.18.1",
+          "created_at": "2022-01-26T14:20:40+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "0f5b5775e3b66c5f50adc597e32531ee210fe1ea",
           "title": " Update files from the datasets library (from 1.18.0)",
-          "created_at": "2022-01-25T15:53:11+00:00",
+          "created_at": "2022-01-25T15:53:40+00:00",
           "is_substantive": false
         },
         {
-          "sha": "5366b51ea95813b1d76e51d1b343eff94908170e",
-          "title": " Update files from the datasets library (from 1.8.0)",
-          "created_at": "2022-01-25T15:46:21+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "5ef22610b9b17014f9ffeb2ffaa77bdda4b1cb64",
-          "title": " Update files from the datasets library (from 1.7.0)",
-          "created_at": "2022-01-25T15:44:47+00:00",
+          "sha": "0cbdf81482b8559d2e93a50faacc427a47852f08",
+          "title": " Update files from the datasets library (from 1.17.0)",
+          "created_at": "2022-01-25T15:51:37+00:00",
           "is_substantive": true
         },
         {
-          "sha": "64ecab04b5e2ca752023767bfcbabcf4bf116c9c",
-          "title": " Update files from the datasets library (from 1.6.0)",
-          "created_at": "2022-01-25T15:41:22+00:00",
+          "sha": "8b156d34868dd2da2c8aa113f2e1e1963b2ffdda",
+          "title": " Update files from the datasets library (from 1.16.0)",
+          "created_at": "2022-01-25T15:51:00+00:00",
           "is_substantive": true
         },
         {
-          "sha": "76bae5a659ae822e31f31ee7b7e490289ada16cf",
-          "title": " Update files from the datasets library (from 1.4.0)",
-          "created_at": "2022-01-25T15:39:18+00:00",
-          "is_substantive": false
+          "sha": "73b922d785879bf4f92bd3ae47ceaf1db39cb229",
+          "title": " Update files from the datasets library (from 1.13.3)",
+          "created_at": "2022-01-25T15:49:37+00:00",
+          "is_substantive": true
         },
         {
-          "sha": "98ac896b4d7db1c27f2d7bf0399a864f45a06ed1",
-          "title": " Update files from the datasets library (from 1.3.0)",
-          "created_at": "2022-01-25T15:38:14+00:00",
-          "is_substantive": false
-        },
-        {
-          "sha": "386f224c45879d467da524a78872947289858021",
-          "title": " Update files from the datasets library (from 1.0.0)",
-          "created_at": "2022-01-25T15:34:10+00:00",
+          "sha": "c385d9f33819ae03571efdd4bbae33d9046de759",
+          "title": " Update files from the datasets library (from 1.12.0)",
+          "created_at": "2022-01-25T15:48:22+00:00",
           "is_substantive": true
         }
       ],
-      "num_substantive": 5,
-      "num_sessions": 3,
+      "num_substantive": 9,
+      "num_sessions": 5,
+      "error": ""
+    },
+    {
+      "dataset_id": "khrisyu/Qwen3-4B-Instruct-2507-best_of_n-prm-completions",
+      "eligibility_reason": "Criteri B: substantive_commits>=2 dispersos >=6.0h",
+      "url": "https://huggingface.co/datasets/khrisyu/Qwen3-4B-Instruct-2507-best_of_n-prm-completions",
+      "tags": [],
+      "commits": [
+        {
+          "sha": "50c756a798d02c93fd09b39df83c0337e3ca570e",
+          "title": "Upload dataset",
+          "created_at": "2025-08-16T06:59:44+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "9fc42f2db25eef1f785b352795d20855567a67ca",
+          "title": "Upload dataset",
+          "created_at": "2025-08-16T06:59:20+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "dbfac8f9ccc02392f7ff299652d4dd5c75c52b3f",
+          "title": "Upload dataset",
+          "created_at": "2025-08-15T21:16:34+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "21ffcc095090874493822a6bb630e8b9b2ebf30e",
+          "title": "Upload dataset",
+          "created_at": "2025-08-15T21:15:39+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "c7d05e750708964b197a8b633c2ae60ebda7048e",
+          "title": "Upload dataset",
+          "created_at": "2025-08-15T21:14:56+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "2e211bc0605393aeaac3258e960d74bd5cccf1dd",
+          "title": "Upload dataset",
+          "created_at": "2025-08-15T16:05:12+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "cf3cd6e9e78afbaaf436703af1253ee5a1d5a630",
+          "title": "Upload dataset",
+          "created_at": "2025-08-15T16:04:23+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "e5d1d9554f6aa994714bdb7ff0500c64ff08451f",
+          "title": "Upload dataset",
+          "created_at": "2025-08-15T05:21:06+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "b641545267fb305e431d129ae30eec311352ddff",
+          "title": "Upload dataset",
+          "created_at": "2025-08-15T05:20:31+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "afb0437cf4f3b38c57acf0d4f51d84b1a3a0fbfe",
+          "title": "Upload dataset",
+          "created_at": "2025-08-15T03:25:03+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "7d656f547590425d7a93911be6626359401fd7fe",
+          "title": "Upload dataset",
+          "created_at": "2025-08-15T03:24:15+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "38c29a240cc82fb39ce7ac83553afa8f7f934b1a",
+          "title": "Upload dataset",
+          "created_at": "2025-08-14T21:15:13+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "8d686177415e4df363b9374acbf13c9c1544b0f8",
+          "title": "Upload dataset",
+          "created_at": "2025-08-14T21:13:41+00:00",
+          "is_substantive": true
+        },
+        {
+          "sha": "7236ce76da0ac861c30697c647af6e15cf5f3cfe",
+          "title": "initial commit",
+          "created_at": "2025-08-14T20:56:23+00:00",
+          "is_substantive": false
+        }
+      ],
+      "num_substantive": 13,
+      "num_sessions": 4,
       "error": ""
     }
   ]

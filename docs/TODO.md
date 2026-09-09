@@ -6,23 +6,16 @@
 El backlog, sprints i estat de les tasques es gestionen a Taiga:
 https://tree.taiga.io/project/joanferrer-estudi-canvis-datasets-hf-1/timeline
 
-## Ara mateix (Sprint actual)
+## Situació actual
 
-- [x] **US-108** — `notebooks/validate_eligible.py` genera automàticament
-      `docs/us108_validation_report.md` a cada execució (criteri
-      d'acceptació 4: automatització), amb un veredicte TP/REVIEW/ERROR
-      per dataset. La comprovació de "sessions de treball"
-      (`cluster_commit_times`, buit >`MIN_SUBSTANTIVE_GAP_HOURS` entre
-      commits CONSECUTIUS) **només s'aplica al Criteri B**: el Criteri A
-      (tags explícits) mai ha exigit dispersió temporal a
-      `classify_dataset` -- la presència de >=2 tags ja és un senyal
-      deliberat de versionat pel mantenidor, i la validació manual
-      original ja el va trobar 100% fiable sense cap comprovació temporal.
-      (Primer s'havia aplicat la comprovació de sessions per igual a A i
-      B -- un criteri més estricte que el que realment decideix
-      l'elegibilitat -- i es va corregir.)
-      
-## Següent (Fase 2 — desbloqueig urgent)
+**Fase 0 (mostreig + elegibilitat) i Fase 1 (extracció de versions)
+tancades.** Referència vigent: `data/eligibility_report_2000_5.csv` (11
+elegibles, 6h de llindar ja actiu) → `data/versions_1.csv` (40 versions,
+0 fallades). Següent pas actiu: desbloquejar Fase 2 (classificació de
+canvis per taxonomia) amb les dues decisions d'abast pendents del
+director (US-303/US-304).
+
+## Ara mateix (Sprint actual)
 
 - [ ] **US-303** (nova) — Decidir amb el director l'abast de detecció
       automàtica: 15 codis complets (requereix contingut real de dades)
@@ -37,13 +30,25 @@ https://tree.taiga.io/project/joanferrer-estudi-canvis-datasets-hf-1/timeline
 
 - [ ] **US-305** (abans US-303) — Mapar cada canvi detectat als 15 codis
       oficials (C100–C530).
-- [ ] **US-201** — Extreure llista completa de tags per dataset elegible.
-- [ ] **US-202** — Extreure metadades de cada versió (data, autor, mida).
 - [ ] **US-401** — Decidir motor de BD (DuckDB vs PostgreSQL).
 - [ ] **US-402** — Implementar esquema en estrella.
 - [ ] **US-403** — Anàlisi descriptiva i visualitzacions per la memòria.
 
 ## Fet ✅
+
+- [x] **US-108** — `notebooks/validate_eligible.py` genera automàticament
+      `docs/us108_validation_report.md` a cada execució (criteri
+      d'acceptació 4: automatització), amb un veredicte TP/REVIEW/ERROR
+      per dataset. La comprovació de "sessions de treball"
+      (`cluster_commit_times`, buit >`MIN_SUBSTANTIVE_GAP_HOURS` entre
+      commits CONSECUTIUS) **només s'aplica al Criteri B**: el Criteri A
+      (tags explícits) mai ha exigit dispersió temporal a
+      `classify_dataset` -- la presència de >=2 tags ja és un senyal
+      deliberat de versionat pel mantenidor, i la validació manual
+      original ja el va trobar 100% fiable sense cap comprovació temporal.
+      (Primer s'havia aplicat la comprovació de sessions per igual a A i
+      B -- un criteri més estricte que el que realment decideix
+      l'elegibilitat -- i es va corregir.)
 
 - [x] US-001 — Títol i descripció del TFG
 - [x] US-002 — Competències tècniques (CES) seleccionades i justificades
@@ -74,5 +79,23 @@ https://tree.taiga.io/project/joanferrer-estudi-canvis-datasets-hf-1/timeline
       `bare_clone` ara registra un avís (`log.error`, un sol cop per
       procés) si `git` no és al `PATH`. **Confirmat amb una segona
       execució neta** (`eligibility_report_2000_3.csv`): US-302
-      realment actiu, precisió automàtica 38.5% → 100% sobre l'execució
-      de referència vigent.
+      realment actiu, precisió automàtica 38.5% → 100%. Reconfirmat amb
+      `eligibility_report_2000_5.csv` (execució de referència vigent,
+      llindar de 6h ja actiu també per a l'elegibilitat): 11/11 = 100%.
+- [x] **US-201 + US-202** — `notebooks/version_extractor.py`: per cada
+      dataset elegible (`eligibility_report_2000_5.csv`), extreu la
+      seqüència ordenada de versions amb data/autors/mida aproximada.
+      **Ampliació d'abast decidida durant la implementació**: ~70% (8/11)
+      dels elegibles ho són via Criteri B i no tenen cap tag -- en lloc de
+      deixar-los sense versions o deferir-ho a una story nova, cada SESSIÓ
+      de treball (`validate_eligible.cluster_commit_times`, mateixa lògica
+      que US-108) es tracta com una versió inferida (`version_source=
+      "commit_session"`), diferenciada de les versions per tag
+      (`version_source="tag"`) al mateix output. Detall tècnic: `list_
+      repo_tree` és un generador lazy -- cal consumir-lo dins de la crida
+      reintentada (`errors.with_retry`), no passar-lo cru, o els errors es
+      perdrien sense reintent. Limitació coneguda: `huggingface_hub` no
+      distingeix autor de committer (`GitCommitInfo.authors` és l'únic
+      camp). Execució real sobre els 11 elegibles: 40 versions extretes, 0
+      fallades. Vegeu `docs/architecture.md` (Fase 1) per al disseny
+      complet.

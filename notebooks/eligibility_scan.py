@@ -56,8 +56,6 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# Fitxers que NO compten com a "canvi real de dataset".
-# Basat en la taxonomia dels canvis de Metadata.
 NON_SUBSTANTIVE_FILES = {
     "README.md",
     ".gitattributes",
@@ -70,10 +68,22 @@ NON_SUBSTANTIVE_FILES = {
     ".gitmodules",
     "setup.py",
     "setup.cfg",
+    "changelog.json",
 }
 
-# Paraules clau als títols de commits que indiquen canvi purament documental.
-# S'utilitzen com a heurística quan no tenim accés directe a la llista de fitxers.
+NON_SUBSTANTIVE_PATH_PREFIXES = ("meta/", "meta_data/", ".github/")
+
+NON_SUBSTANTIVE_EXTENSIONS = (".md", ".yml", ".yaml", ".toml", ".cfg", ".ini", ".lock")
+
+SUBSTANTIVE_DATA_EXTENSIONS = (
+    ".parquet", ".csv", ".tsv", ".arrow", ".feather", ".orc",
+    ".jsonl", ".ndjson",
+    ".npy", ".npz", ".pt", ".pth", ".safetensors", ".h5", ".hdf5",
+    ".tar.gz", ".tgz", ".zip", ".tar",
+    ".mp4", ".avi", ".mov", ".wav", ".mp3", ".flac",
+    ".png", ".jpg", ".jpeg", ".webp", ".tiff", ".bmp",
+)
+
 NON_SUBSTANTIVE_TITLE_KEYWORDS = {
     "readme", "metadata", ".gitattributes", "dataset_infos",
     "license", "citation", "typo", "fix typo", "update docs",
@@ -396,21 +406,43 @@ def is_substantive_commit(commit_title: str) -> bool:
 def is_substantive_path(path: str) -> bool:
     """
     Avalua si una ruta de fitxer dins del repositori representa un canvi
-    real de dades del dataset (no purament de metadades/documentació),
-    basant-se en el NOM del fitxer (no en el títol del commit).
+    real de dades del dataset (no purament de metadades/documentació).
+
+    Ordre de decisió (defensa en profunditat -- vegeu el comentari sobre
+    el calibratge empíric a `NON_SUBSTANTIVE_PATH_PREFIXES`):
+    1. Prefix de ruta a `NON_SUBSTANTIVE_PATH_PREFIXES` -> NO substantiu,
+       independentment de l'extensió (p.e. un `.parquet` sota `meta/` és
+       metadada, no dades -- comprovat abans que l'extensió a propòsit).
+    2. Nom exacte a `NON_SUBSTANTIVE_FILES`, o acaba amb una extensió de
+       `NON_SUBSTANTIVE_EXTENSIONS` -> NO substantiu.
+    3. Acaba amb una extensió de `SUBSTANTIVE_DATA_EXTENSIONS` ->
+       substantiu.
+    4. Qualsevol altre cas (p.e. `.json`/`.txt` fora de `meta/`, o una
+       extensió no prevista) -> substantiu per defecte.
 
     :param path: ruta relativa dins del repositori tal com la retorna
         `git show --name-status` (p.e. `"data/chunk-000/file-000.parquet"`
-        o `"README.md"`).
-    :return: `False` si el nom base del fitxer és a `NON_SUBSTANTIVE_FILES`
-        o la ruta pertany a la carpeta `.github/`; `True` en qualsevol
-        altre cas (es considera que toca dades/configuració reals).
+        o `"meta/info.json"`).
+    :return: `True` si la ruta sembla representar dades reals del dataset;
+        `False` si sembla metadada/documentació/configuració.
     """
-    if path == ".github" or path.startswith(".github/"):
+    if path.startswith(NON_SUBSTANTIVE_PATH_PREFIXES):
         return False
 
     basename = path.rsplit("/", 1)[-1]
-    return basename not in NON_SUBSTANTIVE_FILES
+    if basename in NON_SUBSTANTIVE_FILES:
+        return False
+    if basename.endswith(NON_SUBSTANTIVE_EXTENSIONS):
+        return False
+    if not basename.endswith(SUBSTANTIVE_DATA_EXTENSIONS):
+        # Extensió no prevista a cap de les dues llistes (p.e. `.json`/
+        # `.txt` fora de `meta/`, o un format nou): es tracta com a
+        # substantiu per defecte (fail-open), però es registra perquè es
+        # pugui revisar i, si cal, ampliar les llistes amb dades reals en
+        # lloc d'endevinar-les -- cap llista pot ser mai completa.
+        log.debug(f"is_substantive_path: extensió no classificada, fail-open: {path}")
+
+    return True
 
 
 @contextmanager

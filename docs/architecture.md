@@ -20,7 +20,7 @@ elegibilitat      versions            canvis (taxonomia)     i anàlisi
 
 eligibility_      version_          change_                 warehouse/
 scan.py           extractor.py      classifier.py            (a decidir:
-errors.py         (a crear)         (a crear)                DuckDB/Postgres)
+errors.py                           (a crear)                DuckDB/Postgres)
 ```
 
 ## Fase 0 — Mostreig i elegibilitat (`eligibility_scan.py`, `errors.py`)
@@ -96,13 +96,76 @@ LeRobot que els falsos positius originals, però aquest cas concret
 (Criteri B) té commits substantius genuïnament repartits en 3 dies
 diferents (11, 13 i 16 de gener).
 
-**Pendent**: `eligibility_report_2000_3.csv` es va generar amb el
-llindar antic de 24h per a l'ELEGIBILITAT del Criteri B (no només per a
-l'informe); com que 6h és més PERMISSIU per a l'elegibilitat (tot i ser
-més ESTRICTE per al recompte de sessions -- efectes en sentits oposats
-del mateix llindar unificat), caldria una execució neta amb 6h per
-confirmar si sorgeixen nous elegibles que abans no complien el llindar
-de 24h. I, com sempre, confirmació final de Joan/director.
+**Resolt**: `eligibility_report_2000_5.csv` és l'execució neta amb 6h ja
+actiu tant per a l'ELEGIBILITAT del Criteri B com per al recompte de
+sessions de l'informe (vegeu taula de resultats més avall) -- substitueix
+`eligibility_report_2000_3.csv` com a execució de referència. Com sempre,
+confirmació final de Joan/director pendent.
+
+### Detecció de fitxers substantius: de denylist pura a allowlist+prefix (agost 2026)
+
+**Problema detectat**: `is_substantive_path()` (US-302) determinava si un
+fitxer era substantiu amb una única llista negra de noms exactes
+(`NON_SUBSTANTIVE_FILES`): tot el que NO hi era explícitament es
+considerava substantiu per defecte ("fail-open total"). Aquest disseny és
+estructuralment incapaç de ser complet -- un denylist enumera exclusions
+d'un espai obert (qualsevol nom de fitxer possible), així que sempre hi
+ha convencions noves que se n'escapen (`CARD.md`, `pyproject.toml`,
+`changelog.json`, etc.).
+
+**Calibratge empíric** (4 datasets reals clonats i inspeccionats:
+`AG42/lerobot_dataset_try1`, `villekuosmanen/close_shoebox`,
+`unitreerobotics/G1_Dex3_ObjectPlacement_Dataset`,
+`AndreaBozzo/ceres-open-data-index`): es va explorar fer servir la MIDA
+del fitxer com a desempat per a extensions ambigües (`.json`/`.txt`),
+llegint la mida real via el punter LFS (el "blob" que git guarda per a un
+fitxer LFS és només ~130 bytes de text amb un camp `size:`, així que
+llegir-lo no trenca la garantia de "mai descarregar dades reals" de
+`bare_clone`). **Resultat descartat**: la mida NO separa bé metadada de
+dades reals -- fitxers de metadades poden ser MÉS GRANS que fitxers de
+dades genuïns del mateix dataset (`meta/episodes_stats.jsonl` de
+villekuosmanen pesa 393KB, més que la majoria dels
+`data/chunk-*/episode_*.parquet` del mateix dataset; `meta/episodes/
+chunk-000/file-000.parquet` d'unitreerobotics pesa 482KB, també metadada
+tot i l'extensió `.parquet`). El senyal que SÍ va separar-ho de forma
+consistent en els 4 datasets: el **prefix de la ruta** (`meta/` conté
+sempre metadada, `data/`/`videos/` sempre contingut real).
+
+**Disseny final** (`NON_SUBSTANTIVE_PATH_PREFIXES`,
+`NON_SUBSTANTIVE_EXTENSIONS`, `SUBSTANTIVE_DATA_EXTENSIONS`,
+`NON_SUBSTANTIVE_FILES`), en ordre de decisió dins `is_substantive_path`:
+1. Prefix de ruta a `meta/`/`meta_data/`/`.github/` → NO substantiu,
+   **independentment de l'extensió** (comprovat abans que l'extensió a
+   propòsit: un `.parquet` sota `meta/` és metadada, no dades).
+2. Nom exacte a `NON_SUBSTANTIVE_FILES` (inclou `changelog.json`, trobat
+   al calibratge), o extensió a `NON_SUBSTANTIVE_EXTENSIONS` (`.md`,
+   `.yml`, `.yaml`, `.toml`, `.cfg`, `.ini`, `.lock` -- generalitzat per
+   extensió, no només `README.md`/`setup.cfg` un per un) → NO substantiu.
+3. Extensió a `SUBSTANTIVE_DATA_EXTENSIONS` (parquet, csv, arrow, tensors,
+   multimèdia, arxius) → substantiu.
+4. Qualsevol altre cas (p.e. `.json`/`.txt` fora de `meta/`, o una
+   extensió no prevista) → substantiu per defecte (fail-open), però
+   registrat (`log.debug`) perquè es pugui revisar i ampliar les llistes
+   amb dades reals més endavant, en lloc d'endevinar-les.
+
+**Pendent (obert, no implementat)**: el pas 1 (`NON_SUBSTANTIVE_PATH_
+PREFIXES`, `meta/` com a prefix universal de metadada) es basa en un
+calibratge de només 4 datasets, 3 dels quals són del mateix format
+LeRobot -- no és mostra independent, i `meta/` és una convenció pròpia de
+LeRobot documentada al seu format, no un estàndard de la plataforma
+Hugging Face en general. Tractar-lo com a regla universal (per davant
+fins i tot de l'extensió) està sota revisió. Alternativa proposada, NO
+implementada: en lloc de decidir per prefix de ruta, decidir NOMÉS per
+extensió, i per als fitxers `.json` ambigus (que ni `NON_SUBSTANTIVE_
+EXTENSIONS` ni `SUBSTANTIVE_DATA_EXTENSIONS` cobreixen) fer "schema/content
+sniffing": llegir el contingut (només blobs petits, no-LFS, per no trencar
+mai la garantia de "no descarregar dades reals") i classificar segons la
+forma estructural -- un array pla d'objectes homogenis suggereix dades
+reals, un objecte escalar pla suggereix configuració/metadada. Aquesta
+tècnica NO resol l'ambigüitat de `.jsonl` (un catàleg/índex i dades reals
+per fila són estructuralment indistingibles); per a `.jsonl` caldria
+acceptar el fail-open residual actual amb `log.debug`, igual que ara.
+Decisió de disseny final pendent de Joan/director.
 
 ### Flux
 
@@ -123,7 +186,9 @@ de 24h. I, com sempre, confirmació final de Joan/director.
      `git show --name-status`, amb fallback a l'heurística de títol
      `is_substantive_commit` si el clonatge falla -- **cal `git`
      instal·lat al sistema/imatge**, vegeu nota de bug de Docker més
-     amunt).
+     amunt). Un fitxer concret es considera substantiu segons
+     `is_substantive_path` (prefix de ruta + extensió, vegeu secció
+     "Detecció de fitxers substantius" més avall).
    - Mode `--tags-only`: només permet elegibilitat via Criteri A (el
      Criteri B mai s'avalua), però segueix verificant els commits
      substantius (`list_repo_commits` + clonatge) -- només estalvia
@@ -157,30 +222,80 @@ de 24h. I, com sempre, confirmació final de Joan/director.
 |---|---|---|---|---|---|---|
 | `eligibility_report_1000_3` (baseline històric, esborrat de `data/`, vegeu historial de git) | 1000 | 949.991 | 13 | 49 | 1.37% | Cap (pipeline original, pre-US-302) |
 | `eligibility_report_2000_2` | 2000 | 979.377 | 11 | 74 | 0.58% | Només dispersió temporal (bug de Docker) |
-| **`eligibility_report_2000_3` (execució de referència vigent)** | 2000 | 979.480 | 12 | 87 | 0.63% | Totes dues (dispersió temporal + US-302) |
+| `eligibility_report_2000_3` | 2000 | 979.480 | 12 | 87 | 0.63% | Totes dues, però amb el llindar antic de 24h |
+| **`eligibility_report_2000_5` (execució de referència vigent)** | 2000 | 1.019.447 | 11 | 79 | 0.58% | Totes dues, llindar de 6h ja actiu (elegibilitat i informe) |
 
-La proporció d'elegibles (~0.6%) es manté estable entre les dues
+La proporció d'elegibles (~0.6%) es manté estable entre totes les
 execucions amb dispersió temporal activa, molt per sota del baseline
 històric (1.37%): la major part de la reducció ve de la dispersió
 temporal, i la detecció real de fitxers (US-302) afina encara més la
 qualitat de la classificació. Precisió automàtica (`docs/
 us108_validation_report.md`, comprovació de sessions només per al Criteri
-B, llindar unificat i actualment a 6h): **12/12 = 100%** sobre
-`eligibility_report_2000_3` (totes dues millores actives; execució
-classificada amb el llindar antic de 24h, vegeu nota més amunt), molt per
-sobre del 38.5% del
-baseline històric. (Els percentatges de 81.8%/83.3% citats en versions
-anteriors d'aquest document es van calcular amb metodologies intermèdies
-de l'informe (llindar de sessió d'1h, o comprovació de sessions aplicada
-també al Criteri A) ja corregides -- no comparables directament.)
+B, llindar unificat a 6h): **11/11 = 100%** sobre `eligibility_report_
+2000_5` (referència vigent, única execució amb el llindar de 6h actiu
+també per a l'elegibilitat -- no només per a l'informe), molt per sobre
+del 38.5% del baseline històric. Cada dataset elegible d'aquesta execució
+té una fitxa a `data/versions_1.csv` (Fase 1, vegeu més avall): 3 via
+Criteri A (tags), 8 via Criteri B (sessions de commits). (Els percentatges
+de 81.8%/83.3% citats en versions anteriors d'aquest document es van
+calcular amb metodologies intermèdies de l'informe (llindar de sessió
+d'1h, o comprovació de sessions aplicada també al Criteri A) ja
+corregides -- no comparables directament.)
 
-## Fase 1 — Extracció de versions (pendent d'implementar)
+## Fase 1 — Extracció de versions (`version_extractor.py`)
 
-Objectiu: per cada dataset elegible, obtenir la seqüència completa i
-ordenada de tags/versions amb metadades (data, autor, mida aproximada).
+**Estat: implementat (US-201 + US-202).** Objectiu: per cada dataset
+elegible de `eligibility_report_2000_5.csv` (execució de referència),
+obtenir la seqüència completa i ordenada de versions amb metadades (data,
+autors, mida aproximada), reutilitzant `errors.py` (mateix sistema de
+retry/classificació d'errors que Fase 0).
 
-Mòdul previst: `version_extractor.py`. Ha de reutilitzar `errors.py`
-(mateix sistema de retry/classificació d'errors que Fase 0).
+**Ampliació d'abast respecte al text original de US-201/US-202**: la
+majoria de la població elegible (8/11 a `eligibility_report_2000_5.csv`,
+~70%) ho és via Criteri B i NO té cap tag de Git -- una implementació
+literal de "llistar tags" hauria deixat buida la majoria de la població.
+En lloc de restringir l'abast a només els datasets amb tags (Criteri A) i
+deixar la resta per a una user story futura, es va decidir ampliar l'abast
+immediatament: el concepte de "versió" es defineix segons quin criteri va
+fer elegible el dataset (reutilitzant `eligibility_reason`, sense
+recalcular el criteri):
+
+- **Criteri A** (tags explícits): cada TAG és una versió (US-201 literal).
+  `GitRefInfo.target_commit` dona el SHA directament, sense cap crida
+  extra per resoldre tag -> commit.
+- **Criteri B** (sense tags): cada SESSIÓ de treball és una versió
+  inferida, reutilitzant `validate_eligible.cluster_commit_times` -- LA
+  MATEIXA lògica ja validada a US-108 (buit > `MIN_SUBSTANTIVE_GAP_HOURS`
+  entre commits substantius consecutius), no una reimplementació.
+
+Cada fila de sortida porta un camp `version_source` (`"tag"` o
+`"commit_session"`) explícit: el nivell de confiança NO és el mateix (un
+tag és un senyal deliberat del mantenidor; una sessió és una heurística
+inferida, amb les mateixes cauteles que el Criteri B a
+`docs/us108_validation_report.md`).
+
+**Limitació coneguda**: `huggingface_hub` no distingeix autor de
+committer com el git natiu -- `GitCommitInfo.authors` (`list[str]` de
+noms d'usuari) és l'únic camp disponible. El camp `authors` de la sortida
+reflecteix aquesta limitació de l'API, no una decisió de disseny propia.
+
+**Detall tècnic rellevant**: `list_repo_tree` (usat per a `approx_size_
+bytes`, via `RepoFile.size` -- ja la mida real, resolta per a LFS, sense
+cap tècnica de lectura de punter) és un GENERADOR lazy: la crida HTTP no
+es fa en cridar-lo, només en iterar-lo. Es passa embolicat en un tancament
+de mida zero que el consumeix SENCER (`list(...)`) dins de la crida
+reintentada (`errors.with_retry`), perquè un error no es perdi fora del
+`try/except` de `with_retry` sense cap reintent (vegeu el comentari
+"DISSENY" a `version_extractor.fetch_tree_size_bytes`).
+
+**Sortida**: `data/versions_<run_id>.csv` (una fila per versió; columnes
+`dataset_id`, `version_label`, `version_order`, `version_source`,
+`commit_sha`, `commit_date`, `authors`, `approx_size_bytes`,
+`session_commit_count`, `status`) i `data/versions_summary_<run_id>.json`
+(resum de l'execució). Execució real sobre `eligibility_report_2000_5.csv`
+(11 datasets elegibles): 40 versions extretes, 0 fallades de dataset
+sencer, cap sessió buida (coherent amb l'elegibilitat original via
+Criteri B, que ja exigia >=2 commits substantius dispersos).
 
 ## Fase 2 — Classificació de canvis / taxonomia (pendent)
 

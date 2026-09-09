@@ -54,29 +54,52 @@ python notebooks/eligibility_scan.py --sample-size 2000 --threads 4 --seed 42   
 
 Alternativa a l'entorn virtual local: no cal instal·lar Python ni les
 dependències, només Docker. Cal el mateix fitxer `.env` amb `HF_TOKEN`
-descrit més amunt.
+descrit més amunt. Si el teu usuari no és al grup `docker` del sistema,
+anteposa `sudo` a totes les comandes següents (`sudo docker compose ...`).
 
 ```bash
 docker compose build
 
 # 1. eligibility_scan.py (prova rapida) -- genera el CSV d'entrada
-docker compose run --rm eligibility-scan --sample-size 50 --threads 4 --seed 42 --max-scanned 5000
+docker compose run --rm --remove-orphans eligibility-scan --sample-size 50 --threads 4 --seed 42 --max-scanned 5000
 ls data/eligibility_report_50_*.csv   # confirma el nom exacte (inclou el run_id)
 
 # 2. validate_eligible.py -- usa el CSV generat al pas anterior
-docker compose run --rm validate-eligible --input data/eligibility_report_<sample_size>_<run_id>.csv
+docker compose run --rm --remove-orphans validate-eligible --input data/eligibility_report_<sample_size>_<run_id>.csv
+
+# 3. version_extractor.py -- Fase 1, seqüència de versions per dataset elegible
+docker compose run --rm --remove-orphans version-extractor --input data/eligibility_report_<sample_size>_<run_id>.csv
 ```
+
+`--remove-orphans` neteja contenidors aturats d'execucions anteriors amb
+`docker compose run` (cadascuna en crea un de nou, amb un nom únic tipus
+`..._run_<hash>`, que no s'esborra sol) -- evita l'avís "Found orphan
+containers" a cada crida, no és obligatori per al funcionament.
+
+**Important -- torna a fer `docker compose build` sempre que canviï el
+codi a `notebooks/`** (per exemple, en afegir `version_extractor.py`):
+`docker compose run` NO reconstrueix la imatge automàticament, així que
+reutilitza la que ja tenia en caché. Si veus un error tipus `python: can't
+open file '/app/notebooks/<script>.py': No such file or directory`, és
+exactament això -- la imatge és anterior a aquell fitxer; `docker compose
+build` (o `docker compose run --build ...`) ho arregla.
 
 `data/` es munta com a volum (`./data:/app/data`), així que els CSV/JSON de
 sortida apareixen directament al repositori de l'host, igual que executant
-els scripts en local. **`validate-eligible` necessita que `eligibility-scan`
-s'hagi executat abans**: llegeix un CSV que aquest genera, no en crea cap de
-nou. Sense `docker compose`, l'equivalent amb `docker run`:
+els scripts en local. **`validate-eligible` i `version-extractor` necessiten
+que `eligibility-scan` s'hagi executat abans**: llegeixen un CSV que aquest
+genera, no en creen cap de nou. Sense `docker compose`, l'equivalent amb
+`docker run` (substituint l'entrypoint per al script desitjat):
 
 ```bash
 docker build -t hf-dataset-version-analysis .
 docker run --rm --env-file .env -v "$(pwd)/data:/app/data" \
   hf-dataset-version-analysis --sample-size 50 --threads 4 --seed 42 --max-scanned 5000
+
+# version_extractor.py amb docker run (cal sobreescriure l'entrypoint per defecte):
+docker run --rm --env-file .env -v "$(pwd)/data:/app/data" \
+  --entrypoint python hf-dataset-version-analysis notebooks/version_extractor.py \
+  --input data/eligibility_report_<sample_size>_<run_id>.csv
 ```
 
 A cada tag `vX.Y.Z` a `main` (vegeu `docs/GIT_FLOW.md`), la imatge es publica
@@ -137,17 +160,19 @@ Un dataset és **elegible** si té **2 o més versions genuïnes**, detectades p
   reals (no purament README/metadada), determinat inspeccionant els
   fitxers reals afegits/modificats/eliminats per cada commit (`git show`
   sobre un clonatge local, US-302; recorre a l'heurística de títol si el
-  clonatge falla), I separats en el temps (mínim 24h entre el commit
-  substantiu més antic i el més recent) per descartar sessions úniques de
-  pujada automàtica (p.e. eines com LeRobot) que generen desenes de
-  commits en pocs minuts sense representar versions reals — vegeu
-  `docs/us108_validation_report.md` i
-  `docs/criterion_b_time_dispersion_proposal.md`.
+  clonatge falla), I separats en el temps (mínim 6h entre commits
+  substantius CONSECUTIUS, `MIN_SUBSTANTIVE_GAP_HOURS`) per descartar
+  sessions úniques de pujada automàtica (p.e. eines com LeRobot) que
+  generen desenes de commits en pocs minuts sense representar versions
+  reals — vegeu `docs/us108_validation_report.md` i `docs/architecture.md`.
 
 ## Sortida
 
 - `data/eligibility_report_N_version.csv`
 - `data/funnel_summary_N_version.json`
+- `data/versions_run_id.csv` / `data/versions_summary_run_id.json`
+  (`notebooks/version_extractor.py`, Fase 1: seqüència de versions per
+  dataset elegible, vegeu més avall)
 
 ## Variables utils
 
@@ -155,3 +180,15 @@ Un dataset és **elegible** si té **2 o més versions genuïnes**, detectades p
 - `--threads`: processament en paral·lel
 - `--max-scanned`: limit opcional nomes per proves rapides
 - `--seed`: mostra reproduible
+
+## Extracció de versions (Fase 1)
+
+Un cop `eligibility_scan.py` ha generat un CSV de datasets elegibles,
+`version_extractor.py` n'extreu la seqüència ordenada de versions (tags
+per als datasets amb Criteri A, sessions de commits per als datasets amb
+Criteri B -- vegeu `docs/architecture.md`, secció "Fase 1"):
+
+```bash
+python notebooks/version_extractor.py --input data/eligibility_report_2000_5.csv
+python notebooks/version_extractor.py --input data/eligibility_report_2000_5.csv --skip-size  # més ràpid, sense mida
+```

@@ -148,6 +148,7 @@ class TestIsSubstantivePath:
         assert es.is_substantive_path("README.md") is False
         assert es.is_substantive_path(".gitattributes") is False
         assert es.is_substantive_path("dataset_infos.json") is False
+        assert es.is_substantive_path("changelog.json") is False
 
     def test_nested_metadata_files_are_not_substantive(self):
         assert es.is_substantive_path("some/dir/README.md") is False
@@ -160,8 +161,37 @@ class TestIsSubstantivePath:
         assert es.is_substantive_path("data/chunk-000/file-000.parquet") is True
         assert es.is_substantive_path("videos/observation.images.top/chunk-000/file-000.mp4") is True
 
-    def test_unknown_files_default_to_substantive(self):
-        assert es.is_substantive_path("meta/info.json") is True
+    def test_unknown_extensions_default_to_substantive(self):
+        # Extensió genuïnament no prevista (ni allowlist ni denylist):
+        # fail-open, però registrat (log.debug) per revisió futura.
+        assert es.is_substantive_path("some/dir/notes.xyz") is True
+
+    def test_meta_prefix_files_are_not_substantive_regardless_of_extension(self):
+        # Trobat empíricament (calibratge agost 2026): tot el que penja de
+        # meta/ és metadada a LeRobot, encara que l'extensió normalment
+        # indiqui dades reals (.parquet, .jsonl).
+        assert es.is_substantive_path("meta/info.json") is False
+        assert es.is_substantive_path("meta/stats.json") is False
+        assert es.is_substantive_path("meta/episodes.jsonl") is False
+        assert es.is_substantive_path("meta/episodes_stats.jsonl") is False
+        assert es.is_substantive_path("meta/tasks.parquet") is False
+        assert es.is_substantive_path("meta/episodes/chunk-000/file-000.parquet") is False
+        assert es.is_substantive_path("meta_data/info.json") is False
+
+    def test_parquet_outside_meta_is_still_substantive(self):
+        # Contrast directe amb el cas anterior: el mateix format
+        # (.parquet) SÍ és substantiu fora del prefix meta/.
+        assert es.is_substantive_path("data/chunk-000/episode_000015.parquet") is True
+
+    def test_generalized_documentation_and_config_extensions_are_not_substantive(self):
+        # Generalitza més enllà de README.md/setup.cfg (noms exactes):
+        # qualsevol fitxer amb aquestes extensions és documentació/config,
+        # no dades, independentment del nom.
+        assert es.is_substantive_path("CARD.md") is False
+        assert es.is_substantive_path("docs/CONTRIBUTING.md") is False
+        assert es.is_substantive_path("pyproject.toml") is False
+        assert es.is_substantive_path(".pre-commit-config.yaml") is False
+        assert es.is_substantive_path("poetry.lock") is False
 
 
 class TestGetChangedFiles:
