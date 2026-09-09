@@ -25,6 +25,15 @@ def _no_git_clone(dataset_id):
     yield None
 
 
+@contextmanager
+def _fake_git_clone(dataset_id):
+    # Com _no_git_clone, però yield un directori (fals) no None -- perquè
+    # determine_commit_substantive_with_paths prengui la branca de
+    # get_changed_files (necessari per als tests de classify_changes=True,
+    # que necessiten uns "changed_paths" reals per classificar).
+    yield "/fake/clone"
+
+
 class _FakeDatasetInfo:
     """
     Simula un huggingface_hub.hf_api.DatasetInfo "pesant": porta un atribut
@@ -577,3 +586,242 @@ class TestClassifyDatasetResultShape:
             result = es.classify_dataset("org/ds")
             assert "status" in result
             assert result["status"] in ("classified", "access_restricted", "error")
+
+
+# ---------------------------------------------------------------------------
+# determine_commit_substantive_with_paths -- US-305, integració de la
+# classificació dins de classify_dataset
+# ---------------------------------------------------------------------------
+
+class TestDetermineCommitSubstantiveWithPaths:
+    def test_no_clone_dir_falls_back_to_title_no_paths(self):
+        is_sub, paths = es.determine_commit_substantive_with_paths(_FakeCommit("Add new records"), None)
+        assert is_sub is True
+        assert paths is None
+
+    def test_real_files_returns_paths(self, monkeypatch):
+        commit = _FakeCommit("Merge pull request #3")
+        monkeypatch.setattr(es, "get_changed_files", lambda clone_dir, sha: ["data/file.parquet", "README.md"])
+        is_sub, paths = es.determine_commit_substantive_with_paths(commit, "/fake/clone")
+        assert is_sub is True
+        assert paths == ["data/file.parquet", "README.md"]
+
+    def test_get_changed_files_failure_falls_back_with_no_paths(self, monkeypatch):
+        commit = _FakeCommit("Add new records")
+        monkeypatch.setattr(es, "get_changed_files", lambda clone_dir, sha: None)
+        is_sub, paths = es.determine_commit_substantive_with_paths(commit, "/fake/clone")
+        assert is_sub is True
+        assert paths is None
+
+    def test_determine_commit_substantive_matches_the_bool_half(self, monkeypatch):
+        # determine_commit_substantive() ha de seguir retornant exactament
+        # el primer element de la tupla -- no s'ha trencat cap contracte
+        # existent (validate_eligible.py en depèn).
+        commit = _FakeCommit("Merge pull request #3")
+        monkeypatch.setattr(es, "get_changed_files", lambda clone_dir, sha: ["data/file.parquet"])
+        assert es.determine_commit_substantive(commit, "/fake/clone") is True
+
+
+# ---------------------------------------------------------------------------
+# classify_commit_tabular_changes -- US-305
+# ---------------------------------------------------------------------------
+
+class TestClassifyCommitTabularChanges:
+    def test_ignores_non_tabular_paths(self, monkeypatch):
+        monkeypatch.setattr(es.change_diff, "is_tabular_path", lambda path: False)
+        labels = es.classify_commit_tabular_changes("org/ds", ["video.mp4"], "sha1", "sha2", "tok")
+        assert labels == []
+
+    def test_classifies_tabular_path_changes(self, monkeypatch):
+        import pandas as pd
+
+        before_df = pd.DataFrame({"a": [1, 2]})
+        after_df = pd.DataFrame({"a": [1, 2], "b": [3, 4]})
+
+        monkeypatch.setattr(es.change_diff, "is_tabular_path", lambda path: path.endswith(".csv"))
+        monkeypatch.setattr(
+            es.change_diff, "download_tabular_file_at_revision",
+            lambda repo_id, path, revision, token: before_df if revision == "sha1" else after_df,
+        )
+
+        labels = es.classify_commit_tabular_changes("org/ds", ["data/file.csv"], "sha1", "sha2", "tok")
+
+        assert len(labels) == 1
+        assert labels[0]["code"] == "C221"
+        assert labels[0]["dataset_id"] == "org/ds"
+        assert labels[0]["version_from"] == "sha1"
+        assert labels[0]["version_to"] == "sha2"
+        assert isinstance(labels[0], dict)  # dataclasses.asdict, no ChangeLabel
+
+    def test_no_signal_produces_no_labels(self, monkeypatch):
+        import pandas as pd
+
+        df = pd.DataFrame({"a": [1, 2]})
+        monkeypatch.setattr(es.change_diff, "is_tabular_path", lambda path: True)
+        monkeypatch.setattr(es.change_diff, "download_tabular_file_at_revision", lambda *a, **kw: df)
+
+        labels = es.classify_commit_tabular_changes("org/ds", ["data/file.csv"], "sha1", "sha2", "tok")
+        assert labels == []
+
+    def test_caps_tabular_files_classified_per_commit(self, monkeypatch):
+        # Datasets "chunked" (p.e. edinburghcstr/ami) poden tocar desenes
+        # de fragments Parquet en un sol commit -- confirmat en una
+        # execució real. Només se'n classifiquen els primers
+        # MAX_TABULAR_FILES_PER_COMMIT, no tots.
+        import pandas as pd
+
+        calls = []
+
+        def fake_download(repo_id, path, revision, token):
+            calls.append((path, revision))
+            return pd.DataFrame({"a": [1, 2]})
+
+        many_paths = [f"data/chunk-{i:03d}.parquet" for i in range(20)]
+        monkeypatch.setattr(es.change_diff, "is_tabular_path", lambda path: True)
+        monkeypatch.setattr(es.change_diff, "download_tabular_file_at_revision", fake_download)
+
+        es.classify_commit_tabular_changes("org/ds", many_paths, "sha1", "sha2", "tok")
+
+        distinct_paths = {path for path, _ in calls}
+        assert len(distinct_paths) == es.MAX_TABULAR_FILES_PER_COMMIT
+        assert distinct_paths == set(many_paths[: es.MAX_TABULAR_FILES_PER_COMMIT])
+
+
+# ---------------------------------------------------------------------------
+# classify_dataset(classify_changes=True) -- US-305, integració completa
+# ---------------------------------------------------------------------------
+
+class TestClassifyDatasetWithChangeClassification:
+    def test_default_classify_changes_false_returns_empty_labels(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1", "v2"]))
+        monkeypatch.setattr(
+            es, "list_repo_commits",
+            lambda **kw: iter([_FakeCommit("Add new records"), _FakeCommit("Add more records")]),
+        )
+        monkeypatch.setattr(es, "bare_clone", _no_git_clone)
+        monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
+
+        result = es.classify_dataset("org/ds")
+
+        assert result["change_labels"] == []
+
+    def test_classify_changes_does_not_early_return_on_eligibility(self, monkeypatch, tmp_path):
+        # 4 commits substantius -- amb classify_changes=False, la funció
+        # tornaria tan bon punt en trobi 2 (Criteri A). Amb classify_
+        # changes=True ha d'escanejar-los TOTS (per classificar-los tots).
+        commits = [
+            _FakeCommit("Add batch 4", commit_id="c4"),
+            _FakeCommit("Add batch 3", commit_id="c3"),
+            _FakeCommit("Add batch 2", commit_id="c2"),
+            _FakeCommit("Add batch 1", commit_id="c1"),
+        ]
+        monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1", "v2"]))
+        monkeypatch.setattr(es, "list_repo_commits", lambda **kw: commits)
+        monkeypatch.setattr(es, "bare_clone", _fake_git_clone)
+        monkeypatch.setattr(es, "get_changed_files", lambda clone_dir, sha: ["data/file.parquet"])
+        monkeypatch.setattr(es, "classify_commit_tabular_changes", lambda *a, **kw: [])
+        monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
+
+        result = es.classify_dataset("org/ds", classify_changes=True)
+
+        assert result["eligible"] is True
+        assert result["num_commits_substantive"] == 4  # tots 4, no només els 2 necessaris
+
+    def test_classify_changes_calls_classifier_with_parent_as_before(self, monkeypatch, tmp_path):
+        commits = [
+            _FakeCommit("Add batch 2", commit_id="c2"),
+            _FakeCommit("Add batch 1", commit_id="c1"),
+        ]
+        calls = []
+
+        def fake_classify(dataset_id, changed_paths, version_from, version_to, hf_token):
+            calls.append((version_from, version_to))
+            return [{"dataset_id": dataset_id, "version_from": version_from, "version_to": version_to,
+                      "code": "C421", "is_breaking": False}]
+
+        monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1", "v2"]))
+        monkeypatch.setattr(es, "list_repo_commits", lambda **kw: commits)
+        monkeypatch.setattr(es, "bare_clone", _fake_git_clone)
+        monkeypatch.setattr(es, "get_changed_files", lambda clone_dir, sha: ["data/file.parquet"])
+        monkeypatch.setattr(es, "classify_commit_tabular_changes", fake_classify)
+        monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
+
+        result = es.classify_dataset("org/ds", classify_changes=True)
+
+        # c2 (més nou) es classifica contra el seu pare c1 (més vell).
+        # c1 és el commit MÉS VELL de la finestra -- no en coneixem el
+        # pare, mai es classifica.
+        assert calls == [("c1", "c2")]
+        assert len(result["change_labels"]) == 1
+        assert result["change_labels"][0]["code"] == "C421"
+
+    def test_classify_changes_never_produces_c100(self, monkeypatch, tmp_path):
+        commits = [
+            _FakeCommit("Add batch 2", commit_id="c2"),
+            _FakeCommit("Add batch 1", commit_id="c1"),
+        ]
+        monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1", "v2"]))
+        monkeypatch.setattr(es, "list_repo_commits", lambda **kw: commits)
+        monkeypatch.setattr(es, "bare_clone", _fake_git_clone)
+        monkeypatch.setattr(es, "get_changed_files", lambda clone_dir, sha: ["data/file.parquet"])
+        monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
+
+        import pandas as pd
+        monkeypatch.setattr(es.change_diff, "download_tabular_file_at_revision",
+                             lambda repo_id, path, revision, token: pd.DataFrame({"a": [1], "b": [2]}))
+
+        result = es.classify_dataset("org/ds", classify_changes=True)
+
+        assert all(label["code"] != "C100" for label in result["change_labels"])
+
+    def test_eligibility_report_csv_never_gets_a_change_labels_column(self, monkeypatch, tmp_path):
+        # write_results() ha de descartar "change_labels" -- sempre buit
+        # a run_sampling (classify_changes mai s'hi activa).
+        monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
+        result_row = {
+            "dataset_id": "org/ds", "num_tags": 0, "num_branches": 0, "num_commits_substantive": 0,
+            "eligible": False, "eligibility_reason": "x", "status": "classified",
+            "error_category": "", "error": "", "change_labels": [],
+        }
+        csv_path, json_path, summary = es.write_results([result_row], run_id=1, sample_size=1, total_scanned=1)
+        import pandas as pd
+        df = pd.read_csv(csv_path)
+        assert "change_labels" not in df.columns
+
+
+# ---------------------------------------------------------------------------
+# cluster_commit_times -- moguda de validate_eligible.py (US-108, ara
+# eliminat) perquè és una funció pura reutilitzada per version_extractor.py
+# ---------------------------------------------------------------------------
+
+class TestClusterCommitTimes:
+    def test_empty_list_returns_no_clusters(self):
+        assert es.cluster_commit_times([]) == []
+
+    def test_none_values_are_ignored(self):
+        assert es.cluster_commit_times([None, None]) == []
+
+    def test_single_time_is_one_cluster(self):
+        t = datetime(2026, 1, 1, 12, 0, 0)
+        assert es.cluster_commit_times([t]) == [[t]]
+
+    def test_times_within_gap_form_one_cluster(self):
+        base = datetime(2026, 1, 1, 12, 0, 0)
+        times = [base, base + timedelta(minutes=5), base + timedelta(minutes=10)]
+        clusters = es.cluster_commit_times(times, gap_hours=1.0)
+        assert len(clusters) == 1
+        assert len(clusters[0]) == 3
+
+    def test_times_beyond_gap_form_separate_clusters(self):
+        base = datetime(2026, 1, 1, 12, 0, 0)
+        times = [base, base + timedelta(minutes=5), base + timedelta(days=2)]
+        clusters = es.cluster_commit_times(times, gap_hours=1.0)
+        assert len(clusters) == 2
+        assert len(clusters[0]) == 2
+        assert len(clusters[1]) == 1
+
+    def test_clusters_are_chronologically_ordered_regardless_of_input_order(self):
+        base = datetime(2026, 1, 1, 12, 0, 0)
+        unordered = [base + timedelta(days=2), base, base + timedelta(minutes=5)]
+        clusters = es.cluster_commit_times(unordered, gap_hours=1.0)
+        assert clusters == [[base, base + timedelta(minutes=5)], [base + timedelta(days=2)]]

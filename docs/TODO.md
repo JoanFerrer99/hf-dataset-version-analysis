@@ -8,28 +8,28 @@ https://tree.taiga.io/project/joanferrer-estudi-canvis-datasets-hf-1/timeline
 
 ## Situació actual
 
-**Fase 0 (mostreig + elegibilitat) i Fase 1 (extracció de versions)
-tancades.** Referència vigent: `data/eligibility_report_2000_5.csv` (11
-elegibles, 6h de llindar ja actiu) → `data/versions_1.csv` (40 versions,
-0 fallades). Següent pas actiu: desbloquejar Fase 2 (classificació de
-canvis per taxonomia) amb les dues decisions d'abast pendents del
-director (US-303/US-304).
+**Fase 0, Fase 1 i (gairebé) Fase 2 tancades.** Referència vigent:
+`data/eligibility_report_2000_5.csv` (11 elegibles) → `data/versions_1.
+csv` (40 versions) → `data/change_classification_1.csv` (67 etiquetes de
+canvi, 11/11 datasets classificats, 0 fallats). La classificació de
+canvis ja NO és un script separat -- integrada DINS de `eligibility_
+scan.classify_dataset()` (paràmetre opt-in `classify_changes`),
+reutilitzant `change_diff.py`/`change_classifier.py` (motor de diffing +
+etiquetatge, validats contra Census Income D1-D7 i sobre la població
+real). C100 (metadada) exclòs, només els 14 codis estructurals/de
+contingut. **L'única cosa que falta per tancar formalment Fase 2** és
+que Joan parli amb el director sobre l'abast final (US-303 AC3/AC4) --
+Claude Code no pot completar aquesta conversa.
 
 ## Ara mateix (Sprint actual)
 
-- [ ] **US-303** (nova) — Decidir amb el director l'abast de detecció
-      automàtica: 15 codis complets (requereix contingut real de dades)
-      vs 7 codis schema-level (sense descarregar dades). Vegeu taula a
-      `docs/architecture.md`.
-- [ ] **US-304** (nova) — Validar l'enfocament de classificació contra el
-      ground truth del Census Income (Taula 1 del paper del director, 9
-      versions reals de HF). Fer-ho amb un cost baix (9 datasets coneguts)
-      abans d'escalar a tota la població elegible.
+- [ ] **US-303** — AC1/AC2 fets (taula de detectabilitat de 3 nivells +
+      anàlisi de cost real, `docs/taiga/taxonomy.md`). Pendent: AC3/AC4,
+      tancar la decisió d'abast amb el director (conversa real de Joan
+      amb Alberto Abelló, Claude Code no la pot completar).
 
 ## Pendent (no bloquejat, però darrere de l'anterior)
 
-- [ ] **US-305** (abans US-303) — Mapar cada canvi detectat als 15 codis
-      oficials (C100–C530).
 - [ ] **US-401** — Decidir motor de BD (DuckDB vs PostgreSQL).
 - [ ] **US-402** — Implementar esquema en estrella.
 - [ ] **US-403** — Anàlisi descriptiva i visualitzacions per la memòria.
@@ -99,3 +99,28 @@ director (US-303/US-304).
       camp). Execució real sobre els 11 elegibles: 40 versions extretes, 0
       fallades. Vegeu `docs/architecture.md` (Fase 1) per al disseny
       complet.
+- [x] **US-304** — Validació d'extractibilitat mecànica (`notebooks/
+      change_diff.py`) contra Census Income D1-D7 (D8/D9 fora d'abast, no
+      són a HF -- Zenodo i AIF360/UCI respectivament). Redefinida per
+      trencar una dependència circular real amb US-305 (vegeu
+      `docs/decisions_tfg.txt`, T-07). D3/D4 encaixen EXACTAMENT amb el
+      total del paper (7/7 els dos).
+- [x] **US-305** — Classificació de canvis (14 codis, SENSE C100)
+      **integrada DINS de `classify_dataset()`** (`eligibility_scan.py`,
+      paràmetre opt-in `classify_changes`), no com a script separat --
+      "l'escalabilitat del projecte parteix d'aquell fitxer". Reutilitza
+      `change_diff.py`/`change_classifier.py` sense reimplementar-los.
+      Mode CLI nou: `--classify-eligible`. **Execució real sobre els 11
+      elegibles: 11/11 classificats, 0 fallats, 67 etiquetes** (C421=53,
+      C422=10, C223=3, C311=1; 4 breaking). 7/11 datasets amb etiquetes;
+      els altres 4 només toquen fitxers binaris (àudio/vídeo), confirmat
+      pel log, no un error. **2 bugs reals trobats i corregits durant
+      l'execució** (no hipotètics): `unhashable type: 'dict'` en columnes
+      d'àudio/imatge llegides amb `pandas.read_parquet` (corregit amb
+      `change_diff._is_hashable_series`, salta només la columna
+      problemàtica); cost desproporcionat en datasets "chunked" com
+      `edinburghcstr/ami` (>40 fragments Parquet/commit -- corregit amb
+      `MAX_TABULAR_FILES_PER_COMMIT = 5`). Vegeu `docs/architecture.md`
+      per al disseny complet i `docs/decisions_tfg.txt` (T-10) per al
+      relat detallat de la primera execució (fallada per timeout) i la
+      segona (completa).

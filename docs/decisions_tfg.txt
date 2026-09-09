@@ -529,6 +529,227 @@ Estat: ✅ Implementat (`notebooks/version_extractor.py`)
   a generador lazy, etc.) a `docs/architecture.md`, secció "Fase 1".
 
 
+DECISIÓ T-07: Epic 3 — trencar la dependència circular US-304/US-305
+Data: setembre 2026
+Responsable: Joan
+Estat: 🔲 Disseny tancat, implementació pendent
+
+  PROBLEMA detectat: tal com estaven escrites, US-304 ("validar la
+  classificació amb el ground truth Census Income") tenia com a AC
+  "executar el pipeline propi (extracció + CLASSIFICACIÓ)" i "comparar-ho
+  codi per codi" amb la Taula 1 del paper -- pressuposava que el
+  classificador de C-codis (US-305) ja existia. Però US-305 depenia
+  explícitament de US-304. Circular: per fer US-304 calia haver fet
+  US-305, i US-305 no podia començar fins tenir US-304 feta.
+
+  SOLUCIÓ: separar "detectar QUÈ ha canviat" (motor de diffing) d'
+  "etiquetar-ho amb un codi C1XX-C5XX concret" (classificador):
+    - US-304 (redefinida): valida NOMÉS que el motor de diffing pot
+      observar mecànicament un senyal allà on el ground truth marca un
+      canvi -- sense assignar-hi encara el codi oficial. Ja no depèn de
+      US-305 (no necessita cap classificador per executar-se).
+    - US-305: construeix el classificador REUTILITZANT el motor de
+      diffing validat a US-304 (mateixes funcions pures, sense
+      reimplementar-les), hi afegeix la capa d'etiquetatge, i és
+      ALESHORES quan té sentit calcular el "% d'acord codi per codi"
+      contra el ground truth (AC mogut des de US-304).
+
+  TROBALLA ADDICIONAL (llegint les notes a peu de pàgina del paper del
+  director, no el text principal): dels 9 datasets del ground truth
+  (D1-D9), només D1-D7 són a Hugging Face. D8 és un registre de Zenodo
+  (12533514); D9 és `AdultDataset` d'AIF360 (llibreria Python, baixa de
+  l'UCI archive, no un repo). Descarregar D8/D9 requeriria 2 connectors
+  únics (Zenodo API + AIF360/UCI) per a només 2/9 files, sense cap
+  reutilitat per a la resta del projecte (la població real mostrejada
+  només prové de HF). Decisió: US-304 cobreix només D1-D7.
+
+  TROBALLA ADDICIONAL 2: D1-D7 són repositoris INDEPENDENTS entre si
+  (comptes/orgs diferents), no commits/tags successius d'un mateix repo
+  -- diferent del que `eligibility_scan.py`/`version_extractor.py`
+  detecten (versions dins d'UN repositori). El paper compara cada D_i
+  contra l'original de la UCI (D0), no D_i contra D_{i-1}. Conseqüència
+  de disseny: el motor de diffing s'ha de dissenyar agnòstic d'on venen
+  les dues instantànies a comparar (mateix repo amb revisions diferents,
+  o repositoris independents), separant clarament "adquisició" de
+  "diffing" -- així es valida amb Census Income (US-304) i es reutilitza
+  sense canvis amb la població real (US-305).
+
+  Vegeu `docs/taiga/taxonomy.md` i `docs/taiga/taiga_user_stories.md`
+  (US-303/US-304/US-305) per al detall complet i l'anàlisi de cost del
+  Nivell 3 de detectabilitat (151.4 GB sobre els 11 elegibles actuals,
+  vegeu A-02).
+
+
+DECISIÓ T-08: US-304 implementada — resultats reals sobre Census Income (D1-D7)
+Data: setembre 2026
+Responsable: Joan
+Estat: ✅ Implementat (`notebooks/change_diff.py`)
+
+  Motor de diffing amb 8 funcions pures (`diff_columns`, `diff_column_
+  types`, `diff_categorical_values`, `diff_numeric_values`, `diff_row_
+  count`, `diff_missingness`, `diff_correlation`, `diff_distribution`),
+  cadascuna prenent dos `DataFrame` sense saber res de HF/HTTP/codis
+  C1XX -- reutilitzables tal qual a US-305. `diff_distribution` fa servir
+  quartils/freqüències relatives, NO cap test estadístic (KS, `scipy`),
+  per no afegir una dependència nova només per a aquesta heurística.
+  `pyarrow==25.0.1` afegit a `requirements.txt` (necessari per llegir el
+  Parquet de D2, `pandas.read_parquet` no té cap engine sense ell).
+
+  INTEGRITAT DEL GROUND TRUTH: la Taula 1 del paper es va extreure d'un
+  PDF que no conserva l'alineació de columnes d'una taula amb marques
+  "✔" -- només els totals per fila/columna es poden llegir amb fiabilitat.
+  El mòdul NO inventa quines cel·les concretes estaven marcades
+  (`PAPER_ROW_TOTALS`/`PAPER_COLUMN_TOTALS_ALL_9` són l'única comparació
+  honesta possible amb les dades que tenim).
+
+  RESULTATS REALS (D_i contra D0, baseline UCI; 14 codis tabulars, C100
+  fora d'abast):
+    D1: 1 detectat / 3 al paper -- D2: 1 / 3 -- D3: 7 / 7 -- D4: 7 / 7 --
+    D5: 2 / 4 -- D6: 6 / 4 -- D7: 6 / 5
+
+  D3/D4 encaixen EXACTAMENT amb el total del paper -- bon senyal que el
+  motor funciona bé quan el fitxer font és net i comparable directament.
+  D6 sobredetecta clarament (6 vs 4): confirma una ambigüitat ja
+  documentada al codi -- el repo `ETdanR/adult_income` té 3 fitxers
+  (`experiment_data.csv`, `train_data.csv`, `validation_data.csv`) i el
+  paper no especifica quin; es va triar `train_data.csv` sense
+  confirmació, i aquest resultat suggereix que probablement no és el
+  correcte (provar `experiment_data.csv`, o consultar el director, si es
+  vol un resultat més ajustat). Aquest tipus de discrepància és
+  exactament el que aquesta validació havia de fer aflorar -- no s'ha
+  "arreglat" artificialment ajustant llindars fins que quadrés.
+
+  Vegeu `docs/architecture.md` (secció "Resultats reals — validació
+  d'extractibilitat") per a la taula completa i la interpretació per
+  dataset.
+
+
+DECISIÓ T-09: US-305 implementada (classificador) — abast provisional
+Data: setembre 2026
+Responsable: Joan
+Estat: 🔄 En curs (classificador construït i validat contra Census
+Income; execució sobre la població real elegible pendent)
+
+  `notebooks/change_classifier.py` reutilitza `change_diff.py` (T-08)
+  sense reimplementar-lo -- `classify_diffs` només tradueix els booleans
+  de `compute_all_diffs` a etiquetes `(dataset_id, version_from,
+  version_to, code, is_breaking)`. Abast PROVISIONAL: les 15 categories
+  (US-303 encara no tancada amb el director, AC3/AC4 pendents) -- si
+  l'abast final es redueix a Nivell 1+2, el punt de canvi és
+  `classify_diffs`.
+
+  `is_breaking`: heurística PRÒPIA d'aquest estudi (el paper no en
+  defineix cap de formal) -- `C210`/`C222`/`C223`/`C311`/`C321`
+  ("trenca" un pipeline que llegeix per nom/posició/tipus sense
+  adaptar-se) són `True`; la resta (afegir columna/fila, canvis de
+  valors/distribució/correlació/missings, `C100`) són `False`.
+
+  `C100` (metadada) té una funció pròpia (`diff_metadata`) perquè no és
+  una comparació tabular -- NO validable contra Census Income (D0 no és
+  repositori HF, no té `DatasetInfo`); es validarà contra la població
+  real, on totes dues instantànies són revisions del mateix repositori.
+
+  Executat de nou sobre D1-D7 (`data/census_income_classification.csv`,
+  30 etiquetes): mateixos totals que T-08 (esperat, mateix motor, ara amb
+  etiquetes reals). **Limitació NO resolta**: el "% d'acord codi per
+  codi" exacte contra la Taula 1 del paper no es pot calcular (vegeu
+  T-08, integritat del ground truth) -- es compara per total agregat,
+  no codi per codi.
+
+  PENDENT: executar el classificador sobre la població real (~11
+  datasets elegibles, via `data/versions_1.csv`) -- no fet en aquesta
+  sessió.
+
+
+DECISIÓ T-10: Classificació integrada dins de `classify_dataset` (NO com a script separat)
+Data: setembre 2026
+Responsable: Joan
+Estat: ✅ Implementat -- execució real completada (11/11, 0 fallats, 67 etiquetes)
+
+  CANVI D'ARQUITECTURA respecte a T-09: Joan va indicar explícitament que
+  "l'escalabilitat d'aquest projecte parteix" de `classify_dataset()`
+  (`eligibility_scan.py`) i que la classificació de canvis hi havia
+  d'estar integrada, no viure en un script de Fase 2 completament separat
+  que rellegeix un CSV de versions ja extret. També: "no m'interessa
+  classificar les metadades" -- C100 EXCLÒS deliberadament de l'abast de
+  US-305 (14 codis, no 15).
+
+  DISSENY:
+    - `determine_commit_substantive_with_paths` (nova, `eligibility_
+      scan.py`): com `determine_commit_substantive`, però retorna també
+      els camins canviats -- evita una segona crida a `git show` quan
+      calen per classificar. `determine_commit_substantive` és ara un
+      embolcall prim d'aquesta (contracte públic intacte, `validate_
+      eligible.py` no es veu afectat).
+    - `classify_dataset(dataset_id, tags_only=False, classify_changes=
+      False)`: nou paràmetre OPT-IN. Amb `classify_changes=True`: (a) ja
+      NO retorna anticipadament en trobar elegibilitat -- escaneja tots
+      els commits fins al cap de 50; (b) per cada commit substantiu amb
+      un pare conegut dins la finestra (`commits[i+1]`, ja que `list_
+      repo_commits` ve de més nou a més vell -- assumeix historial
+      lineal, sense merges), crida `classify_commit_tabular_changes`
+      (nova) que NOMÉS diferencia contingut dels fitxers TABULARS
+      (`change_diff.is_tabular_path`) canviats -- els binaris (àudio/
+      vídeo/tensors) ja compten per a l'elegibilitat, mai per a la
+      classificació.
+    - `change_diff.download_tabular_file_at_revision` (nova,
+      generalització de l'adquisició de Census Income a QUALSEVOL
+      repositori/revisió, ara amb `errors.with_retry`) és el que fa
+      possible aquesta integració sense duplicar codi d'adquisició.
+
+  COST, per què OPT-IN i no sempre actiu: `classify_dataset()` s'invoca
+  fins a 2000 cops per execució de Fase 0 (`run_sampling`), on només
+  ~11-13 acaben elegibles. Classificar contingut real a TOTS aquests 2000
+  reintroduiria el problema dels 151GB (T-07/A-02), multiplicat per
+  ~180x. `run_sampling` MAI passa `classify_changes=True`; `write_results`
+  descarta la columna `change_labels` del CSV principal (sempre buida
+  allà, per no embrutar-ne l'esquema estable).
+
+  NOU MODE CLI: `python eligibility_scan.py --classify-eligible
+  eligibility_report_<N>_<run_id>.csv` -- `run_classification` itera els
+  elegibles d'aquest CSV amb `classify_dataset(..., classify_changes=
+  True)` i escriu `data/change_classification_<run_id>.csv`.
+
+  RELACIÓ AMB CENSUS INCOME: `change_diff.py`/`change_classifier.py`
+  mantenen la seva pròpia adquisició per a D1-D7 (inter-repositori, sense
+  historial de git compartit amb la UCI -- no es pot fer via `classify_
+  dataset`, intra-repositori per disseny). Reutilitzen les MATEIXES
+  funcions pures de diffing/classificació -- el "pipeline propi" és el
+  mateix codi en tots dos casos, només amb una capa d'adquisició diferent.
+
+  Detall complet a `docs/architecture.md`, secció "US-305 — Classificador
+  de canvis, integrat a `classify_dataset`".
+
+  TROBALLES D'UNA PRIMERA EXECUCIÓ REAL SOBRE ELS 11 ELEGIBLES (abans de
+  les correccions següents, ja aplicades):
+    1. **Bug real, corregit**: columnes d'àudio/imatge (p.e. `adalat-ai/
+       fleurs-ro`, `theayos/libero_spatial_image`) arriben com a `dict`
+       en llegir-les amb `pandas.read_parquet` (sense la decodificació
+       especial de la llibreria `datasets`) -- `.unique()`/`.value_
+       counts()` hi llancen `TypeError: unhashable type: 'dict'`, sense
+       capturar-se, fent fallar tot el dataset (`status="error"`) en lloc
+       de només ignorar aquella columna. Corregit: `change_diff.
+       _is_hashable_series` detecta columnes amb valors no hashables i
+       les salta (`log.debug`) a `diff_categorical_values`/`diff_
+       distribution`, sense afectar la resta de columnes del mateix
+       fitxer.
+    2. **Cost real desproporcionat, corregit**: `edinburghcstr/ami` té
+       >40 fragments Parquet per commit (format "chunked") -- classificar
+       tots els fragments d'un sol commit (2 descàrregues cadascun, ~20-
+       40s per descàrrega gran) hauria trigat més d'una hora només per a
+       aquest dataset. Corregit: `MAX_TABULAR_FILES_PER_COMMIT = 5`
+       (`eligibility_scan.py`) -- cap dels primers N fitxers tabulars per
+       commit, mateix esperit que `MAX_COMMITS = 50`. Limitació coneguda:
+       mostra representativa, no exhaustiva, per a commits amb més
+       fitxers que el cap.
+    3. La primera execució (sense aquestes correccions) es va aturar pel
+       `timeout` de la comanda (550s) abans d'acabar `edinburghcstr/ami`
+       -- el codi de sortida reportat (0) provenia de `tail -100` al pipe,
+       NO del script real (`timeout` mata el procés, `tail` arriba a EOF
+       net i surt amb 0) -- lliçó apresa: no piped un procés llarg a
+       través de `tail` si cal saber si ha completat de debò.
+
+
 ================================================================================
 BLOC 4 — DECISIONS D'ABAST
 ================================================================================
@@ -582,7 +803,16 @@ Estat: Fase 0 i Fase 1 tancades; Fase 2-3 no iniciades
 
   INCLOU (pendent, sense bloqueig tècnic conegut):
     - Classificació automàtica de canvis per taxonomia (Fase 2) 🔲 —
-      el risc tècnic que la bloquejava (R-01) ja està resolt.
+      el risc tècnic que la bloquejava (R-01) ja està resolt. **Abast
+      exacte pendent de tancar amb el director (US-303)**: ESBORRANY de
+      decisió preparat (vegeu T-07 i `docs/taiga/taxonomy.md`) — 3 nivells
+      de detectabilitat (metadada pura / lectura parcial de schema /
+      contingut complet), amb el Nivell 3 (8 codis) costant 151.4 GB si
+      es baixa sencer sobre els 11 elegibles actuals (`edinburghcstr/ami`
+      sol, 78GB). Recomanació preparada: Nivell 1+2 sempre, Nivell 3 amb
+      lectura selectiva per columna (no el fitxer sencer). **Casella
+      pendent fins que Joan ho parli amb Alberto Abelló** — Claude Code
+      no pot tancar aquesta decisió, només preparar-ne l'anàlisi.
     - Emmagatzematge en data warehouse (Fase 2/3) 🔲
     - Anàlisi descriptiva bàsica dels canvis trobats (Fase 3) 🔲
 
@@ -761,6 +991,34 @@ v0.4 — agost 2026 — Fase 1 tancada: extracció de versions i metadades
     es va qüestionar (calibratge de només 4 datasets, 3 del mateix format
     LeRobot) — queda com a pendent obert, vegeu `docs/architecture.md`
 
+v0.5 — setembre 2026 — Epic 3: US-303 treballada, dependència circular
+US-304/US-305 trencada
+  - T-07 nova: separació "motor de diffing" (US-304) / "classificador de
+    codis" (US-305) per trencar la dependència circular detectada al
+    backlog original. Troballa: D8/D9 del ground truth Census Income NO
+    són a HF (Zenodo i AIF360 respectivament) — US-304 es limita a D1-D7.
+  - `docs/taiga/taxonomy.md` reescrit: taula de detectabilitat binària
+    (7 vs 8 codis) substituïda per 3 nivells (metadada pura / lectura
+    parcial / contingut complet), amb anàlisi de cost real (151.4 GB
+    sobre els 11 elegibles actuals si Nivell 3 es baixa sencer).
+  - A-02 actualitzada amb l'esborrany de l'abast de Fase 2, pendent de
+    tancament amb el director.
+  - T-08 nova: US-304 implementada (`notebooks/change_diff.py`, motor de
+    diffing + adquisició D0-D7). Resultats reals: D3/D4 encaixen
+    EXACTAMENT amb el total del paper (7/7 els dos); D1/D2/D5 per sota
+    (esperat, C100 fora d'abast); D6 clarament per sobre (6 detectats vs
+    4 -- confirma que la tria del fitxer font entre 3 candidats al repo
+    `ETdanR/adult_income`, sense confirmació del paper, probablement no
+    és la correcta); D7 una mica per sobre (6 vs 5). `pyarrow==25.0.1`
+    afegit a `requirements.txt` (necessari per llegir el Parquet de D2).
+  - T-09 nova: US-305 implementada (`notebooks/change_classifier.py`,
+    abast provisional de 15 codis). Reutilitza `change_diff.py` sense
+    reimplementar-lo; `is_breaking` és una heurística pròpia de l'estudi
+    (5 codis estructurals -- ordre/eliminar/renom/tipus -- marcats
+    breaking). Decidit (implementació): classificació per regles
+    deterministes, no LLM. Executat de nou sobre Census Income D1-D7,
+    mateixos totals que T-08. Pendent: córrer sobre la població real.
+
 ================================================================================
 PRÒXIMES DECISIONS PENDENTS
 ================================================================================
@@ -770,16 +1028,46 @@ PRÒXIMES DECISIONS PENDENTS
 [x] Resoldre l'accés a la llista de fitxers per commit (Risc R-01) —
     clonatge bare + git show.
 [ ] Escollir motor de base de dades: PostgreSQL vs DuckDB (US-401)
-[ ] Decidir si classificar canvis via regles deterministes o via LLM
-    (Epic 3 encara no iniciat)
-[ ] Decidir amb el director l'abast de detecció automàtica de la taxonomia:
-    15 codis complets (requereix contingut real) vs 7 codis schema-level
-    (US-303)
+[x] Decidir si classificar canvis via regles deterministes o via LLM —
+    DECIDIT (implementació, no consulta formal amb director): regles
+    deterministes (`notebooks/change_classifier.py`, T-09), no LLM.
+    Motiu: els 14 codis tabulars són fets estructurals objectius
+    (columna afegida/eliminada, tipus canviat, etc.), no interpretació de
+    text lliure -- un LLM no aporta res aquí que un diff estructural no
+    doni ja de forma determinista i reproduïble. La via LLM (T-01,
+    Castaño et al.) es manté com a alternativa NO explorada si en el
+    futur cal classificar text lliure (p.e. missatges de commit).
+[ ] Decidir amb el director l'abast de detecció automàtica de la taxonomia
+    (US-303) — ESBORRANY ja preparat (T-07, `docs/taiga/taxonomy.md`): 3
+    nivells de detectabilitat, Nivell 3 costa 151.4 GB sobre els 11
+    elegibles actuals si es baixa sencer; recomanació de lectura selectiva
+    per columna en lloc d'exclusió de datasets (hipòtesi de >500 commits
+    provada i descartada, no correlaciona amb el pes). Falta la conversa
+    real amb el director.
 [ ] Definir format exacte de la taula KindOfChange alineada amb la
     taxonomia formal de 15 codis (no la informal original)
-[ ] Validar l'enfocament de classificació contra el ground truth del
-    Census Income — 9 versions reals de HF ja etiquetades pel director
-    (US-304), abans d'escalar a tota la població elegible
+[x] Validar l'extractibilitat mecànica del motor de diffing contra el
+    ground truth del Census Income (US-304, redefinida) — FET sobre D1-D7
+    (D8/D9 fora d'abast, no HF, vegeu T-07): D3/D4 encaixen EXACTAMENT amb
+    el total del paper (7/7); D1/D2/D5 per sota (esperat); D6 clarament
+    per sobre (6 vs 4, confirma que la tria del fitxer font -- 3 candidats
+    al repo, sense confirmació del paper -- probablement no és la
+    correcta); D7 una mica per sobre (6 vs 5). Detall a
+    `docs/architecture.md`.
+[x] Construir el classificador de codis i tornar-lo a córrer sobre Census
+    Income (US-305, T-09) — FET, abast PROVISIONAL (15 codis, pendent de
+    tancar amb el director a US-303). El "% d'acord codi per codi"
+    EXACTE segueix sense poder-se calcular (limitació d'integritat del
+    ground truth, no resolta -- vegeu T-08).
+[x] Executar el classificador (US-305) sobre la població real elegible
+    (11 datasets) — FET: 11/11 classificats, 0 fallats, 67 etiquetes
+    (`data/change_classification_1.csv`). 2 bugs reals corregits durant
+    l'execució (`unhashable type: 'dict'` en columnes d'àudio/imatge;
+    cost desproporcionat de datasets "chunked", vegeu T-10).
+[ ] Si es vol el "% d'acord codi per codi" exacte contra Census Income
+    (no només el total agregat), algú (Joan) ha de transcriure a mà la
+    Taula 1 del paper mirant la imatge original — l'extracció del PDF no
+    conserva quines cel·les concretes tenen "✔".
 [ ] Confirmació humana final (Joan + director) de la classificació TP/REVIEW
     de US-108 — l'automatització és una heurística, no una validació
     manual tancada

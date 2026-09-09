@@ -64,11 +64,11 @@ docker compose build
 docker compose run --rm --remove-orphans eligibility-scan --sample-size 50 --threads 4 --seed 42 --max-scanned 5000
 ls data/eligibility_report_50_*.csv   # confirma el nom exacte (inclou el run_id)
 
-# 2. validate_eligible.py -- usa el CSV generat al pas anterior
-docker compose run --rm --remove-orphans validate-eligible --input data/eligibility_report_<sample_size>_<run_id>.csv
-
-# 3. version_extractor.py -- Fase 1, seqüència de versions per dataset elegible
+# 2. version_extractor.py -- Fase 1, seqüència de versions per dataset elegible
 docker compose run --rm --remove-orphans version-extractor --input data/eligibility_report_<sample_size>_<run_id>.csv
+
+# 3. classificació de canvis (Fase 2, US-305) -- mateix servei eligibility-scan, flag diferent
+docker compose run --rm --remove-orphans eligibility-scan --classify-eligible data/eligibility_report_<sample_size>_<run_id>.csv
 ```
 
 `--remove-orphans` neteja contenidors aturats d'execucions anteriors amb
@@ -86,10 +86,11 @@ build` (o `docker compose run --build ...`) ho arregla.
 
 `data/` es munta com a volum (`./data:/app/data`), així que els CSV/JSON de
 sortida apareixen directament al repositori de l'host, igual que executant
-els scripts en local. **`validate-eligible` i `version-extractor` necessiten
-que `eligibility-scan` s'hagi executat abans**: llegeixen un CSV que aquest
-genera, no en creen cap de nou. Sense `docker compose`, l'equivalent amb
-`docker run` (substituint l'entrypoint per al script desitjat):
+els scripts en local. **`version-extractor` i `--classify-eligible`
+necessiten que `eligibility-scan` s'hagi executat abans**: llegeixen un CSV
+que aquest genera, no en creen cap de nou. Sense `docker compose`,
+l'equivalent amb `docker run` (substituint l'entrypoint per al script
+desitjat):
 
 ```bash
 docker build -t hf-dataset-version-analysis .
@@ -173,6 +174,8 @@ Un dataset és **elegible** si té **2 o més versions genuïnes**, detectades p
 - `data/versions_run_id.csv` / `data/versions_summary_run_id.json`
   (`notebooks/version_extractor.py`, Fase 1: seqüència de versions per
   dataset elegible, vegeu més avall)
+- `data/change_classification_run_id.csv` (`--classify-eligible`, Fase 2:
+  canvis classificats segons la taxonomia, vegeu més avall)
 
 ## Variables utils
 
@@ -192,3 +195,26 @@ Criteri B -- vegeu `docs/architecture.md`, secció "Fase 1"):
 python notebooks/version_extractor.py --input data/eligibility_report_2000_5.csv
 python notebooks/version_extractor.py --input data/eligibility_report_2000_5.csv --skip-size  # més ràpid, sense mida
 ```
+
+## Classificació de canvis (Fase 2, US-305)
+
+Integrada dins de `classify_dataset()` (`eligibility_scan.py`), NO com a
+script separat -- reutilitza el mateix clonatge/inspecció de commits que
+ja fa l'elegibilitat. Classifica cada commit substantiu amb un pare
+conegut segons els 14 codis estructurals de la taxonomia (C210-C530,
+`docs/taiga/taxonomy.md`) -- **deliberadament sense C100** (metadada).
+Només diferencia contingut real dels fitxers tabulars (`.parquet`/
+`.csv`/`.tsv`) que van canviar; els binaris (àudio/vídeo/tensors) només
+compten per a l'elegibilitat.
+
+```bash
+python notebooks/eligibility_scan.py --classify-eligible data/eligibility_report_2000_5.csv
+```
+
+Mode **opt-in**, mai actiu durant `--sample-size` (l'escaneig poblacional
+de Fase 0): classificar contingut real a fins a 2000 datasets mostrejats
+reintroduiria el cost de ~150GB identificat a `docs/decisions_tfg.txt`
+(Decisió A-02), multiplicat per ~180x. Només té sentit sobre datasets ja
+coneguts com a elegibles (desenes com a molt). Output: `data/
+change_classification_<run_id>.csv` (`dataset_id, version_from,
+version_to, code, is_breaking`).
