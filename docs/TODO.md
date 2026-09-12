@@ -36,12 +36,14 @@ Claude Code no pot completar aquesta conversa.
 
 ## Fet ✅
 
-- [x] **US-108** — `notebooks/validate_eligible.py` genera automàticament
-      `docs/us108_validation_report.md` a cada execució (criteri
-      d'acceptació 4: automatització), amb un veredicte TP/REVIEW/ERROR
-      per dataset. La comprovació de "sessions de treball"
-      (`cluster_commit_times`, buit >`MIN_SUBSTANTIVE_GAP_HOURS` entre
-      commits CONSECUTIUS) **només s'aplica al Criteri B**: el Criteri A
+- [x] **US-108** — `notebooks/validate_eligible.py` (eliminat setembre
+      2026, eina de validació puntual, no part del pipeline en marxa --
+      vegeu `docs/decisions_tfg.txt` T-11) va generar
+      `docs/us108_validation_report.md` (mantingut, document històric),
+      amb un veredicte TP/REVIEW/ERROR per dataset. La comprovació de
+      "sessions de treball" (`cluster_commit_times`, ara a
+      `eligibility_scan.py`, buit >`MIN_SUBSTANTIVE_GAP_HOURS` entre
+      commits CONSECUTIUS) **només s'aplicava al Criteri B**: el Criteri A
       (tags explícits) mai ha exigit dispersió temporal a
       `classify_dataset` -- la presència de >=2 tags ja és un senyal
       deliberat de versionat pel mantenidor, i la validació manual
@@ -88,7 +90,7 @@ Claude Code no pot completar aquesta conversa.
       **Ampliació d'abast decidida durant la implementació**: ~70% (8/11)
       dels elegibles ho són via Criteri B i no tenen cap tag -- en lloc de
       deixar-los sense versions o deferir-ho a una story nova, cada SESSIÓ
-      de treball (`validate_eligible.cluster_commit_times`, mateixa lògica
+      de treball (`eligibility_scan.cluster_commit_times`, mateixa lògica
       que US-108) es tracta com una versió inferida (`version_source=
       "commit_session"`), diferenciada de les versions per tag
       (`version_source="tag"`) al mateix output. Detall tècnic: `list_
@@ -123,4 +125,8 @@ Claude Code no pot completar aquesta conversa.
       `MAX_TABULAR_FILES_PER_COMMIT = 5`). Vegeu `docs/architecture.md`
       per al disseny complet i `docs/decisions_tfg.txt` (T-10) per al
       relat detallat de la primera execució (fallada per timeout) i la
-      segona (completa).
+      segona (completa). **Neteja posterior**: `change_diff.py`/`change_
+      classifier.py` es van trimar al motor viu (sense el codi C100, mai
+      cridat, ni l'adquisició/informe específic de Census Income, exercici
+      puntual ja fet); `validate_eligible.py` eliminat pel mateix motiu
+      (vegeu T-11).

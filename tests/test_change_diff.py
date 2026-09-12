@@ -1,12 +1,11 @@
 """
-Tests unitaris per a `notebooks/change_diff.py` (US-304).
+Tests unitaris per a `notebooks/change_diff.py`.
 
 Cobreixen NOMÉS el motor de diffing (funcions pures `diff_*` i
-`compute_all_diffs`/`build_detectability_report`), amb `DataFrame`
-sintètics petits -- mai crides de xarxa (l'adquisició, `download_uci_
-adult_baseline`/`download_census_income_version`, no es testeja aquí,
-mateix criteri que `test_validate_eligible.py` amb `gather_evidence_for_
-dataset`).
+`compute_all_diffs`), amb `DataFrame` sintètics petits -- mai crides de
+xarxa (`download_tabular_file_at_revision` no es testeja aquí, és un
+embolcall prim de `hf_hub_download`/`errors.with_retry`, ja cobertes per
+la resta del projecte).
 """
 
 import pandas as pd
@@ -291,25 +290,3 @@ class TestComputeAllDiffs:
             "columns", "types", "categorical_values", "numeric_values",
             "rows", "missingness", "correlation", "distribution",
         }
-
-
-class TestBuildDetectabilityReport:
-    def test_builds_one_row_per_version(self):
-        diffs_by_version = {
-            "D1": cd.compute_all_diffs(pd.DataFrame({"a": [1, 2]}), pd.DataFrame({"a": [1, 2, 3]})),
-            "D2": cd.compute_all_diffs(pd.DataFrame({"a": [1, 2]}), pd.DataFrame({"a": [1, 2]})),
-        }
-        report = cd.build_detectability_report(diffs_by_version)
-        assert list(report["version"]) == ["D1", "D2"]
-        # D1: afegir una fila a una columna numèrica sol arrossegar C421
-        # (recompte) i, en cascada, C322/C530 (l'estadístic/distribució
-        # de la columna canvia amb la fila nova) -- no és un bug, és el
-        # comportament esperat de mètriques que interactuen.
-        assert report.loc[report["version"] == "D1", "codes_detected"].iloc[0] >= 1
-        assert bool(report.loc[report["version"] == "D1", "C421"].iloc[0])
-        assert report.loc[report["version"] == "D2", "codes_detected"].iloc[0] == 0
-
-    def test_paper_row_total_column_present(self):
-        diffs_by_version = {"D1": cd.compute_all_diffs(pd.DataFrame({"a": [1]}), pd.DataFrame({"a": [1]}))}
-        report = cd.build_detectability_report(diffs_by_version)
-        assert report.loc[0, "paper_row_total"] == cd.PAPER_ROW_TOTALS["D1"]

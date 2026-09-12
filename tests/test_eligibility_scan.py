@@ -616,7 +616,7 @@ class TestDetermineCommitSubstantiveWithPaths:
     def test_determine_commit_substantive_matches_the_bool_half(self, monkeypatch):
         # determine_commit_substantive() ha de seguir retornant exactament
         # el primer element de la tupla -- no s'ha trencat cap contracte
-        # existent (validate_eligible.py en depèn).
+        # existent (version_extractor.py en depèn).
         commit = _FakeCommit("Merge pull request #3")
         monkeypatch.setattr(es, "get_changed_files", lambda clone_dir, sha: ["data/file.parquet"])
         assert es.determine_commit_substantive(commit, "/fake/clone") is True

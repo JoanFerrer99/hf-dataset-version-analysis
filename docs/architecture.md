@@ -49,12 +49,18 @@ datasets i el pipeline recorria sempre al fallback de títol. Corregit al
 execució neta (`eligibility_report_2000_3.csv`, amb `git` disponible i
 totes dues millores realment actives) confirma la correcció.
 
-`notebooks/validate_eligible.py` genera automàticament
-`docs/us108_validation_report.md` a cada execució (US-108, criteri
-d'acceptació 4), amb un veredicte TP/REVIEW per dataset. La comprovació
-de sessions de treball (`cluster_commit_times`, buit >
+**`notebooks/validate_eligible.py` (eliminat, setembre 2026)** va generar
+`docs/us108_validation_report.md`, amb un veredicte TP/REVIEW per
+dataset -- eina de validació PUNTUAL (US-108, criteri d'acceptació 4), no
+part del pipeline en marxa: un cop la conclusió (100% TP sobre l'execució
+de referència) queda documentada, no calia mantenir-la com a codi viu.
+`cluster_commit_times` (la única funció que en depenia `version_
+extractor.py`) es va moure a `eligibility_scan.py` abans d'eliminar la
+resta -- vegeu `docs/decisions_tfg.txt`, T-11. El report generat es manté
+com a document històric, no es regenera. La comprovació de sessions de
+treball que hi feia servir (`cluster_commit_times`, buit >
 `MIN_SUBSTANTIVE_GAP_HOURS` entre commits CONSECUTIUS -- el MATEIX
-llindar que decideix l'elegibilitat via Criteri B) **només s'aplica al
+llindar que decideix l'elegibilitat via Criteri B) **només s'aplicava al
 Criteri B**: el Criteri A (tags explícits) mai ha exigit dispersió
 temporal a `classify_dataset` -- la presència de >=2 tags ja és un
 senyal deliberat de versionat pel mantenidor, independent de quan es van
@@ -264,7 +270,7 @@ recalcular el criteri):
   `GitRefInfo.target_commit` dona el SHA directament, sense cap crida
   extra per resoldre tag -> commit.
 - **Criteri B** (sense tags): cada SESSIÓ de treball és una versió
-  inferida, reutilitzant `validate_eligible.cluster_commit_times` -- LA
+  inferida, reutilitzant `eligibility_scan.cluster_commit_times` -- LA
   MATEIXA lògica ja validada a US-108 (buit > `MIN_SUBSTANTIVE_GAP_HOURS`
   entre commits substantius consecutius), no una reimplementació.
 
@@ -399,9 +405,23 @@ comparar.
 
 ### Resultats reals — validació d'extractibilitat (Census Income D1–D7)
 
-`notebooks/change_diff.py` compara cada D_i (i=1..7) contra D0 (baseline
-UCI) i compta quants dels 14 codis tabulars (tots excepte C100) mostren
-algun senyal, sense encara etiquetar-los amb el codi exacte:
+**Nota (setembre 2026): exercici de validació PUNTUAL, ja fet.** El
+codi d'adquisició/informe específic de Census Income (`CENSUS_INCOME_
+SOURCES`, `download_uci_adult_baseline`, `download_census_income_
+version`, `build_detectability_report`, `run_validation`,
+`run_census_income_classification`, `summarize_agreement`) es va
+eliminar de `change_diff.py`/`change_classifier.py` un cop la pregunta
+que responia ("el motor de diffing detecta senyals reals?") va quedar
+contestada -- no calia mantenir-lo com a codi viu, retestejat a cada
+canvi. Aquesta secció (i les taules següents) és el registre històric
+del resultat, no una descripció d'un script encara executable. El motor
+de diffing en si (`diff_*`/`compute_all_diffs`) SÍ es manté -- és el que
+fa servir `eligibility_scan.classify_dataset` sobre la població real.
+
+En aquell moment, `change_diff.py` va comparar cada D_i (i=1..7) contra
+D0 (baseline UCI) i va comptar quants dels 14 codis tabulars (tots
+excepte C100) mostraven algun senyal, sense encara etiquetar-los amb el
+codi exacte:
 
 | Versió | Codis amb senyal (el nostre motor) | Total de fila del paper |
 |---|---|---|
@@ -427,9 +447,9 @@ al capçal de `change_diff.py`):
   nostre motor no intenta C100), però probablement també hi ha canvis
   subtils que els llindars actuals (5% de canvi relatiu/absolut a
   `diff_distribution`/`diff_correlation`) no capten -- pendent d'afinar.
-- **D6 clarament per sobre** (6 detectats vs 4 del paper) -- confirma
-  l'ambigüitat ja documentada a `change_diff.py` (CENSUS_INCOME_SOURCES):
-  el repo `ETdanR/adult_income` té 3 fitxers (`experiment_data.csv`,
+- **D6 clarament per sobre** (6 detectats vs 4 del paper) -- confirma una
+  ambigüitat detectada en aquell moment: el repo `ETdanR/adult_income`
+  té 3 fitxers (`experiment_data.csv`,
   `train_data.csv`, `validation_data.csv`) i el paper no especifica quin
   -- s'ha triat `train_data.csv` sense confirmació. Aquest resultat
   suggereix que probablement NO és el fitxer correcte; caldria provar
@@ -440,16 +460,28 @@ al capçal de `change_diff.py`):
   al seu total (en aquest cas 5 podria incloure C100, deixant un sostre
   tabular de 4, i el nostre motor sobredetecta en 2).
 
-### US-305 — Classificador de canvis, integrat a `classify_dataset` (US-303/US-305)
+### US-305 — Classificador de canvis, integrat a `classify_dataset`
 
-**Estat: en curs.** Redisseny important respecte a la primera versió
+**Estat: fet.** Redisseny important respecte a la primera versió
 d'aquest document (que descrivia `change_classifier.py` com un script
 separat de Fase 2, aïllat de Fase 0): **la classificació ara viu DINS de
 `eligibility_scan.classify_dataset()`**, reutilitzant, sense
 reimplementar-los, els motors purs de `change_diff.py`/
-`change_classifier.py` que ja s'havien construït i validat contra Census
-Income. Decisió explícita: **no es classifica C100 (metadada)** -- només
-els 14 codis estructurals/de contingut (C210-C530).
+`change_classifier.py`. Decisió explícita: **no es classifica C100
+(metadada)** -- només els 14 codis estructurals/de contingut (C210-C530).
+
+**Neteja posterior (setembre 2026)**: un cop la classificació ja
+funcionava sobre la població real i la validació contra Census Income
+havia respost la pregunta que calia respondre, es van trimar
+`change_diff.py`/`change_classifier.py` a NOMÉS el motor viu (funcions
+`diff_*`/`compute_all_diffs`/`classify_diffs`/`classify_file_change`,
+usades per `classify_dataset`). Es van eliminar: tot el codi C100
+(`diff_metadata`, mai cridat -- decisió del projecte de no classificar
+metadada) i tota l'adquisició/informe específic de Census Income
+(`run_validation`, `run_census_income_classification`, etc. -- vegeu
+nota a "Resultats reals — validació d'extractibilitat" més amunt).
+`notebooks/validate_eligible.py` (US-108) es va eliminar pel mateix
+motiu -- vegeu `docs/decisions_tfg.txt`, T-11.
 
 **Per què dins de `classify_dataset` i no com un pas separat**:
 `classify_dataset()` ja itera commits i n'inspecciona els fitxers
@@ -516,20 +548,20 @@ en defineix cap de formal): `C210`, `C222`, `C223`, `C311`, `C321`
 ("trenca" un pipeline que llegeix per nom/posició/tipus sense adaptar-se)
 són `True`; la resta `False`.
 
-**Relació amb la validació de Census Income**: `change_diff.py`/`change_
-classifier.py` mantenen la seva pròpia adquisició per a D1-D7
-(inter-repositori, sense historial de git compartit amb la UCI -- no es
-pot fer via `classify_dataset`, que és intra-repositori per disseny).
-Reutilitzen les MATEIXES funcions pures de diffing/classificació que
-`classify_dataset` -- el "pipeline propi" és, doncs, el mateix codi en
-tots dos casos, només amb una capa d'adquisició diferent segons si es
-compara dins d'un repositori o entre repositoris independents. Resultat
-sobre D1-D7 (`data/census_income_classification.csv`, 30 etiquetes):
-mateixos totals que la validació de US-304. **Limitació d'integritat NO
-resolta**: el "% d'acord codi per codi" exacte contra la Taula 1 del
-paper no es pot calcular (l'extracció del PDF no conserva l'alineació de
-columnes de la taula amb marques "✔") -- `summarize_agreement` compara
-per total agregat per dataset, no codi per codi.
+**Relació amb la validació de Census Income (històrica)**: mentre va
+existir, l'adquisició de Census Income (D1-D7, inter-repositori, sense
+historial de git compartit amb la UCI -- no es podia fer via
+`classify_dataset`, intra-repositori per disseny) reutilitzava les
+MATEIXES funcions pures de diffing/classificació que fa servir
+`classify_dataset` -- el "pipeline propi" era, doncs, el mateix codi en
+tots dos casos, només amb una capa d'adquisició diferent. Resultat final
+abans de retirar l'script (`data/census_income_classification.csv`, 30
+etiquetes, conservat com a document històric): mateixos totals que la
+validació de US-304. **Limitació d'integritat mai resolta**: el "% d'acord
+codi per codi" exacte contra la Taula 1 del paper no es va poder calcular
+(l'extracció del PDF no conserva l'alineació de columnes de la taula amb
+marques "✔") -- la comparació es va fer per total agregat per dataset,
+no codi per codi.
 
 ### Resultats reals — classificació sobre la població elegible
 

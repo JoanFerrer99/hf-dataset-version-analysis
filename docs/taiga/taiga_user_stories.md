@@ -277,6 +277,14 @@ positius sistemàtics.
   dispersió temporal mínima (`MIN_SUBSTANTIVE_GAP_HOURS`, actualment 6h)
   + detecció real de fitxers (US-302); precisió automàtica 38.5% → 100%
 
+**Nota (setembre 2026)**: `notebooks/validate_eligible.py` s'ha eliminat
+del repositori -- era una eina de validació PUNTUAL, no part del pipeline
+en marxa; un cop la conclusió (100% TP) queda documentada aquí i a
+`docs/us108_validation_report.md` (mantingut com a document històric), no
+calia mantenir-la com a codi viu. `cluster_commit_times` es va moure a
+`eligibility_scan.py` (l'única part que encara es fa servir, via
+`version_extractor.py`). Vegeu `docs/decisions_tfg.txt`, T-11.
+
 **Estat:** 🔄 In progress (automatitzat i re-executat net; pendent només
 confirmació humana final de Joan/director)
 **Story points:** 5
@@ -301,7 +309,7 @@ són via Criteri B i NO tenen cap tag — una implementació literal d'aquesta
 story hauria deixat buida la majoria de la població elegible. En lloc de
 restringir l'abast només als datasets amb tags i deferir la resta, es va
 decidir en aquell mateix moment estendre el concepte de "versió" també als
-datasets sense tags: cada SESSIÓ de treball (`validate_eligible.
+datasets sense tags: cada SESSIÓ de treball (`eligibility_scan.
 cluster_commit_times`, mateixa lògica que US-108) es tracta com una versió
 inferida. Vegeu `docs/architecture.md` (Fase 1) per al disseny complet.
 
