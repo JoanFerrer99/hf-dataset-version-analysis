@@ -14,10 +14,10 @@ csv` (40 versions) → `data/change_classification_1.csv` (67 etiquetes de
 canvi, 11/11 datasets classificats, 0 fallats). La classificació de
 canvis ja NO és un script separat -- integrada DINS de `eligibility_
 scan.classify_dataset()` (paràmetre opt-in `classify_changes`),
-reutilitzant `change_diff.py`/`change_classifier.py` (motor de diffing +
-etiquetatge, validats contra Census Income D1-D7 i sobre la població
-real). C100 (metadada) exclòs, només els 14 codis estructurals/de
-contingut. **L'única cosa que falta per tancar formalment Fase 2** és
+reutilitzant `change_diff.py` (motor de diffing + etiquetatge en un sol
+fitxer, validats contra Census Income D1-D7 i sobre la població real).
+C100 (metadada) exclòs, només els 14 codis estructurals/de contingut.
+**L'única cosa que falta per tancar formalment Fase 2** és
 que Joan parli amb el director sobre l'abast final (US-303 AC3/AC4) --
 Claude Code no pot completar aquesta conversa.
 
@@ -111,7 +111,7 @@ Claude Code no pot completar aquesta conversa.
       **integrada DINS de `classify_dataset()`** (`eligibility_scan.py`,
       paràmetre opt-in `classify_changes`), no com a script separat --
       "l'escalabilitat del projecte parteix d'aquell fitxer". Reutilitza
-      `change_diff.py`/`change_classifier.py` sense reimplementar-los.
+      `change_diff.py` sense reimplementar-lo.
       Mode CLI nou: `--classify-eligible`. **Execució real sobre els 11
       elegibles: 11/11 classificats, 0 fallats, 67 etiquetes** (C421=53,
       C422=10, C223=3, C311=1; 4 breaking). 7/11 datasets amb etiquetes;
@@ -125,8 +125,14 @@ Claude Code no pot completar aquesta conversa.
       `MAX_TABULAR_FILES_PER_COMMIT = 5`). Vegeu `docs/architecture.md`
       per al disseny complet i `docs/decisions_tfg.txt` (T-10) per al
       relat detallat de la primera execució (fallada per timeout) i la
-      segona (completa). **Neteja posterior**: `change_diff.py`/`change_
-      classifier.py` es van trimar al motor viu (sense el codi C100, mai
-      cridat, ni l'adquisició/informe específic de Census Income, exercici
-      puntual ja fet); `validate_eligible.py` eliminat pel mateix motiu
-      (vegeu T-11).
+      segona (completa). **Neteja posterior (dues passes)**: (1)
+      `change_diff.py`/`change_classifier.py` es van trimar al motor viu
+      (sense el codi C100, mai cridat, ni l'adquisició/informe específic
+      de Census Income, exercici puntual ja fet); `validate_eligible.py`
+      eliminat pel mateix motiu (T-11). (2) Amb `change_classifier.py`
+      ja reduït a ~120 línies i un únic cridant real, es va fusionar
+      dins de `change_diff.py` (`change_classifier.py` eliminat);
+      `RETRY_CONFIG` (repetit a 3 scripts) consolidat en `errors.
+      DEFAULT_RETRY_CONFIG`, corregint de pas un bug real (les
+      descàrregues de contingut no rebien mai els `--retry-*` de la CLI)
+      (T-12).

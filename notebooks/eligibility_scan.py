@@ -45,7 +45,6 @@ from dotenv import load_dotenv
 from tqdm import tqdm
 from huggingface_hub import HfApi, list_repo_commits, list_repo_refs
 
-import change_classifier
 import change_diff
 import errors
 from errors import ErrorCategory
@@ -102,11 +101,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 FAILURES_LOG_PATH = os.path.join(OUTPUT_DIR, "failures.csv")
 
-RETRY_CONFIG: dict = {
-    "max_retries": errors.DEFAULT_MAX_RETRIES,
-    "base_wait_s": errors.DEFAULT_BASE_WAIT_S,
-    "max_wait_s": errors.DEFAULT_MAX_WAIT_S,
-}
+RETRY_CONFIG: dict = dict(errors.DEFAULT_RETRY_CONFIG)
 
 # Inicialització de l'API
 load_dotenv()
@@ -303,7 +298,7 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
           `errors.append_failure_row`); `""` en cas d'èxit.
         - change_labels (list[dict]): `[]` si `classify_changes=False`.
           Si `True`, una entrada per codi de taxonomia detectat (format
-          `change_classifier.ChangeLabel` via `dataclasses.asdict`).
+          `change_diff.ChangeLabel` via `dataclasses.asdict`).
     """
     result = {
         "dataset_id": dataset_id,
@@ -356,6 +351,7 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
                             result["change_labels"].extend(
                                 classify_commit_tabular_changes(
                                     dataset_id, changed_paths, parent_commit.commit_id, commit.commit_id, HF_TOKEN,
+                                    RETRY_CONFIG,
                                 )
                             )
 
@@ -621,6 +617,7 @@ MAX_TABULAR_FILES_PER_COMMIT = 5
 
 def classify_commit_tabular_changes(
     dataset_id: str, changed_paths: list[str], version_from: str, version_to: str, hf_token: str | None,
+    retry_config: dict,
 ) -> list[dict]:
     """
     Classifica els canvis d'UN commit substantiu segons la taxonomia
@@ -649,6 +646,10 @@ def classify_commit_tabular_changes(
     :param version_from: SHA del commit pare (versió anterior).
     :param version_to: SHA d'aquest commit (versió posterior).
     :param hf_token: token HF.
+    :param retry_config: mateix format que `RETRY_CONFIG` -- es passa
+        explícitament (mai un global de `change_diff.py`) perquè els
+        `--retry-*` d'aquest script també controlin les descàrregues de
+        contingut, no només `list_repo_refs`/`list_repo_commits`.
     :return: llista de `dict` (via `dataclasses.asdict`), una entrada per
         codi detectat en algun dels fitxers tabulars classificats -- `[]`
         si cap fitxer tabular ha canviat en aquest commit.
@@ -656,9 +657,9 @@ def classify_commit_tabular_changes(
     labels = []
     tabular_paths = [p for p in changed_paths if change_diff.is_tabular_path(p)]
     for path in tabular_paths[:MAX_TABULAR_FILES_PER_COMMIT]:
-        before_df = change_diff.download_tabular_file_at_revision(dataset_id, path, version_from, hf_token)
-        after_df = change_diff.download_tabular_file_at_revision(dataset_id, path, version_to, hf_token)
-        for label in change_classifier.classify_file_change(dataset_id, before_df, after_df, version_from, version_to):
+        before_df = change_diff.download_tabular_file_at_revision(dataset_id, path, version_from, hf_token, retry_config)
+        after_df = change_diff.download_tabular_file_at_revision(dataset_id, path, version_to, hf_token, retry_config)
+        for label in change_diff.classify_file_change(dataset_id, before_df, after_df, version_from, version_to):
             labels.append(asdict(label))
     return labels
 

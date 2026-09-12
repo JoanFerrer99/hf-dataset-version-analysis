@@ -1,17 +1,25 @@
 """
-Motor de diffing de canvis estructurals/de contingut entre dues revisions
-d'un dataset (US-305, `docs/taiga/taxonomy.md`).
+Motor de diffing i classificació de canvis estructurals/de contingut
+entre dues revisions d'un dataset (US-305, `docs/taiga/taxonomy.md`).
 
-Funcions pures reutilitzades pel classificador (`change_classifier.py`):
-totes les `diff_*` prenen dos `pandas.DataFrame` i retornen fets
-estructurals, sense saber res de codis C1XX-C5XX ni de com s'han adquirit
-els `DataFrame` -- aquesta separació és la que permet cridar-les des de
-`eligibility_scan.classify_dataset` (població real, `classify_changes=
-True`) sense cap acoblament amb l'origen de les dades.
+Dues capes en un mateix mòdul (fusionades des de l'antic `change_
+classifier.py`, setembre 2026 -- eren dos fitxers separats sense cap
+altre cridant que `eligibility_scan.py`, i la capa d'etiquetatge ja
+llegia directament l'estructura interna d'aquest mòdul, així que la
+"separació de responsabilitats" no aportava res un cop trimat el codi
+mort):
+  - **Diffing** (`diff_*`/`compute_all_diffs`): funcions pures, prenen
+    dos `pandas.DataFrame` i retornen fets estructurals, sense saber res
+    de codis C1XX-C5XX ni de com s'han adquirit els `DataFrame`.
+  - **Classificació** (`classify_diffs`/`classify_file_change`): tradueix
+    els fets estructurals a etiquetes `ChangeLabel` (codi + `is_breaking`).
 
 Aquest mòdul NO tracta C100 (metadada) -- és fora de l'abast d'una
 comparació tabular, i el projecte ha decidit no classificar-lo (vegeu
 `docs/decisions_tfg.txt`).
+
+Cridat per `eligibility_scan.classify_dataset` (`classify_changes=True`),
+l'únic cridant real d'aquest mòdul.
 
 Nota històrica: el motor es va validar contra el ground truth Census
 Income del paper del director (US-304) abans d'integrar-se a la
@@ -22,6 +30,7 @@ manté com a codi viu aquí.
 """
 
 import logging
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
@@ -31,11 +40,7 @@ import errors
 
 log = logging.getLogger(__name__)
 
-RETRY_CONFIG: dict = {
-    "max_retries": errors.DEFAULT_MAX_RETRIES,
-    "base_wait_s": errors.DEFAULT_BASE_WAIT_S,
-    "max_wait_s": errors.DEFAULT_MAX_WAIT_S,
-}
+BREAKING_CODES = frozenset({"C210", "C222", "C223", "C311", "C321"})
 
 TABULAR_CODES = (
     "C210", "C221", "C222", "C223", "C311", "C312", "C321", "C322",
@@ -57,7 +62,7 @@ def is_tabular_path(path: str) -> bool:
 
 
 def download_tabular_file_at_revision(
-    repo_id: str, path: str, revision: str, hf_token: str | None
+    repo_id: str, path: str, revision: str, hf_token: str | None, retry_config: dict,
 ) -> pd.DataFrame | None:
     """
     Baixa i carrega UN fitxer tabular concret d'un dataset a una revisió
@@ -69,19 +74,23 @@ def download_tabular_file_at_revision(
     :param path: ruta relativa del fitxer dins del repositori.
     :param revision: SHA del commit a llegir.
     :param hf_token: token HF.
+    :param retry_config: mateix format que `errors.DEFAULT_RETRY_CONFIG`
+        -- es rep com a paràmetre explícit (aquest mòdul no té CLI pròpia
+        ni un `RETRY_CONFIG` propi) perquè el cridant (`eligibility_
+        scan.py`) hi pugui propagar els seus propis `--retry-*`.
     :return: `DataFrame`, o `None` si el fitxer no existeix en aquesta
         revisió (afegit/eliminat entre les dues que es comparen, 404 --
         no reintentat per `errors.with_retry`, és una condició
         permanent) o si la descàrrega/lectura falla per qualsevol altre
         motiu després d'esgotar els reintents (429/transitori) -- es
         registra amb `log.debug`, no es repropaga: el cridant ho tracta
-        com "sense contingut per diferenciar" (vegeu `change_classifier.
-        classify_file_change`), no com un error fatal per a tot el dataset.
+        com "sense contingut per diferenciar" (vegeu `classify_file_
+        change`), no com un error fatal per a tot el dataset.
     """
     try:
         local_path = errors.with_retry(
             hf_hub_download, repo_id=repo_id, repo_type="dataset", filename=path, revision=revision,
-            token=hf_token, **RETRY_CONFIG,
+            token=hf_token, **retry_config,
         )
     except Exception as exc:
         log.debug(f"download_tabular_file_at_revision: no disponible {repo_id}@{revision}:{path}: {exc}")
@@ -395,3 +404,100 @@ def compute_all_diffs(before: pd.DataFrame, after: pd.DataFrame) -> dict:
             "correlation": correlation, "distribution": distribution,
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Classificació -- tradueix els fets estructurals de compute_all_diffs a
+# etiquetes de codi (C210-C530). Regla de disseny de la taxonomia
+# (obligatòria): NO usa informació de quina columna és el target del
+# pipeline -- cap funció d'aquest bloc en rep cap paràmetre.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ChangeLabel:
+    """
+    Una etiqueta de canvi: un codi de taxonomia detectat entre dues
+    instantànies d'UN dataset.
+
+    :ivar dataset_id: identificador del dataset.
+    :ivar version_from: etiqueta de la versió anterior (SHA de commit).
+    :ivar version_to: etiqueta de la versió posterior (SHA de commit).
+    :ivar code: codi de la taxonomia (`"C210"`...`"C530"`).
+    :ivar is_breaking: `True` si el codi és a `BREAKING_CODES`.
+    """
+
+    dataset_id: str
+    version_from: str
+    version_to: str
+    code: str
+    is_breaking: bool
+
+
+def classify_diffs(diffs: dict, dataset_id: str, version_from: str, version_to: str) -> list[ChangeLabel]:
+    """
+    Tradueix els fets estructurals de `compute_all_diffs` a etiquetes de
+    codi (C210-C530). NO recalcula res -- només llegeix els booleans ja
+    calculats i hi afegeix `is_breaking`.
+
+    `is_breaking` és una heurística PRÒPIA d'aquest estudi (el paper no
+    en defineix cap de formal) -- "breaking" = un canvi que probablement
+    trenca un pipeline que llegeix el dataset per nom/posició/tipus sense
+    adaptar-se: C210 (ordre de columnes), C222 (eliminar columna), C223
+    (renom), C311/C321 (canvi de tipus). La resta (afegir columna/fila,
+    canvis de valors/distribució/correlació/missings) es marquen `is_
+    breaking=False` -- poden afectar la qualitat del model, però no fan
+    fallar un pipeline que simplement llegeix el dataset.
+
+    :param diffs: sortida de `compute_all_diffs(before, after)`.
+    :param dataset_id: identificador del dataset.
+    :param version_from: SHA del commit anterior.
+    :param version_to: SHA del commit posterior.
+    :return: llista de `ChangeLabel`, una per codi amb senyal detectat
+        (`diffs[code]` truthy). `C410` mai s'hi inclou si `diffs["C410"]`
+        és `None` (no detectable, vegeu `compute_all_diffs`).
+    """
+    return [
+        ChangeLabel(dataset_id, version_from, version_to, code, is_breaking=code in BREAKING_CODES)
+        for code in TABULAR_CODES
+        if diffs.get(code)
+    ]
+
+
+def classify_file_change(
+    dataset_id: str,
+    before_df: pd.DataFrame | None,
+    after_df: pd.DataFrame | None,
+    version_from: str,
+    version_to: str,
+) -> list[ChangeLabel]:
+    """
+    Classifica el canvi d'UN fitxer tabular concret entre dues revisions
+    -- usada per `eligibility_scan.classify_dataset` (`classify_changes=
+    True`) per a cada fitxer tabular (`is_tabular_path`) que canvia en
+    un commit substantiu.
+
+    :param dataset_id: identificador del dataset.
+    :param before_df: contingut del fitxer a la revisió anterior, o
+        `None` si el fitxer no hi existia (acabat d'afegir).
+    :param after_df: contingut a la revisió posterior, o `None` si el
+        fitxer ha estat eliminat.
+    :param version_from: SHA del commit anterior.
+    :param version_to: SHA del commit posterior.
+    :return: si `before_df`/`after_df` són tots dos `None`, `[]`. Si
+        NOMÉS un dels dos és `None` (fitxer afegit o eliminat sencer),
+        UNA etiqueta aproximada (`C421` si afegit, `C422` si eliminat) --
+        sense verificar-ho a nivell de fila (no hi ha ID d'instància
+        estable entre fitxers/chunks, limitació ja documentada a
+        `diff_row_count`). Si tots dos existeixen, el resultat de
+        `classify_diffs(compute_all_diffs(...))`.
+    """
+    if before_df is None and after_df is None:
+        return []
+    if before_df is None:
+        return [ChangeLabel(dataset_id, version_from, version_to, "C421", is_breaking=False)]
+    if after_df is None:
+        return [ChangeLabel(dataset_id, version_from, version_to, "C422", is_breaking=False)]
+
+    diffs = compute_all_diffs(before_df, after_df)
+    return classify_diffs(diffs, dataset_id, version_from, version_to)

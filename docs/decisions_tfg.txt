@@ -395,16 +395,15 @@ principals per fase, en lloc de paquets separats per capa:
   ├── notebooks/
   │   ├── eligibility_scan.py    # Fase 0: mostreig + classificació d'elegibilitat
   │   │                          #   (inclou classificació de canvis, US-305, opt-in)
-  │   ├── errors.py              # Gestió d'errors (retry/backoff, categories)
+  │   ├── errors.py              # Gestió d'errors (retry/backoff, DEFAULT_RETRY_CONFIG)
   │   ├── version_extractor.py   # Fase 1 (US-201/US-202): versions + metadades
-  │   ├── change_diff.py         # Motor de diffing pur (US-304/US-305)
-  │   └── change_classifier.py   # Capa d'etiquetatge C1XX-C5XX (US-305)
+  │   └── change_diff.py         # Motor de diffing + classificador (US-304/US-305,
+  │                               #   change_classifier.py fusionat aquí, T-12)
   ├── tests/
   │   ├── test_eligibility_scan.py
   │   ├── test_errors.py
   │   ├── test_version_extractor.py
-  │   ├── test_change_diff.py
-  │   └── test_change_classifier.py
+  │   └── test_change_diff.py
   ├── data/                      # CSV/JSON de resultats (eligibility_report_*,
   │                               #   funnel_summary_*, failures.csv, worksheet)
   ├── docs/
@@ -828,6 +827,72 @@ Estat: ✅ Fet
   amb `ModuleNotFoundError`).
 
 
+DECISIÓ T-12: change_classifier.py fusionat dins de change_diff.py; RETRY_CONFIG consolidat
+Data: setembre 2026
+Responsable: Joan
+Estat: ✅ Fet
+
+  MOTIU (petició directa de Joan, després de preguntar "què fa change_
+  classifier que no pugui fer eligibility_scan.py? no és codi repetitiu?
+  per què fer-ho per separat?"): un cop T-11 va deixar `change_
+  classifier.py` reduït a ~120 línies (la meitat docstrings) amb NOMÉS 4
+  coses reals (`BREAKING_CODES`, `ChangeLabel`, `classify_diffs`,
+  `classify_file_change`) i **un únic cridant a tot el projecte**
+  (`eligibility_scan.py`, i només indirectament -- `classify_file_
+  change` ja cridava `change_diff.compute_all_diffs` interna), la
+  separació en dos fitxers havia deixat de comprar res: no hi havia cap
+  segon consumidor que es beneficiés d'una interfície independent, i
+  `classify_diffs` ja llegia directament l'estructura interna de
+  `change_diff.py` (`TABULAR_CODES`, la forma exacta del dict de
+  `compute_all_diffs`) -- mateix acoblament que si haguessin estat sempre
+  un sol fitxer.
+
+  1. `change_classifier.py` ELIMINAT -- el seu contingut (`BREAKING_
+     CODES`, `ChangeLabel`, `classify_diffs`, `classify_file_change`) es
+     va moure DINS de `change_diff.py`, al final, amb una secció pròpia
+     ("Classificació"). `eligibility_scan.py` ja no importa `change_
+     classifier` -- `import change_diff` n'hi ha prou; les crides
+     `change_classifier.classify_file_change(...)` → `change_diff.
+     classify_file_change(...)`.
+  2. Anàlisi de duplicació de codi a TOT el projecte (petició explícita):
+     només UNA repetició real trobada -- `RETRY_CONFIG: dict = {...}`
+     (mateixa forma de 3 claus) definit independentment a `eligibility_
+     scan.py`, `version_extractor.py` i `change_diff.py`. Cap altra
+     duplicació de lògica: `hf_hub_download` només es crida des de
+     `change_diff.py`; `list_repo_commits` es crida des de dos fitxers
+     però per motius diferents (escaneig d'elegibilitat vs. metadades de
+     tag/sessió), no és la mateixa lògica repetida; `bare_clone` es
+     defineix un sol cop (`eligibility_scan.py`) i es reutilitza
+     correctament des de `version_extractor.py`.
+  3. `RETRY_CONFIG` CONSOLIDAT: `errors.DEFAULT_RETRY_CONFIG` (dict nou,
+     forma canònica). Els scripts amb CLI pròpia (`eligibility_scan.py`,
+     `version_extractor.py`) en fan una CÒPIA mutable (`RETRY_CONFIG:
+     dict = dict(errors.DEFAULT_RETRY_CONFIG)`) -- necessari perquè cada
+     procés pugui mutar el seu propi `RETRY_CONFIG` amb els seus
+     arguments `--retry-*` sense afectar els altres scripts (si
+     compartissin el mateix objecte dict, mutar-lo des d'un script
+     mutaria el reintent de tots). `change_diff.py` (sense CLI pròpia,
+     eliminada a T-11) ja NO té cap `RETRY_CONFIG` propi.
+
+  BUG REAL CORREGIT de pas: `download_tabular_file_at_revision` llegia
+  el `RETRY_CONFIG` PROPI de `change_diff.py` (un dict independent, mai
+  tocat per res) -- els `--retry-max-attempts`/`--retry-base-wait`/
+  `--retry-max-wait` de la CLI d'`eligibility_scan.py` MAI arribaven a
+  afectar les descàrregues de contingut fetes durant `--classify-
+  eligible`, només `list_repo_refs`/`list_repo_commits`. Corregit fent
+  que `download_tabular_file_at_revision` (i `classify_commit_tabular_
+  changes`, que ara hi passa explícitament el `RETRY_CONFIG`
+  d'`eligibility_scan.py`) rebin la configuració de reintent com a
+  PARÀMETRE en lloc de llegir un global propi -- ara els `--retry-*`
+  d'`eligibility_scan.py` sí que controlen tota la cadena de crides,
+  `list_repo_refs`/`list_repo_commits` inclosos.
+
+  RESULTAT: 160 tests (cap perdut -- els de `test_change_classifier.py`
+  es van moure, no eliminar, a `test_change_diff.py`), `ruff check` net,
+  `change_diff` exposa `classify_diffs`/`ChangeLabel` correctament,
+  `import change_classifier` falla amb `ModuleNotFoundError` com s'espera.
+
+
 ================================================================================
 BLOC 4 — DECISIONS D'ABAST
 ================================================================================
@@ -1109,6 +1174,15 @@ US-304/US-305 trencada
     cridant real); `validate_eligible.py` eliminat sencer (`cluster_
     commit_times`, l'única peça amb un cridant extern, moguda a
     `eligibility_scan.py` abans d'eliminar la resta).
+  - T-12 nova: `change_classifier.py` (ja ~120 línies, un únic cridant
+    real) fusionat dins de `change_diff.py` -- eliminat com a fitxer.
+    Anàlisi de duplicació de codi a tot el projecte (petició explícita):
+    només `RETRY_CONFIG` repetit a 3 scripts, consolidat en `errors.
+    DEFAULT_RETRY_CONFIG` (cada script amb CLI pròpia en fa una còpia
+    mutable). De pas, corregit un bug real: les descàrregues de
+    contingut mai rebien els `--retry-*` de la CLI d'`eligibility_
+    scan.py` (llegien un `RETRY_CONFIG` propi de `change_diff.py`, aïllat)
+    -- ara reben la configuració de reintent com a paràmetre explícit.
 
 ================================================================================
 PRÒXIMES DECISIONS PENDENTS

@@ -19,7 +19,7 @@ Mostreig i    →   Extracció de   →    Classificació de   →   Data wareho
 elegibilitat      versions            canvis (taxonomia)     i anàlisi
 
 eligibility_      version_          change_diff.py           warehouse/
-scan.py           extractor.py      change_classifier.py     (a decidir:
+scan.py           extractor.py      (motor + classificador)  (a decidir:
 errors.py                                                    DuckDB/Postgres)
 ```
 
@@ -410,13 +410,13 @@ codi d'adquisició/informe específic de Census Income (`CENSUS_INCOME_
 SOURCES`, `download_uci_adult_baseline`, `download_census_income_
 version`, `build_detectability_report`, `run_validation`,
 `run_census_income_classification`, `summarize_agreement`) es va
-eliminar de `change_diff.py`/`change_classifier.py` un cop la pregunta
-que responia ("el motor de diffing detecta senyals reals?") va quedar
-contestada -- no calia mantenir-lo com a codi viu, retestejat a cada
-canvi. Aquesta secció (i les taules següents) és el registre històric
-del resultat, no una descripció d'un script encara executable. El motor
-de diffing en si (`diff_*`/`compute_all_diffs`) SÍ es manté -- és el que
-fa servir `eligibility_scan.classify_dataset` sobre la població real.
+eliminar de `change_diff.py` un cop la pregunta que responia ("el motor
+de diffing detecta senyals reals?") va quedar contestada -- no calia
+mantenir-lo com a codi viu, retestejat a cada canvi. Aquesta secció (i
+les taules següents) és el registre històric del resultat, no una
+descripció d'un script encara executable. El motor de diffing en si
+(`diff_*`/`compute_all_diffs`) SÍ es manté -- és el que fa servir
+`eligibility_scan.classify_dataset` sobre la població real.
 
 En aquell moment, `change_diff.py` va comparar cada D_i (i=1..7) contra
 D0 (baseline UCI) i va comptar quants dels 14 codis tabulars (tots
@@ -466,22 +466,39 @@ al capçal de `change_diff.py`):
 d'aquest document (que descrivia `change_classifier.py` com un script
 separat de Fase 2, aïllat de Fase 0): **la classificació ara viu DINS de
 `eligibility_scan.classify_dataset()`**, reutilitzant, sense
-reimplementar-los, els motors purs de `change_diff.py`/
-`change_classifier.py`. Decisió explícita: **no es classifica C100
-(metadada)** -- només els 14 codis estructurals/de contingut (C210-C530).
+reimplementar-la, la lògica de `change_diff.py`. Decisió explícita:
+**no es classifica C100 (metadada)** -- només els 14 codis
+estructurals/de contingut (C210-C530).
 
-**Neteja posterior (setembre 2026)**: un cop la classificació ja
-funcionava sobre la població real i la validació contra Census Income
-havia respost la pregunta que calia respondre, es van trimar
-`change_diff.py`/`change_classifier.py` a NOMÉS el motor viu (funcions
-`diff_*`/`compute_all_diffs`/`classify_diffs`/`classify_file_change`,
-usades per `classify_dataset`). Es van eliminar: tot el codi C100
-(`diff_metadata`, mai cridat -- decisió del projecte de no classificar
-metadada) i tota l'adquisició/informe específic de Census Income
-(`run_validation`, `run_census_income_classification`, etc. -- vegeu
-nota a "Resultats reals — validació d'extractibilitat" més amunt).
-`notebooks/validate_eligible.py` (US-108) es va eliminar pel mateix
-motiu -- vegeu `docs/decisions_tfg.txt`, T-11.
+**Neteja posterior (setembre 2026, en dues passes)**:
+1. Un cop la classificació ja funcionava sobre la població real i la
+   validació contra Census Income havia respost la pregunta que calia
+   respondre, es van trimar `change_diff.py`/`change_classifier.py`
+   (encara dos fitxers en aquell moment) a NOMÉS el motor viu. Es van
+   eliminar: tot el codi C100 (`diff_metadata`, mai cridat -- decisió
+   del projecte de no classificar metadada) i tota l'adquisició/informe
+   específic de Census Income (`run_validation`, `run_census_income_
+   classification`, etc. -- vegeu nota a "Resultats reals — validació
+   d'extractibilitat" més amunt). `notebooks/validate_eligible.py`
+   (US-108) es va eliminar pel mateix motiu -- vegeu `docs/decisions_
+   tfg.txt`, T-11.
+2. Amb `change_classifier.py` ja reduït a ~120 línies i **un únic
+   cridant real** (`eligibility_scan.py`, via `change_diff`), la
+   separació en dos fitxers va deixar de justificar-se -- es va fusionar
+   dins de `change_diff.py` (`ChangeLabel`/`classify_diffs`/`classify_
+   file_change` hi viuen ara, `change_classifier.py` eliminat).
+   Aprofitant la fusió, `RETRY_CONFIG` (repetit amb la mateixa forma a
+   `eligibility_scan.py`/`version_extractor.py`/`change_diff.py`) es va
+   consolidar en `errors.DEFAULT_RETRY_CONFIG` -- un únic dict font de
+   veritat; els scripts amb CLI pròpia en fan una còpia mutable
+   (`dict(errors.DEFAULT_RETRY_CONFIG)`), `change_diff.py` (sense CLI)
+   ja no en necessita cap còpia -- rep `retry_config` com a paràmetre
+   explícit. Això també va corregir un bug real: les descàrregues de
+   contingut (`download_tabular_file_at_revision`) usaven el `RETRY_
+   CONFIG` propi de `change_diff.py`, mai tocat pels `--retry-*` de la
+   CLI d'`eligibility_scan.py` -- ara reben el `RETRY_CONFIG` de qui
+   crida, així que la CLI sí que els controla. Vegeu `docs/decisions_
+   tfg.txt`, T-12.
 
 **Per què dins de `classify_dataset` i no com un pas separat**:
 `classify_dataset()` ja itera commits i n'inspecciona els fitxers

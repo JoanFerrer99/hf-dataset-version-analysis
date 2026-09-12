@@ -66,11 +66,7 @@ FAILURES_LOG_PATH = os.path.join(OUTPUT_DIR, "failures.csv")
 
 MAX_COMMITS = 50  # mateix límit que classify_dataset()/gather_evidence_for_dataset(), per coherència
 
-RETRY_CONFIG: dict = {
-    "max_retries": errors.DEFAULT_MAX_RETRIES,
-    "base_wait_s": errors.DEFAULT_BASE_WAIT_S,
-    "max_wait_s": errors.DEFAULT_MAX_WAIT_S,
-}
+RETRY_CONFIG: dict = dict(errors.DEFAULT_RETRY_CONFIG)
 
 
 @dataclass

@@ -524,11 +524,12 @@ reproduïble i validada.
 **Redisseny important (aquesta sessió)**: la classificació ja NO viu en
 un script separat -- s'ha integrat **DINS de `eligibility_scan.
 classify_dataset()`** (paràmetre opt-in `classify_changes=True`), l'eina
-sobre la qual "parteix l'escalabilitat del projecte". Reutilitza els
-motors purs de `change_diff.py`/`change_classifier.py` sense
-reimplementar-los. **Decidit: NO es classifica C100 (metadada)** —
-deliberadament fora d'abast, només els 14 codis estructurals/de
-contingut (C210-C530).
+sobre la qual "parteix l'escalabilitat del projecte". Reutilitza el
+motor de `change_diff.py` sense reimplementar-lo -- `change_classifier.
+py` (existia com a fitxer separat) es va fusionar dins de `change_diff.
+py` un cop reduït a ~120 línies amb un únic cridant real. **Decidit: NO
+es classifica C100 (metadada)** — deliberadament fora d'abast, només els
+14 codis estructurals/de contingut (C210-C530).
 
 **Criteris d'acceptació:**
 - [x] Integrat dins de `classify_dataset()` (`notebooks/eligibility_
@@ -536,8 +537,8 @@ contingut (C210-C530).
   MAI actiu durant `run_sampling`, l'escaneig poblacional de Fase 0 fins
   a 2000 datasets, per no disparar el cost de 151GB de US-303 multiplicat
   per ~180x)
-- [x] Reutilitza el motor de diffing/classificació (`change_diff.py`/
-  `change_classifier.py`) sense reimplementar-lo
+- [x] Reutilitza el motor de diffing/classificació (`change_diff.py`,
+  motor + classificador en un sol fitxer) sense reimplementar-lo
 - [x] Regles de classificació definides per als 14 codis C210-C530 (C100
   explícitament exclòs, no interessa classificar metadades)
 - [x] Cada canvi detectat s'etiqueta amb el codi corresponent

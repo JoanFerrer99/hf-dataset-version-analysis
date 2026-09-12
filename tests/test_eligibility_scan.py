@@ -629,7 +629,7 @@ class TestDetermineCommitSubstantiveWithPaths:
 class TestClassifyCommitTabularChanges:
     def test_ignores_non_tabular_paths(self, monkeypatch):
         monkeypatch.setattr(es.change_diff, "is_tabular_path", lambda path: False)
-        labels = es.classify_commit_tabular_changes("org/ds", ["video.mp4"], "sha1", "sha2", "tok")
+        labels = es.classify_commit_tabular_changes("org/ds", ["video.mp4"], "sha1", "sha2", "tok", es.RETRY_CONFIG)
         assert labels == []
 
     def test_classifies_tabular_path_changes(self, monkeypatch):
@@ -641,10 +641,12 @@ class TestClassifyCommitTabularChanges:
         monkeypatch.setattr(es.change_diff, "is_tabular_path", lambda path: path.endswith(".csv"))
         monkeypatch.setattr(
             es.change_diff, "download_tabular_file_at_revision",
-            lambda repo_id, path, revision, token: before_df if revision == "sha1" else after_df,
+            lambda repo_id, path, revision, token, retry_config: before_df if revision == "sha1" else after_df,
         )
 
-        labels = es.classify_commit_tabular_changes("org/ds", ["data/file.csv"], "sha1", "sha2", "tok")
+        labels = es.classify_commit_tabular_changes(
+            "org/ds", ["data/file.csv"], "sha1", "sha2", "tok", es.RETRY_CONFIG
+        )
 
         assert len(labels) == 1
         assert labels[0]["code"] == "C221"
@@ -660,7 +662,9 @@ class TestClassifyCommitTabularChanges:
         monkeypatch.setattr(es.change_diff, "is_tabular_path", lambda path: True)
         monkeypatch.setattr(es.change_diff, "download_tabular_file_at_revision", lambda *a, **kw: df)
 
-        labels = es.classify_commit_tabular_changes("org/ds", ["data/file.csv"], "sha1", "sha2", "tok")
+        labels = es.classify_commit_tabular_changes(
+            "org/ds", ["data/file.csv"], "sha1", "sha2", "tok", es.RETRY_CONFIG
+        )
         assert labels == []
 
     def test_caps_tabular_files_classified_per_commit(self, monkeypatch):
@@ -672,7 +676,7 @@ class TestClassifyCommitTabularChanges:
 
         calls = []
 
-        def fake_download(repo_id, path, revision, token):
+        def fake_download(repo_id, path, revision, token, retry_config):
             calls.append((path, revision))
             return pd.DataFrame({"a": [1, 2]})
 
@@ -680,7 +684,7 @@ class TestClassifyCommitTabularChanges:
         monkeypatch.setattr(es.change_diff, "is_tabular_path", lambda path: True)
         monkeypatch.setattr(es.change_diff, "download_tabular_file_at_revision", fake_download)
 
-        es.classify_commit_tabular_changes("org/ds", many_paths, "sha1", "sha2", "tok")
+        es.classify_commit_tabular_changes("org/ds", many_paths, "sha1", "sha2", "tok", es.RETRY_CONFIG)
 
         distinct_paths = {path for path, _ in calls}
         assert len(distinct_paths) == es.MAX_TABULAR_FILES_PER_COMMIT
@@ -734,7 +738,7 @@ class TestClassifyDatasetWithChangeClassification:
         ]
         calls = []
 
-        def fake_classify(dataset_id, changed_paths, version_from, version_to, hf_token):
+        def fake_classify(dataset_id, changed_paths, version_from, version_to, hf_token, retry_config):
             calls.append((version_from, version_to))
             return [{"dataset_id": dataset_id, "version_from": version_from, "version_to": version_to,
                       "code": "C421", "is_breaking": False}]
