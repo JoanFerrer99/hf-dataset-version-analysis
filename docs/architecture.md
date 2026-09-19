@@ -547,18 +547,33 @@ read_parquet` (sense la decodificació especial de `datasets`) --
 `docs/decisions_tfg.txt`, T-10.
 
 **Cost, per què és opt-in**: `classify_dataset()` s'invoca fins a 2000
-cops per execució de Fase 0 (`run_sampling`), on només ~11-13 acaben
-elegibles. Fer classificació de contingut real a TOTS aquests 2000
-descarregaria contingut a escala poblacional -- exactament el problema
-dels 151GB identificat a US-303 (Decisió A-02/T-07), multiplicat per
-~180x. `run_sampling` MAI passa `classify_changes=True`; `write_results`
-descarta la columna `change_labels` del CSV principal (sempre buida allà).
+cops per execució de Fase 0/1 (Fase 2 i 3 de `run_sampling`: mostreig +
+classificació d'elegibilitat), on només ~11-13 acaben elegibles. Fer
+classificació de contingut real a TOTS aquests 2000 descarregaria
+contingut a escala poblacional -- exactament el problema dels 151GB
+identificat a US-303 (Decisió A-02/T-07), multiplicat per ~180x. La
+Fase 2/3 de `run_sampling` (el bucle de `classify_dataset_safe`) MAI
+passa `classify_changes=True`; `write_results` descarta la columna
+`change_labels` del CSV principal (sempre buida allà). L'opt-in és,
+doncs, per COLUMNA de dades (contingut real només per als elegibles), no
+un flag manual que calgui recordar activar cada cop -- vegeu Fase 4 tot
+seguit.
 
-**Mode CLI nou**: `python eligibility_scan.py --classify-eligible
-data/eligibility_report_<N>_<run_id>.csv` -- crida `run_classification`,
-que itera els elegibles d'aquest CSV amb `classify_dataset(...,
-classify_changes=True)` i escriu `data/change_classification_<run_id>.
-csv` (`dataset_id, version_from, version_to, code, is_breaking`).
+**Fase 4 -- encadenada automàticament (Decisió T-13)**: en acabar la
+Fase 3, `run_sampling` crida `run_classification(csv_path)` directament
+amb el CSV que acaba d'escriure, sempre que `auto_classify=True` (per
+defecte) i `eligible_total > 0`. `run_classification` itera NOMÉS els
+elegibles d'aquest CSV (`df["eligible"] == True`, mai la resta de la
+mostra) amb `classify_dataset(..., classify_changes=True)` i escriu
+`data/change_classification_<run_id>.csv` (`dataset_id, version_from,
+version_to, code, is_breaking`). Com que està filtrat a `eligible ==
+True` abans de baixar cap contingut, encadenar-ho sempre no reintrodueix
+el cost poblacional -- creix amb el nombre d'elegibles (~0.6% de la
+mostra), no amb `sample_size`. `--skip-classification` desactiva la
+Fase 4 (només mostreig/elegibilitat); `--classify-eligible <csv>`
+segueix disponible per reclassificar un CSV d'un run previ sense tornar
+a mostrejar (mode standalone, ignora `--sample-size` i la resta de flags
+de mostreig).
 
 `is_breaking` és una heurística **pròpia d'aquest estudi** (el paper no
 en defineix cap de formal): `C210`, `C222`, `C223`, `C311`, `C321`

@@ -50,6 +50,12 @@ python notebooks/eligibility_scan.py --sample-size 50 --threads 4 --seed 42 --ma
 python notebooks/eligibility_scan.py --sample-size 2000 --threads 4 --seed 42                    # mostra principal
 ```
 
+Cada execució encadena automàticament mostreig + elegibilitat (Fases 0-1) i,
+si hi ha algun dataset elegible, la classificació dels seus canvis (Fase 2,
+vegeu més avall) -- un sol comandament, sense passar cap CSV a mà d'un pas a
+l'altre. Per obtenir només el mostreig/elegibilitat (sense classificar
+canvis), afegeix `--skip-classification`.
+
 ## Ús amb Docker
 
 Alternativa a l'entorn virtual local: no cal instal·lar Python ni les
@@ -60,14 +66,20 @@ anteposa `sudo` a totes les comandes següents (`sudo docker compose ...`).
 ```bash
 docker compose build
 
-# 1. eligibility_scan.py (prova rapida) -- genera el CSV d'entrada
+# 1. eligibility_scan.py (prova rapida) -- mostreig + elegibilitat, i tot
+#    seguit classifica automaticament els canvis dels datasets elegibles
+#    (Fase 2, US-305) reutilitzant el mateix CSV -- res manual d'un pas a
+#    l'altre. Afegeix --skip-classification si nomes vols el mostreig.
 docker compose run --rm --remove-orphans eligibility-scan --sample-size 50 --threads 4 --seed 42 --max-scanned 5000
-ls data/eligibility_report_50_*.csv   # confirma el nom exacte (inclou el run_id)
+ls data/eligibility_report_50_*.csv         # CSV d'elegibilitat (nom exacte inclou el run_id)
+ls data/change_classification_*.csv         # CSV de canvis classificats (nomes si hi ha elegibles)
 
 # 2. version_extractor.py -- Fase 1, seqüència de versions per dataset elegible
+#    (independent de la classificació de canvis; usa el mateix CSV d'entrada)
 docker compose run --rm --remove-orphans version-extractor --input data/eligibility_report_<sample_size>_<run_id>.csv
 
-# 3. classificació de canvis (Fase 2, US-305) -- mateix servei eligibility-scan, flag diferent
+# 3. Reclassificar un CSV d'un run previ sense tornar a mostrejar (opcional):
+#    mateix servei eligibility-scan, flag --classify-eligible
 docker compose run --rm --remove-orphans eligibility-scan --classify-eligible data/eligibility_report_<sample_size>_<run_id>.csv
 ```
 
@@ -88,7 +100,10 @@ build` (o `docker compose run --build ...`) ho arregla.
 sortida apareixen directament al repositori de l'host, igual que executant
 els scripts en local. **`version-extractor` i `--classify-eligible`
 necessiten que `eligibility-scan` s'hagi executat abans**: llegeixen un CSV
-que aquest genera, no en creen cap de nou. Sense `docker compose`,
+que aquest genera, no en creen cap de nou (`--classify-eligible` ja no cal
+per a un run normal -- `eligibility-scan` sol ja encadena la classificació
+automaticament, vegeu Fase 2 més avall -- però es manté per a reclassificar
+un CSV d'un run previ). Sense `docker compose`,
 l'equivalent amb `docker run` (substituint l'entrypoint per al script
 desitjat):
 
@@ -207,14 +222,22 @@ Només diferencia contingut real dels fitxers tabulars (`.parquet`/
 `.csv`/`.tsv`) que van canviar; els binaris (àudio/vídeo/tensors) només
 compten per a l'elegibilitat.
 
+S'encadena automàticament en acabar un `--sample-size` normal (Fase 4 de
+`run_sampling`, reutilitzant el mateix CSV que acaba d'escriure la Fase 3
+-- vegeu Quickstart). També es pot invocar sola, per reclassificar un CSV
+d'un run previ sense tornar a mostrejar:
+
 ```bash
 python notebooks/eligibility_scan.py --classify-eligible data/eligibility_report_2000_5.csv
 ```
 
-Mode **opt-in**, mai actiu durant `--sample-size` (l'escaneig poblacional
-de Fase 0): classificar contingut real a fins a 2000 datasets mostrejats
-reintroduiria el cost de ~150GB identificat a `docs/decisions_tfg.txt`
-(Decisió A-02), multiplicat per ~180x. Només té sentit sobre datasets ja
-coneguts com a elegibles (desenes com a molt). Output: `data/
+**Mai s'aplica a tota la mostra escanejada** (fins a 2000 datasets a la
+Fase 0/1), només al subconjunt ja filtrat com a elegible (`eligible ==
+True`, desenes com a molt sobre 2000): classificar contingut real a tots
+els datasets mostrejats, elegibles o no, reintroduiria el cost de ~150GB
+identificat a `docs/decisions_tfg.txt` (Decisió A-02), multiplicat per
+~180x. Aquest filtre (no un flag manual) és el que manté barat encadenar-ho
+sempre per defecte -- per obtenir només el mostreig/elegibilitat, sense
+classificar canvis, usa `--skip-classification`. Output: `data/
 change_classification_<run_id>.csv` (`dataset_id, version_from,
 version_to, code, is_breaking`).

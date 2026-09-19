@@ -893,6 +893,56 @@ Estat: ✅ Fet
   `import change_classifier` falla amb `ModuleNotFoundError` com s'espera.
 
 
+DECISIÓ T-13: run_sampling encadena automàticament la classificació de canvis dels elegibles (Fase 4)
+Data: setembre 2026
+Responsable: Joan
+Estat: ✅ Fet
+
+  MOTIU (petició directa de Joan: "el que fa falta al projecte és que
+  cada execució faci el pipeline d'extracció i després classifiqui els
+  elegibles, per fer l'estudi de la tesi"): fins ara, obtenir el CSV de
+  canvis classificats (`data/change_classification_<run_id>.csv`) que
+  alimenta l'estudi exigia DOS passos manuals -- (1) `eligibility_scan.py
+  --sample-size N` (Fase 0-3, genera `eligibility_report_<N>_<run_id>.
+  csv`), i (2) copiar aquest camí a mà i tornar a invocar el mateix
+  script amb `--classify-eligible <aquell csv>` (Fase 2/US-305). Aquest
+  pas manual d'enganxar el camí és exactament el que va portar a una
+  confusió real en aquesta mateixa sessió (verificar `--classify-eligible`
+  contra un CSV d'un run diferent al que s'acabava d'executar).
+
+  1. `run_sampling()` (Fase 0-3) ara accepta `auto_classify: bool = True`
+     i, en acabar la Fase 3 (`write_results`), si `auto_classify` i
+     `summary["eligible_total"] > 0`, crida directament `run_classification
+     (csv_path)` amb el MATEIX `csv_path` que acaba d'escriure -- Fase 4,
+     sense pas manual d'un run a l'altre. Si `eligible_total == 0` (freqüent
+     amb mostres petites de prova, ~0.6% de taxa base), s'omet amb un
+     `log.info` explicatiu -- no és un error.
+  2. Nou flag `--skip-classification` a `eligibility_scan.py`: desactiva
+     la Fase 4, per quedar-se només amb mostreig/elegibilitat (útil per a
+     proves ràpides de només la Fase 0-3, on esperar la Fase 4 no aporta
+     res si se sap que la mostra és massa petita per tenir elegibles).
+  3. `--classify-eligible <csv>` es MANTÉ intacte com a mode standalone
+     (ignora els flags de mostreig) -- útil per reclassificar un CSV d'un
+     run previ sense tornar a mostrejar (p.e. després d'un canvi al motor
+     de diffing).
+
+  PER QUÈ NO REINTRODUEIX EL PROBLEMA DELS 151GB (Decisió A-02/T-07): la
+  Fase 4 crida `run_classification`, que YA filtrava per `eligible ==
+  True` ABANS de baixar cap contingut (disseny pre-existent, sense
+  canvis). Encadenar-ho automàticament no canvia QUÈ es classifica --
+  només elimina el pas manual entremig. El cost de la Fase 4 creix amb el
+  nombre d'elegibles trobats (~0.6% de `sample_size`), mai amb
+  `sample_size` en si -- la Fase 2/3 (`classify_dataset_safe`, fins a
+  2000 crides) segueix SENSE passar `classify_changes=True` mai, exactament
+  igual que abans (vegeu T-12, "Cost, per què és opt-in").
+
+  RESULTAT: 163 tests (3 de nous, `TestRunSamplingAutoClassify`, cobrint
+  encadenament amb elegibles, 0 elegibles, i `auto_classify=False`),
+  `ruff check` net. `README.md`/`docs/architecture.md` actualitzats per
+  reflectir que la Fase 2 (US-305) ja no és un segon pas manual, sinó
+  automàtic per defecte.
+
+
 ================================================================================
 BLOC 4 — DECISIONS D'ABAST
 ================================================================================

@@ -4019,3 +4019,7 @@ Cannot access gated repo for url https://huggingface.co/api/datasets/SushantGaut
 Access to dataset SushantGautam/Kvasir-VQA-x1 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/SushantGautam/Kvasir-VQA-x1 to ask for access.",0
 2026-09-09T22:49:18.829063+00:00,sampling,adalat-ai/fleurs-ro,unknown,unhashable type: 'dict',0
 2026-09-09T22:49:44.341899+00:00,sampling,theayos/libero_spatial_image,unknown,unhashable type: 'dict',0
+2026-09-19T19:09:35.013705+00:00,sampling,ibrahimhamamci/CT-RATE,access_restricted,"403 Client Error. (Request ID: Root=1-6aaeddee-7f3c8bb63ac6d046563b6c5c;b30df583-9918-4202-b932-e17383f38b8e)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/ibrahimhamamci/CT-RATE/refs.
+Access to dataset ibrahimhamamci/CT-RATE is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/ibrahimhamamci/CT-RATE to ask for access.",0
