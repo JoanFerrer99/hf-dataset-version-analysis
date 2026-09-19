@@ -495,8 +495,11 @@ reutilitat per a la resta del projecte).
   reals — validació d'extractibilitat"
 - [x] Documentar limitacions conegudes del motor (heurística de renom
   C223, atribució add/remove de files C421/C422 sense ID d'instància
-  estable, C210/C410 depenen de preservar l'ordre original en llegir,
-  ambigüitat del fitxer font de D6) — docstrings a `change_diff.py`
+  estable, ambigüitat del fitxer font de D6) — docstrings a
+  `change_diff.py`, consolidat a `docs/taiga/taxonomy.md`, "Limitacions
+  conegudes del motor de diffing". (C410 -- en aquell moment es creia no
+  detectable sense garantir l'ordre de l'adquisició; implementat més
+  endavant amb una tècnica de hash de contingut, Decisió T-14.)
 - [x] Resultat: `data/census_income_diff_report.csv` + nova subsecció a
   `docs/architecture.md`
 

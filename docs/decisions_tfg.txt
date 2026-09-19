@@ -627,9 +627,8 @@ Estat: ✅ Implementat (`notebooks/change_diff.py`)
   exactament el que aquesta validació havia de fer aflorar -- no s'ha
   "arreglat" artificialment ajustant llindars fins que quadrés.
 
-  Vegeu `docs/architecture.md` (secció "Resultats reals — validació
-  d'extractibilitat") per a la taula completa i la interpretació per
-  dataset.
+  Vegeu `docs/census_income_validation_report.md` per a la taula completa,
+  la interpretació per dataset, i el registre permanent d'aquest exercici.
 
 
 DECISIÓ T-09: US-305 implementada (classificador) — abast provisional
@@ -662,7 +661,8 @@ Income; execució sobre la població real elegible pendent)
   etiquetes reals). **Limitació NO resolta**: el "% d'acord codi per
   codi" exacte contra la Taula 1 del paper no es pot calcular (vegeu
   T-08, integritat del ground truth) -- es compara per total agregat,
-  no codi per codi.
+  no codi per codi. Registre complet a `docs/census_income_validation_
+  report.md`.
 
   PENDENT: executar el classificador sobre la població real (~11
   datasets elegibles, via `data/versions_1.csv`) -- no fet en aquesta
@@ -893,7 +893,7 @@ Estat: ✅ Fet
   `import change_classifier` falla amb `ModuleNotFoundError` com s'espera.
 
 
-DECISIÓ T-13: run_sampling encadena automàticament la classificació de canvis dels elegibles (Fase 4)
+DECISIÓ T-13: notebooks/run_pipeline.py encadena Fase 0-1 + Fase 1b + Fase 2 en un orquestrador separat
 Data: setembre 2026
 Responsable: Joan
 Estat: ✅ Fet
@@ -910,37 +910,112 @@ Estat: ✅ Fet
   confusió real en aquesta mateixa sessió (verificar `--classify-eligible`
   contra un CSV d'un run diferent al que s'acabava d'executar).
 
-  1. `run_sampling()` (Fase 0-3) ara accepta `auto_classify: bool = True`
-     i, en acabar la Fase 3 (`write_results`), si `auto_classify` i
-     `summary["eligible_total"] > 0`, crida directament `run_classification
-     (csv_path)` amb el MATEIX `csv_path` que acaba d'escriure -- Fase 4,
-     sense pas manual d'un run a l'altre. Si `eligible_total == 0` (freqüent
-     amb mostres petites de prova, ~0.6% de taxa base), s'omet amb un
-     `log.info` explicatiu -- no és un error.
-  2. Nou flag `--skip-classification` a `eligibility_scan.py`: desactiva
-     la Fase 4, per quedar-se només amb mostreig/elegibilitat (útil per a
-     proves ràpides de només la Fase 0-3, on esperar la Fase 4 no aporta
-     res si se sap que la mostra és massa petita per tenir elegibles).
-  3. `--classify-eligible <csv>` es MANTÉ intacte com a mode standalone
-     (ignora els flags de mostreig) -- útil per reclassificar un CSV d'un
-     run previ sense tornar a mostrejar (p.e. després d'un canvi al motor
-     de diffing).
+  PRIMERA VARIANT PROVADA I DESCARTADA (mateixa sessió, mai comitejada):
+  encadenar la Fase 2 directament dins de `eligibility_scan.run_sampling`
+  (paràmetre `auto_classify`). Joan la va rebutjar per petició explícita de
+  bones pràctiques ("potser cal separar fases i fer l'orquestrador en un
+  script separat") -- `eligibility_scan.py` acabava fent tres coses alhora
+  (mostreig, elegibilitat, I orquestració d'una altra fase), i l'script
+  `version_extractor.py` (Fase 1b) quedava fora de l'encadenament, sense
+  cap manera d'incloure'l sense acoblar encara més `eligibility_scan.py`.
+
+  DISSENY FINAL -- nou mòdul `notebooks/run_pipeline.py`, sense lògica
+  d'orquestració DINS de cap dels scripts de fase:
+  1. `eligibility_scan.run_sampling()` torna a fer NOMÉS Fase 0-3
+     (mostreig+elegibilitat) i torna a retornar `(csv_path, json_path,
+     summary)` (abans `None`) -- perquè un cridant extern pugui encadenar
+     sense re-derivar la ruta. `--skip-classification`/`auto_classify` (la
+     primera variant) s'ELIMINEN d'`eligibility_scan.py`.
+  2. `run_pipeline.run_full_pipeline(...)` importa `eligibility_scan` i
+     `version_extractor` com a mòduls plans (mateix patró que `version_
+     extractor.py` ja important d'`eligibility_scan.py`) i encadena, en
+     aquest ordre, amb el MATEIX `csv_path`: Fase 0-1
+     (`es.run_sampling`, o `--input-csv <csv>` per saltar-la i reutilitzar
+     un run previ) -> Fase 1b (`ve.run_extraction`, llevat de
+     `--skip-version-extraction`) -> Fase 2 (`es.run_classification`,
+     llevat de `--skip-classification`). Si `eligible_total == 0`, salta
+     directament Fase 1b/2 amb un `log.info` explicatiu -- no és un error.
+  3. `eligibility_scan.py --classify-eligible <csv>` es MANTÉ intacte com a
+     mode standalone -- útil per reclassificar un CSV d'un run previ sense
+     tornar a mostrejar (p.e. després d'un canvi al motor de diffing).
+  4. `Dockerfile`: `ENTRYPOINT` per defecte passa a ser `run_pipeline.py`
+     (decidit amb Joan); `docker-compose.yml` guanya un servei `run-
+     pipeline` i `eligibility-scan` necessita ara un `entrypoint:` explícit
+     (abans confiava en el default del `Dockerfile`).
 
   PER QUÈ NO REINTRODUEIX EL PROBLEMA DELS 151GB (Decisió A-02/T-07): la
-  Fase 4 crida `run_classification`, que YA filtrava per `eligible ==
-  True` ABANS de baixar cap contingut (disseny pre-existent, sense
-  canvis). Encadenar-ho automàticament no canvia QUÈ es classifica --
-  només elimina el pas manual entremig. El cost de la Fase 4 creix amb el
-  nombre d'elegibles trobats (~0.6% de `sample_size`), mai amb
-  `sample_size` en si -- la Fase 2/3 (`classify_dataset_safe`, fins a
-  2000 crides) segueix SENSE passar `classify_changes=True` mai, exactament
-  igual que abans (vegeu T-12, "Cost, per què és opt-in").
+  Fase 2 crida `run_classification`, que YA filtrava per `eligible ==
+  True` ABANS de baixar cap contingut (disseny pre-existent, sense canvis).
+  Encadenar-ho automàticament no canvia QUÈ es classifica -- només elimina
+  el pas manual entremig. El cost de la Fase 2 creix amb el nombre
+  d'elegibles trobats (~0.6% de `sample_size`), mai amb `sample_size` en
+  si -- la Fase 2/3 d'`eligibility_scan.py` (`classify_dataset_safe`, fins
+  a 2000 crides) segueix SENSE passar `classify_changes=True` mai,
+  exactament igual que abans (vegeu T-12, "Cost, per què és opt-in").
 
-  RESULTAT: 163 tests (3 de nous, `TestRunSamplingAutoClassify`, cobrint
-  encadenament amb elegibles, 0 elegibles, i `auto_classify=False`),
-  `ruff check` net. `README.md`/`docs/architecture.md` actualitzats per
-  reflectir que la Fase 2 (US-305) ja no és un segon pas manual, sinó
-  automàtic per defecte.
+  RESULTAT: nou fitxer `notebooks/run_pipeline.py` + `tests/test_run_
+  pipeline.py` (6 tests: cadena completa amb el mateix `csv_path` a totes
+  les fases, `--input-csv`, 0 elegibles, cada `--skip-*` per separat).
+  176 tests en total, `ruff check` net. `README.md`/`docs/architecture.md`
+  actualitzats perquè `run_pipeline.py` sigui el comandament principal
+  documentat, amb els 3 scripts individuals com a ús manual/depuració.
+
+
+DECISIÓ T-14: C410 (ordre de files) implementat -- la hipòtesi de "no detectable" era incorrecta
+Data: setembre 2026
+Responsable: Joan
+Estat: ✅ Fet
+
+  MOTIU (rebuig directe de Joan a un pla que documentava C410 com a
+  llacuna permanent): "hi ha alguna manera de detectar encara que no sigui
+  amb diffs el codi 410, modifications to row ordering, may affect ML
+  pipelines that rely on positional access to data". El comentari original
+  a `change_diff.compute_all_diffs` ("C410 no detectable de forma fiable
+  sense garantir que l'adquisició preserva l'ordre") confonia dos
+  problemes diferents: `download_tabular_file_at_revision` (`pandas.
+  read_parquet`/`read_csv`, sense cap `sort`/`reindex` implícit) JA
+  preservava l'ordre original del fitxer -- el problema real mai va ser
+  l'adquisició, sinó distingir "reordenat" de "contingut diferent" sense
+  un identificador d'instància estable. Aquest segon problema SÍ que té
+  una tècnica sòlida, no heurística.
+
+  TÈCNICA IMPLEMENTADA -- nova funció `diff_row_order(before, after)`:
+  hash de contingut per fila (`pandas.util.hash_pandas_object`), NOMÉS
+  sobre el subconjunt de columnes hashables (reutilitzant `_is_hashable_
+  series` columna a columna, igual que `diff_categorical_values`/`diff_
+  distribution`). Si `len(before) == len(after)` i el MULTISET de hashes
+  coincideix a totes dues bandes però la seqüència original difereix ->
+  reordenació PURA detectada amb certesa (comparació exacta, no una
+  heurística). Verificat manualment (abans d'escriure els tests) sobre 7
+  casos: reordenació pura, ordre idèntic, recompte de files diferent
+  (mai confós amb C421/C422), canvi de contingut amb el mateix ordre,
+  reordenació barrejada amb canvi de contingut (correctament NO detectada
+  com a reordenació pura), files duplicades reordenades, i el límit
+  documentat (reordenació confinada a una columna no hashable -- p.e.
+  bytes d'àudio -- no es detecta).
+
+  `compute_all_diffs`: `"C410"` passa de sempre `None` a
+  `diff_row_order(...)["reordered"]` (sempre `bool`, com la resta de
+  codis). `classify_diffs` ja no necessita cap cas especial per a `C410`.
+  `BREAKING_CODES` guanya `"C410"` -- justificació directa de Joan: un
+  canvi d'ordre pot afectar pipelines d'ML que accedeixen a les dades per
+  posició, potencialment requerint adaptació als components d'ingesta o
+  preprocessament.
+
+  RE-EXECUCIÓ REAL sobre els 11 datasets elegibles coneguts
+  (`eligibility_report_2000_5.csv`, via `run_pipeline.py --input-csv
+  ... --skip-version-extraction`): 11/11 classificats, 0 fallats, 67
+  etiquetes -- MATEIX total que abans d'implementar C410 (C421=53,
+  C422=10, C223=3, C311=1). **C410 va aparèixer 0 cops** en aquesta
+  població real -- resultat legítim (cap reordenació pura al seu
+  historial de commits real), no un indici que la tècnica no funcioni
+  (vegeu els 7 casos verificats manualment més amunt). Output nou:
+  `data/change_classification_2.csv`.
+
+  RESULTAT: `tests/test_change_diff.py` guanya `TestDiffRowOrder` (7 tests)
+  + 1 test a `TestComputeAllDiffs`; els tests que assumien `diffs["C410"]
+  is None` s'han actualitzat. 176 tests en total (comptats junt amb T-13),
+  `ruff check` net.
 
 
 ================================================================================

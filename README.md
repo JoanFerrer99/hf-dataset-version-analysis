@@ -46,15 +46,28 @@ Mostreig aleatori de datasets de Hugging Face per estimar quants tenen 2 o mes v
 
 ```bash
 source venv/bin/activate
-python notebooks/eligibility_scan.py --sample-size 50 --threads 4 --seed 42 --max-scanned 5000  # prova rapida
-python notebooks/eligibility_scan.py --sample-size 2000 --threads 4 --seed 42                    # mostra principal
+python notebooks/run_pipeline.py --sample-size 50 --threads 4 --seed 42 --max-scanned 5000  # prova rapida
+python notebooks/run_pipeline.py --sample-size 2000 --threads 4 --seed 42                    # execucio principal
 ```
 
-Cada execució encadena automàticament mostreig + elegibilitat (Fases 0-1) i,
-si hi ha algun dataset elegible, la classificació dels seus canvis (Fase 2,
-vegeu més avall) -- un sol comandament, sense passar cap CSV a mà d'un pas a
-l'altre. Per obtenir només el mostreig/elegibilitat (sense classificar
-canvis), afegeix `--skip-classification`.
+`run_pipeline.py` és l'orquestrador: encadena mostreig+elegibilitat
+(`eligibility_scan.py`, Fase 0-1), extracció de versions
+(`version_extractor.py`, Fase 1b) i classificació de canvis dels elegibles
+(Fase 2) en un sol comandament, reutilitzant el mateix CSV entre fases --
+sense pas manual d'un run a l'altre. `--skip-version-extraction`/
+`--skip-classification` ometen una fase concreta; `--input-csv <csv>` salta
+el mostreig i reutilitza un CSV d'un run previ.
+
+### Scripts individuals
+
+Per a proves o depuració d'una sola fase, cada script també s'invoca per
+separat:
+
+```bash
+python notebooks/eligibility_scan.py --sample-size 50 --threads 4 --seed 42  # només Fase 0-1
+python notebooks/version_extractor.py --input data/eligibility_report_50_1.csv  # només Fase 1b
+python notebooks/eligibility_scan.py --classify-eligible data/eligibility_report_50_1.csv  # només Fase 2
+```
 
 ## Ús amb Docker
 
@@ -66,20 +79,25 @@ anteposa `sudo` a totes les comandes següents (`sudo docker compose ...`).
 ```bash
 docker compose build
 
-# 1. eligibility_scan.py (prova rapida) -- mostreig + elegibilitat, i tot
-#    seguit classifica automaticament els canvis dels datasets elegibles
-#    (Fase 2, US-305) reutilitzant el mateix CSV -- res manual d'un pas a
-#    l'altre. Afegeix --skip-classification si nomes vols el mostreig.
-docker compose run --rm --remove-orphans eligibility-scan --sample-size 50 --threads 4 --seed 42 --max-scanned 5000
+# Pipeline complet en un sol comandament (Fase 0-1 + 1b + 2, mateix CSV
+# encadenat entre fases -- vegeu Quickstart més amunt):
+docker compose run --rm --remove-orphans run-pipeline --sample-size 50 --threads 4 --seed 42 --max-scanned 5000
 ls data/eligibility_report_50_*.csv         # CSV d'elegibilitat (nom exacte inclou el run_id)
+ls data/versions_*.csv                      # CSV de versions
 ls data/change_classification_*.csv         # CSV de canvis classificats (nomes si hi ha elegibles)
+```
 
-# 2. version_extractor.py -- Fase 1, seqüència de versions per dataset elegible
-#    (independent de la classificació de canvis; usa el mateix CSV d'entrada)
+Scripts individuals (ús manual/depuració d'una sola fase):
+
+```bash
+# eligibility-scan -- NOMÉS Fase 0-1
+docker compose run --rm --remove-orphans eligibility-scan --sample-size 50 --threads 4 --seed 42 --max-scanned 5000
+
+# version-extractor -- NOMÉS Fase 1b, usa el CSV que ha generat eligibility-scan
 docker compose run --rm --remove-orphans version-extractor --input data/eligibility_report_<sample_size>_<run_id>.csv
 
-# 3. Reclassificar un CSV d'un run previ sense tornar a mostrejar (opcional):
-#    mateix servei eligibility-scan, flag --classify-eligible
+# eligibility-scan --classify-eligible -- reclassificar un CSV d'un run previ
+# sense tornar a mostrejar (mateix servei eligibility-scan, flag diferent)
 docker compose run --rm --remove-orphans eligibility-scan --classify-eligible data/eligibility_report_<sample_size>_<run_id>.csv
 ```
 
@@ -98,21 +116,23 @@ build` (o `docker compose run --build ...`) ho arregla.
 
 `data/` es munta com a volum (`./data:/app/data`), així que els CSV/JSON de
 sortida apareixen directament al repositori de l'host, igual que executant
-els scripts en local. **`version-extractor` i `--classify-eligible`
-necessiten que `eligibility-scan` s'hagi executat abans**: llegeixen un CSV
-que aquest genera, no en creen cap de nou (`--classify-eligible` ja no cal
-per a un run normal -- `eligibility-scan` sol ja encadena la classificació
-automaticament, vegeu Fase 2 més avall -- però es manté per a reclassificar
-un CSV d'un run previ). Sense `docker compose`,
-l'equivalent amb `docker run` (substituint l'entrypoint per al script
-desitjat):
+els scripts en local. Els scripts individuals **necessiten que la Fase 0-1
+s'hagi executat abans**: llegeixen el CSV que aquesta genera, no en creen
+cap de nou. Sense `docker compose`, l'equivalent amb `docker run` (l'imatge
+usa `run_pipeline.py` com a entrypoint per defecte; sobreescriu-lo per a un
+script individual):
 
 ```bash
 docker build -t hf-dataset-version-analysis .
 docker run --rm --env-file .env -v "$(pwd)/data:/app/data" \
   hf-dataset-version-analysis --sample-size 50 --threads 4 --seed 42 --max-scanned 5000
 
-# version_extractor.py amb docker run (cal sobreescriure l'entrypoint per defecte):
+# eligibility_scan.py sol, amb docker run (cal sobreescriure l'entrypoint per defecte):
+docker run --rm --env-file .env -v "$(pwd)/data:/app/data" \
+  --entrypoint python hf-dataset-version-analysis notebooks/eligibility_scan.py \
+  --sample-size 50 --threads 4 --seed 42 --max-scanned 5000
+
+# version_extractor.py sol, amb docker run:
 docker run --rm --env-file .env -v "$(pwd)/data:/app/data" \
   --entrypoint python hf-dataset-version-analysis notebooks/version_extractor.py \
   --input data/eligibility_report_<sample_size>_<run_id>.csv
@@ -184,13 +204,18 @@ Un dataset és **elegible** si té **2 o més versions genuïnes**, detectades p
 
 ## Sortida
 
-- `data/eligibility_report_N_version.csv`
-- `data/funnel_summary_N_version.json`
+- `data/eligibility_report_N_version.csv` / `data/funnel_summary_N_version.json`
+  (`eligibility_scan.py`, Fase 0-1: mostreig + elegibilitat)
 - `data/versions_run_id.csv` / `data/versions_summary_run_id.json`
-  (`notebooks/version_extractor.py`, Fase 1: seqüència de versions per
-  dataset elegible, vegeu més avall)
-- `data/change_classification_run_id.csv` (`--classify-eligible`, Fase 2:
-  canvis classificats segons la taxonomia, vegeu més avall)
+  (`version_extractor.py`, Fase 1b: seqüència de versions per dataset
+  elegible, vegeu més avall)
+- `data/change_classification_run_id.csv` (Fase 2: canvis classificats
+  segons la taxonomia, vegeu més avall)
+
+Amb `run_pipeline.py` (recomanat, vegeu Quickstart) les tres fases
+s'encadenen soles, reutilitzant el mateix CSV d'elegibilitat; amb els
+scripts individuals cal passar-se'l a mà d'un pas a l'altre (vegeu
+"Scripts individuals" més amunt).
 
 ## Variables utils
 
@@ -198,13 +223,16 @@ Un dataset és **elegible** si té **2 o més versions genuïnes**, detectades p
 - `--threads`: processament en paral·lel
 - `--max-scanned`: limit opcional nomes per proves rapides
 - `--seed`: mostra reproduible
+- `--skip-version-extraction` / `--skip-classification` (`run_pipeline.py`): ometen una fase concreta
+- `--input-csv` (`run_pipeline.py`): salta el mostreig, reutilitza un CSV d'un run previ
 
-## Extracció de versions (Fase 1)
+## Extracció de versions (Fase 1b)
 
-Un cop `eligibility_scan.py` ha generat un CSV de datasets elegibles,
-`version_extractor.py` n'extreu la seqüència ordenada de versions (tags
-per als datasets amb Criteri A, sessions de commits per als datasets amb
-Criteri B -- vegeu `docs/architecture.md`, secció "Fase 1"):
+`version_extractor.py` extreu la seqüència ordenada de versions dels
+datasets elegibles d'un CSV d'`eligibility_scan.py` (tags per als datasets
+amb Criteri A, sessions de commits per als datasets amb Criteri B -- vegeu
+`docs/architecture.md`, secció "Fase 1"). `run_pipeline.py` ja l'invoca
+automàticament; per invocar-lo sol:
 
 ```bash
 python notebooks/version_extractor.py --input data/eligibility_report_2000_5.csv
@@ -216,16 +244,16 @@ python notebooks/version_extractor.py --input data/eligibility_report_2000_5.csv
 Integrada dins de `classify_dataset()` (`eligibility_scan.py`), NO com a
 script separat -- reutilitza el mateix clonatge/inspecció de commits que
 ja fa l'elegibilitat. Classifica cada commit substantiu amb un pare
-conegut segons els 14 codis estructurals de la taxonomia (C210-C530,
-`docs/taiga/taxonomy.md`) -- **deliberadament sense C100** (metadada).
+conegut segons els 14 codis estructurals de la taxonomia implementats
+(C210-C530, `docs/taiga/taxonomy.md`) -- **deliberadament sense C100**
+(metadada, vegeu "Limitacions conegudes" a `docs/taiga/taxonomy.md`).
 Només diferencia contingut real dels fitxers tabulars (`.parquet`/
 `.csv`/`.tsv`) que van canviar; els binaris (àudio/vídeo/tensors) només
 compten per a l'elegibilitat.
 
-S'encadena automàticament en acabar un `--sample-size` normal (Fase 4 de
-`run_sampling`, reutilitzant el mateix CSV que acaba d'escriure la Fase 3
--- vegeu Quickstart). També es pot invocar sola, per reclassificar un CSV
-d'un run previ sense tornar a mostrejar:
+`run_pipeline.py` ja l'invoca automàticament en acabar la Fase 0-1,
+reutilitzant el mateix CSV (vegeu Quickstart). També es pot invocar sola,
+per reclassificar un CSV d'un run previ sense tornar a mostrejar:
 
 ```bash
 python notebooks/eligibility_scan.py --classify-eligible data/eligibility_report_2000_5.csv
@@ -237,7 +265,7 @@ True`, desenes com a molt sobre 2000): classificar contingut real a tots
 els datasets mostrejats, elegibles o no, reintroduiria el cost de ~150GB
 identificat a `docs/decisions_tfg.txt` (Decisió A-02), multiplicat per
 ~180x. Aquest filtre (no un flag manual) és el que manté barat encadenar-ho
-sempre per defecte -- per obtenir només el mostreig/elegibilitat, sense
-classificar canvis, usa `--skip-classification`. Output: `data/
-change_classification_<run_id>.csv` (`dataset_id, version_from,
-version_to, code, is_breaking`).
+sempre per defecte a `run_pipeline.py` -- per obtenir només el mostreig/
+elegibilitat, sense classificar canvis, usa `run_pipeline.py
+--skip-classification`. Output: `data/change_classification_<run_id>.csv`
+(`dataset_id, version_from, version_to, code, is_breaking`).

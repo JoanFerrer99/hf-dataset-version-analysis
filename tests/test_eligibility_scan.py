@@ -794,19 +794,22 @@ class TestClassifyDatasetWithChangeClassification:
 
 
 # ---------------------------------------------------------------------------
-# run_sampling -- Fase 4 (encadenament automàtic amb run_classification,
-# reutilitzant el csv_path que acaba d'escriure write_results a la Fase 3)
+# run_sampling -- retorna (csv_path, json_path, summary) perquè un cridant
+# extern (notebooks/run_pipeline.py) pugui encadenar altres fases amb el
+# mateix CSV sense re-derivar-ne la ruta. NOMÉS fa mostreig/elegibilitat --
+# encadenar la classificació de canvis és responsabilitat de l'orquestrador,
+# no d'aquesta funció (vegeu tests/test_run_pipeline.py).
 # ---------------------------------------------------------------------------
 
-class TestRunSamplingAutoClassify:
-    def _patch_common(self, monkeypatch, tmp_path, eligible):
+class TestRunSamplingReturnValue:
+    def test_returns_csv_path_json_path_and_summary(self, monkeypatch, tmp_path):
         monkeypatch.setattr(es, "iter_all_dataset_ids", lambda: iter(["org/ds"]))
         monkeypatch.setattr(es, "reservoir_sample_dataset_ids", lambda ids, n, m: (["org/ds"], 1))
         monkeypatch.setattr(
             es, "classify_dataset_safe",
             lambda item: {
                 "dataset_id": "org/ds", "num_tags": 0, "num_branches": 0,
-                "num_commits_substantive": 0, "eligible": eligible,
+                "num_commits_substantive": 0, "eligible": True,
                 "eligibility_reason": "x", "status": "classified",
                 "error_category": "", "error": "", "change_labels": [],
             },
@@ -814,32 +817,12 @@ class TestRunSamplingAutoClassify:
         monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
         monkeypatch.setattr(es, "get_next_run_id", lambda output_dir, sample_size: 1)
 
-    def test_eligible_dataset_chains_into_run_classification_with_fresh_csv(self, monkeypatch, tmp_path):
-        self._patch_common(monkeypatch, tmp_path, eligible=True)
-        calls = []
-        monkeypatch.setattr(es, "run_classification", lambda csv_path: calls.append(csv_path))
+        csv_path, json_path, summary = es.run_sampling(sample_size=1, max_scanned=None, num_threads=1)
 
-        es.run_sampling(sample_size=1, max_scanned=None, num_threads=1, auto_classify=True)
-
-        assert calls == [os.path.join(str(tmp_path), "eligibility_report_1_1.csv")]
-
-    def test_zero_eligible_skips_run_classification(self, monkeypatch, tmp_path):
-        self._patch_common(monkeypatch, tmp_path, eligible=False)
-        calls = []
-        monkeypatch.setattr(es, "run_classification", lambda csv_path: calls.append(csv_path))
-
-        es.run_sampling(sample_size=1, max_scanned=None, num_threads=1, auto_classify=True)
-
-        assert calls == []
-
-    def test_auto_classify_false_skips_run_classification_even_if_eligible(self, monkeypatch, tmp_path):
-        self._patch_common(monkeypatch, tmp_path, eligible=True)
-        calls = []
-        monkeypatch.setattr(es, "run_classification", lambda csv_path: calls.append(csv_path))
-
-        es.run_sampling(sample_size=1, max_scanned=None, num_threads=1, auto_classify=False)
-
-        assert calls == []
+        assert csv_path == os.path.join(str(tmp_path), "eligibility_report_1_1.csv")
+        assert json_path == os.path.join(str(tmp_path), "funnel_summary_1_1.json")
+        assert summary["eligible_total"] == 1
+        assert os.path.exists(csv_path)
 
 
 # ---------------------------------------------------------------------------

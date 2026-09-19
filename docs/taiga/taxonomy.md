@@ -137,4 +137,67 @@ menys freqüents (el dataset base és majoritàriament categòric).
 US-304 valida que el nostre MOTOR DE DIFFING pot observar mecànicament
 un senyal allà on el paper marca un canvi, sobre D1–D7 (contra D0). El
 % d'acord codi per codi es calcula més endavant, a US-305, un cop
-existeixi el classificador.
+existeixi el classificador. Registre complet i permanent d'aquesta
+validació: `docs/census_income_validation_report.md`.
+
+## Limitacions conegudes del motor de diffing
+
+`notebooks/change_diff.py` implementa 14 dels 15 codis (tots excepte
+C100). D'aquests 14, tots són detectats amb tècniques exactes o
+heurístiques explícitament documentades -- cap és una "caixa negra".
+
+**Únic codi realment fora d'abast:**
+- **C100** (metadada): és inspecció de dataset card/README, no una
+  comparació tabular -- fora de l'abast per disseny, mai un objectiu
+  d'aquest motor (`change_diff.py:17-19`).
+
+**Implementat, amb abast declarat (no és el mateix que "no detectable"):**
+- **C410** (ordre de files, Decisió T-14): tècnica de hash de contingut
+  per fila (multiset), NOMÉS sobre columnes hashables -- detecta
+  reordenació PURA (mateix contingut exacte, ordre diferent) amb certesa;
+  NO detecta reordenació barrejada amb altres canvis al mateix parell de
+  versions, ni reordenació confinada a columnes no hashables (p.e. bytes
+  d'àudio) mentre les columnes hashables es mantenen en la mateixa
+  posició (`change_diff.py`, `diff_row_order`). És a `BREAKING_CODES`:
+  un canvi d'ordre pot afectar pipelines d'ML que accedeixen a les dades
+  per posició, potencialment requerint adaptació als components d'ingesta
+  o preprocessament.
+- **C223** (renom de columna): heurística explícita -- una columna
+  eliminada i una afegida es tracten com a renom NOMÉS si ocupen la
+  mateixa posició ordinal i tenen dtype de la mateixa família; qualsevol
+  altre cas es reporta com a add/remove per separat, no com a renom.
+  Cap tècnica purament estructural distingeix un renom d'un remove+add
+  sense heurística (`change_diff.py:117-162`, `diff_columns`).
+- **C421/C422** (afegir/eliminar fila): sense un identificador d'instància
+  estable, NO es pot atribuir un canvi de recompte a "files afegides" vs
+  "files eliminades" amb certesa -- només al signe del delta
+  (`change_diff.py:265-275`, `diff_row_count`).
+- **Cap `MAX_TABULAR_FILES_PER_COMMIT = 5`** (`eligibility_scan.py:615`):
+  per a commits que toquen més de 5 fitxers tabulars, només se'n
+  classifiquen 5 -- mostra representativa, no exhaustiva (confirmat en
+  una execució real que alguns datasets "chunked", p.e.
+  `edinburghcstr/ami`, haurien trigat més d'una hora sense aquest cap).
+- **Census Income, "% d'acord codi per codi"**: mai calculable contra el
+  ground truth del paper (extracció del PDF no conserva l'alineació de
+  columnes de la taula amb marques "✔") -- vegeu `docs/census_income_
+  validation_report.md`, secció "Limitacions".
+
+### Tècniques alternatives considerades (i descartades conscientment)
+
+Per a cada codi següent, es va triar una tècnica més simple per sobre
+d'una alternativa més sofisticada -- decisions conscients, no llacunes
+obertes:
+- **C223 (renom)**: heurística posició+dtype triada per sobre d'una
+  alternativa de similitud de contingut (comparar distribucions de valors
+  entre la columna eliminada i l'afegida) -- menys risc de falsos
+  positius, cost computacional més baix.
+- **C530 (distribució)**: quartils/freqüència relativa triats per sobre
+  d'un test estadístic formal (Kolmogorov-Smirnov, `scipy`) -- evita una
+  dependència nova només per a aquesta heurística (`change_diff.py:327-334`).
+- **C520 (correlació)**: només Pearson (relacions lineals) -- Spearman
+  (monotòniques, no lineals) detectaria més casos amb més cost
+  computacional; límit conegut, no un error.
+- **C421/C422 (recompte de files)**: cap tècnica alternativa resol
+  l'atribució exacta sense canviar QUÈ s'adquireix -- caldria que el
+  dataset mateix tingués una columna d'ID estable, cosa que no es pot
+  assumir per a datasets arbitraris d'HF.

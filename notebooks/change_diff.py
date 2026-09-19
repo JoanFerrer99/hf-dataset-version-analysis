@@ -40,7 +40,7 @@ import errors
 
 log = logging.getLogger(__name__)
 
-BREAKING_CODES = frozenset({"C210", "C222", "C223", "C311", "C321"})
+BREAKING_CODES = frozenset({"C210", "C222", "C223", "C311", "C321", "C410"})
 
 TABULAR_CODES = (
     "C210", "C221", "C222", "C223", "C311", "C312", "C321", "C322",
@@ -275,6 +275,60 @@ def diff_row_count(before: pd.DataFrame, after: pd.DataFrame) -> dict:
     return {"before": n_before, "after": n_after, "delta": n_after - n_before}
 
 
+def diff_row_order(before: pd.DataFrame, after: pd.DataFrame) -> dict:
+    """
+    Detecta si les files s'han reordenat entre dues instantànies amb el
+    MATEIX contingut exacte (mateix nombre de files, mateix multiset de
+    valors) -- un canvi que pot passar desapercebut a la resta de
+    `diff_*` (cap valor/columna/estadístic canvia) però que pot afectar
+    pipelines d'ML que accedeixen a les dades per posició (p.e.
+    `dataset[i]`), potencialment requerint adaptació als components
+    d'ingesta o preprocessament.
+
+    Tècnica: hash de contingut per fila (`pandas.util.hash_pandas_object`),
+    calculat NOMÉS sobre el subconjunt de columnes hashables (columnes amb
+    valors `dict`/`list` -- típic d'àudio/imatge, vegeu `_is_hashable_
+    series` -- se salten, igual que a `diff_categorical_values`/`diff_
+    distribution`). Si el MULTISET de hashes coincideix a totes dues
+    bandes però la seqüència original difereix, és una reordenació PURA
+    detectada amb certesa -- una comparació exacta, no una heurística.
+    L'adquisició (`download_tabular_file_at_revision`, `pandas.
+    read_parquet`/`read_csv` sense cap `sort`/`reindex` implícit) ja
+    preserva l'ordre original del fitxer; el que calia resoldre no era
+    l'adquisició, sinó distingir "reordenat" de "contingut diferent"
+    sense un ID d'instància estable -- exactament el que fa aquesta
+    comparació de multiset.
+
+    :param before: instantània anterior.
+    :param after: instantània posterior.
+    :return: `dict` amb `reordered` (`bool`). Sempre `False` si el nombre
+        de files difereix (ja cobert per `diff_row_count`/C421-C422 --
+        barrejar-ho amb reordenació seria ambigu) o si totes les columnes
+        comunes són no hashables (no hi ha res sobre què calcular el hash).
+        LIMITACIÓ CONEGUDA (documentada, no amagada): només detecta
+        reordenació PURA -- si també hi ha addicions/eliminacions/
+        modificacions de contingut al mateix parell de versions, o si la
+        reordenació només afecta columnes NO hashables (p.e. bytes
+        d'àudio) mentre les columnes hashables es mantenen en la mateixa
+        posició, `reordered` és `False` encara que hi hagi hagut un canvi
+        d'ordre real.
+    """
+    if len(before) != len(after):
+        return {"reordered": False}
+
+    common = [c for c in before.columns if c in after.columns]
+    hashable = [c for c in common if _is_hashable_series(before[c]) and _is_hashable_series(after[c])]
+    if not hashable:
+        return {"reordered": False}
+
+    hashes_before = pd.util.hash_pandas_object(before[hashable].reset_index(drop=True), index=False).to_numpy()
+    hashes_after = pd.util.hash_pandas_object(after[hashable].reset_index(drop=True), index=False).to_numpy()
+
+    if np.array_equal(hashes_before, hashes_after):
+        return {"reordered": False}
+    return {"reordered": bool(np.array_equal(np.sort(hashes_before), np.sort(hashes_after)))}
+
+
 def diff_missingness(before: pd.DataFrame, after: pd.DataFrame) -> dict:
     """
     Compara la proporció de valors absents de cada columna present a
@@ -367,15 +421,14 @@ def compute_all_diffs(before: pd.DataFrame, after: pd.DataFrame) -> dict:
     fora, és inspecció de dataset card/README, no una comparació tabular).
 
     :return: `dict` amb una clau per codi (`"C210"`, ..., `"C530"`) i valor
-        `bool` (`None` per a `"C410"`, no detectable de forma fiable sense
-        garantir que l'adquisició preserva l'ordre original de les files),
-        més `"_details"` amb la sortida completa de cada `diff_*`.
+        `bool`, més `"_details"` amb la sortida completa de cada `diff_*`.
     """
     columns = diff_columns(before, after)
     types = diff_column_types(before, after)
     categorical_values = diff_categorical_values(before, after)
     numeric_values = diff_numeric_values(before, after)
     rows = diff_row_count(before, after)
+    rows_order = diff_row_order(before, after)
     missingness = diff_missingness(before, after)
     correlation = diff_correlation(before, after)
     distribution = diff_distribution(before, after)
@@ -392,7 +445,7 @@ def compute_all_diffs(before: pd.DataFrame, after: pd.DataFrame) -> dict:
         "C312": bool(categorical_values),
         "C321": bool(numerical_types),
         "C322": bool(numeric_values),
-        "C410": None,
+        "C410": rows_order["reordered"],
         "C421": rows["delta"] > 0,
         "C422": rows["delta"] < 0,
         "C510": bool(missingness),
@@ -400,8 +453,8 @@ def compute_all_diffs(before: pd.DataFrame, after: pd.DataFrame) -> dict:
         "C530": bool(distribution),
         "_details": {
             "columns": columns, "types": types, "categorical_values": categorical_values,
-            "numeric_values": numeric_values, "rows": rows, "missingness": missingness,
-            "correlation": correlation, "distribution": distribution,
+            "numeric_values": numeric_values, "rows": rows, "rows_order": rows_order,
+            "missingness": missingness, "correlation": correlation, "distribution": distribution,
         },
     }
 
@@ -444,18 +497,18 @@ def classify_diffs(diffs: dict, dataset_id: str, version_from: str, version_to: 
     en defineix cap de formal) -- "breaking" = un canvi que probablement
     trenca un pipeline que llegeix el dataset per nom/posició/tipus sense
     adaptar-se: C210 (ordre de columnes), C222 (eliminar columna), C223
-    (renom), C311/C321 (canvi de tipus). La resta (afegir columna/fila,
-    canvis de valors/distribució/correlació/missings) es marquen `is_
-    breaking=False` -- poden afectar la qualitat del model, però no fan
-    fallar un pipeline que simplement llegeix el dataset.
+    (renom), C311/C321 (canvi de tipus), C410 (ordre de files -- pot
+    afectar pipelines que hi accedeixen per posició). La resta (afegir
+    columna/fila, canvis de valors/distribució/correlació/missings) es
+    marquen `is_breaking=False` -- poden afectar la qualitat del model,
+    però no fan fallar un pipeline que simplement llegeix el dataset.
 
     :param diffs: sortida de `compute_all_diffs(before, after)`.
     :param dataset_id: identificador del dataset.
     :param version_from: SHA del commit anterior.
     :param version_to: SHA del commit posterior.
     :return: llista de `ChangeLabel`, una per codi amb senyal detectat
-        (`diffs[code]` truthy). `C410` mai s'hi inclou si `diffs["C410"]`
-        és `None` (no detectable, vegeu `compute_all_diffs`).
+        (`diffs[code]` truthy).
     """
     return [
         ChangeLabel(dataset_id, version_from, version_to, code, is_breaking=code in BREAKING_CODES)

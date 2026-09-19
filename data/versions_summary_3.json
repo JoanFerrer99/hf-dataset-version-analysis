@@ -1,0 +1,9 @@
+{
+  "timestamp": "2026-09-19T23:30:19.635016",
+  "source_csv": "/app/data/eligibility_report_2000_6.csv",
+  "n_eligible": 14,
+  "n_via_tags": 10,
+  "n_via_sessions": 4,
+  "n_dataset_level_failures": 0,
+  "n_rows_written": 40
+}

@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1
 #
-# Imatge per executar el pipeline (notebooks/eligibility_scan.py i
-# notebooks/version_extractor.py) sense dependre de l'entorn Python de la
-# màquina host. Build en dues fases: "builder" instal·la les dependències
-# en un virtualenv aïllat; "runtime" copia només aquest venv + el codi a
-# una imatge slim, sense eines de build ni caché de pip.
+# Imatge per executar el pipeline (notebooks/run_pipeline.py, que encadena
+# eligibility_scan.py + version_extractor.py) sense dependre de l'entorn
+# Python de la màquina host. Build en dues fases: "builder" instal·la les
+# dependències en un virtualenv aïllat; "runtime" copia només aquest venv +
+# el codi a una imatge slim, sense eines de build ni caché de pip.
 
 FROM python:3.12-slim AS builder
 
@@ -42,7 +42,9 @@ USER app
 
 VOLUME ["/app/data"]
 
-# Sense arguments, eligibility_scan.py imprimeix l'ajuda i surt (0) --
-# entrypoint segur per defecte, mai comença un escaneig llarg per accident.
-ENTRYPOINT ["python", "notebooks/eligibility_scan.py"]
+# Sense arguments, run_pipeline.py imprimeix l'ajuda i surt (0) --
+# entrypoint segur per defecte, mai comença una execució llarga per accident.
+# docker-compose.yml sobreescriu aquest entrypoint per als serveis
+# eligibility-scan/version-extractor (una sola fase, ús manual/depuració).
+ENTRYPOINT ["python", "notebooks/run_pipeline.py"]
 CMD []

@@ -405,60 +405,15 @@ comparar.
 
 ### Resultats reals — validació d'extractibilitat (Census Income D1–D7)
 
-**Nota (setembre 2026): exercici de validació PUNTUAL, ja fet.** El
-codi d'adquisició/informe específic de Census Income (`CENSUS_INCOME_
-SOURCES`, `download_uci_adult_baseline`, `download_census_income_
-version`, `build_detectability_report`, `run_validation`,
-`run_census_income_classification`, `summarize_agreement`) es va
-eliminar de `change_diff.py` un cop la pregunta que responia ("el motor
-de diffing detecta senyals reals?") va quedar contestada -- no calia
-mantenir-lo com a codi viu, retestejat a cada canvi. Aquesta secció (i
-les taules següents) és el registre històric del resultat, no una
-descripció d'un script encara executable. El motor de diffing en si
-(`diff_*`/`compute_all_diffs`) SÍ es manté -- és el que fa servir
-`eligibility_scan.classify_dataset` sobre la població real.
-
-En aquell moment, `change_diff.py` va comparar cada D_i (i=1..7) contra
-D0 (baseline UCI) i va comptar quants dels 14 codis tabulars (tots
-excepte C100) mostraven algun senyal, sense encara etiquetar-los amb el
-codi exacte:
-
-| Versió | Codis amb senyal (el nostre motor) | Total de fila del paper |
-|---|---|---|
-| D1 | 1 | 3 |
-| D2 | 1 | 3 |
-| D3 | **7** | **7** |
-| D4 | **7** | **7** |
-| D5 | 2 | 4 |
-| D6 | 6 | 4 |
-| D7 | 6 | 5 |
-
-Sortida completa: `data/census_income_diff_report.csv` (inclou el detall
-per codi, `C210`...`C530`).
-
-**Lectura honesta** (no és una mètrica de precisió -- els totals del
-paper inclouen C100, fora de l'abast tabular d'aquest motor, i la
-comparació és per TOTAL, no per codi exacte -- vegeu la nota d'integritat
-al capçal de `change_diff.py`):
-- **D3/D4 encaixen exactament** amb el total del paper (7/7 els dos) --
-  bon senyal que el motor funciona correctament quan el fitxer font és
-  net i comparable directament amb la UCI.
-- **D1/D2/D5 per sota** del total del paper -- esperat en part (el
-  nostre motor no intenta C100), però probablement també hi ha canvis
-  subtils que els llindars actuals (5% de canvi relatiu/absolut a
-  `diff_distribution`/`diff_correlation`) no capten -- pendent d'afinar.
-- **D6 clarament per sobre** (6 detectats vs 4 del paper) -- confirma una
-  ambigüitat detectada en aquell moment: el repo `ETdanR/adult_income`
-  té 3 fitxers (`experiment_data.csv`,
-  `train_data.csv`, `validation_data.csv`) i el paper no especifica quin
-  -- s'ha triat `train_data.csv` sense confirmació. Aquest resultat
-  suggereix que probablement NO és el fitxer correcte; caldria provar
-  `experiment_data.csv` (o consultar el director) si es vol un resultat
-  més ajustat.
-- **D7 una mica per sobre** (6 vs 5) -- podria ser el mateix efecte de
-  llindars massa sensibles, o simplement que el paper tampoc compta C100
-  al seu total (en aquest cas 5 podria incloure C100, deixant un sostre
-  tabular de 4, i el nostre motor sobredetecta en 2).
+**Exercici de validació PUNTUAL, ja fet, registre complet a
+`docs/census_income_validation_report.md`** (metodologia, taula de
+detectabilitat per versió D1-D7, resultats de classificació, limitacions,
+i estat de reproduïbilitat). El codi d'adquisició/informe específic de
+Census Income es va eliminar deliberadament de `change_diff.py` un cop la
+pregunta que responia va quedar contestada (Decisió T-11) -- **no cal
+tornar-lo a córrer**. El motor de diffing en si (`diff_*`/`compute_all_
+diffs`) SÍ es manté -- és el que fa servir `eligibility_scan.
+classify_dataset` sobre la població real.
 
 ### US-305 — Classificador de canvis, integrat a `classify_dataset`
 
@@ -556,50 +511,52 @@ Fase 2/3 de `run_sampling` (el bucle de `classify_dataset_safe`) MAI
 passa `classify_changes=True`; `write_results` descarta la columna
 `change_labels` del CSV principal (sempre buida allà). L'opt-in és,
 doncs, per COLUMNA de dades (contingut real només per als elegibles), no
-un flag manual que calgui recordar activar cada cop -- vegeu Fase 4 tot
-seguit.
+un flag manual que calgui recordar activar cada cop -- vegeu la Fase 2 de
+l'orquestrador tot seguit.
 
-**Fase 4 -- encadenada automàticament (Decisió T-13)**: en acabar la
-Fase 3, `run_sampling` crida `run_classification(csv_path)` directament
-amb el CSV que acaba d'escriure, sempre que `auto_classify=True` (per
-defecte) i `eligible_total > 0`. `run_classification` itera NOMÉS els
+**Encadenat per `notebooks/run_pipeline.py` (Decisió T-13)**: aquest
+orquestrador (no `eligibility_scan.py` mateix -- separació de
+responsabilitats, vegeu T-13) crida, amb el MATEIX CSV: Fase 0-1
+(`eligibility_scan.run_sampling`) -> Fase 1b (`version_extractor.
+run_extraction`) -> Fase 2 (`eligibility_scan.run_classification`, llevat
+de `--skip-classification`). `run_classification` itera NOMÉS els
 elegibles d'aquest CSV (`df["eligible"] == True`, mai la resta de la
 mostra) amb `classify_dataset(..., classify_changes=True)` i escriu
 `data/change_classification_<run_id>.csv` (`dataset_id, version_from,
 version_to, code, is_breaking`). Com que està filtrat a `eligible ==
 True` abans de baixar cap contingut, encadenar-ho sempre no reintrodueix
 el cost poblacional -- creix amb el nombre d'elegibles (~0.6% de la
-mostra), no amb `sample_size`. `--skip-classification` desactiva la
-Fase 4 (només mostreig/elegibilitat); `--classify-eligible <csv>`
-segueix disponible per reclassificar un CSV d'un run previ sense tornar
-a mostrejar (mode standalone, ignora `--sample-size` i la resta de flags
-de mostreig).
+mostra), no amb `sample_size`. `eligibility_scan.py --classify-eligible
+<csv>` segueix disponible per reclassificar un CSV d'un run previ sense
+tornar a mostrejar (mode standalone, ignora `--sample-size` i la resta de
+flags de mostreig).
 
 `is_breaking` és una heurística **pròpia d'aquest estudi** (el paper no
-en defineix cap de formal): `C210`, `C222`, `C223`, `C311`, `C321`
-("trenca" un pipeline que llegeix per nom/posició/tipus sense adaptar-se)
-són `True`; la resta `False`.
+en defineix cap de formal): `C210`, `C222`, `C223`, `C311`, `C321`, `C410`
+("trenca" un pipeline que llegeix per nom/posició/tipus/ordre sense
+adaptar-se) són `True`; la resta `False`.
 
-**Relació amb la validació de Census Income (històrica)**: mentre va
-existir, l'adquisició de Census Income (D1-D7, inter-repositori, sense
-historial de git compartit amb la UCI -- no es podia fer via
-`classify_dataset`, intra-repositori per disseny) reutilitzava les
-MATEIXES funcions pures de diffing/classificació que fa servir
-`classify_dataset` -- el "pipeline propi" era, doncs, el mateix codi en
-tots dos casos, només amb una capa d'adquisició diferent. Resultat final
-abans de retirar l'script (`data/census_income_classification.csv`, 30
-etiquetes, conservat com a document històric): mateixos totals que la
-validació de US-304. **Limitació d'integritat mai resolta**: el "% d'acord
-codi per codi" exacte contra la Taula 1 del paper no es va poder calcular
-(l'extracció del PDF no conserva l'alineació de columnes de la taula amb
-marques "✔") -- la comparació es va fer per total agregat per dataset,
-no codi per codi.
+**Relació amb la validació de Census Income (històrica)**: vegeu
+`docs/census_income_validation_report.md` -- exercici PUNTUAL, ja fet, amb
+el registre complet (metodologia, resultats per versió, limitacions). El
+motor de diffing/classificació que hi va validar-se és el MATEIX que fa
+servir `classify_dataset` sobre la població real; només canviava la capa
+d'adquisició (inter-repositori D1-D7 vs. intra-repositori).
 
 ### Resultats reals — classificació sobre la població elegible
 
-Execució real (`python eligibility_scan.py --classify-eligible
-data/eligibility_report_2000_5.csv`, `data/change_classification_1.csv`):
-**11/11 datasets classificats, 0 fallats, 67 etiquetes de canvi.**
+Execució real (`python run_pipeline.py --input-csv
+data/eligibility_report_2000_5.csv --skip-version-extraction`,
+`data/change_classification_2.csv` -- re-execució amb C410 implementat,
+Decisió T-14; els totals coincideixen exactament amb el run anterior,
+`data/change_classification_1.csv`, previ a C410): **11/11 datasets
+classificats, 0 fallats, 67 etiquetes de canvi.**
+
+Els 14 codis tabulars (tot excepte C100, fora d'abast per disseny --
+vegeu "Limitacions conegudes" a `docs/taiga/taxonomy.md`), agrupats per
+si van aparèixer en aquesta mostra real:
+
+**Han aparegut:**
 
 | Codi | Descripció | Recompte |
 |---|---|---|
@@ -608,12 +565,25 @@ data/eligibility_report_2000_5.csv`, `data/change_classification_1.csv`):
 | C223 | Renom de columna | 3 |
 | C311 | Tipus de columna categòrica | 1 |
 
+**Implementats però 0 ocurrències en aquesta mostra:** C210 (ordre de
+columnes), C221 (afegir columna), C222 (eliminar columna), C312 (valors
+categòrics), C321 (tipus numèric), C322 (valors numèrics), C410
+(**ordre de files -- implementat a la Decisió T-14, 0 ocurrències reals
+és un resultat legítim, no un indici que la tècnica no funcioni; vegeu
+els 7 casos sintètics verificats a `tests/test_change_diff.py::
+TestDiffRowOrder`**), C510 (missingness), C520 (correlació), C530
+(distribució).
+
+**Fora d'abast:** C100 (metadada -- inspecció de dataset card/README, no
+una comparació tabular).
+
 4 etiquetes `is_breaking=True` (les 3 de C223 + la de C311), 63 `False`
 -- coherent amb l'heurística (afegir/eliminar files no "trenca" un
-pipeline, un renom o un canvi de tipus sí). **7 dels 11 datasets tenen
-etiquetes**; els altres 4 (`Team-DIANA/green-probe-dataset`, `nwu-ctext/
-nchlt`, `QFIN/FCMBench-Data`, `AILAB-VNUHCM/vivos`) en tenen 0 --
-confirmat pel log (cap crida `resolve/` per a cap d'ells) que els seus
+pipeline, un renom o un canvi de tipus sí; C410, tot i ser `is_breaking`,
+no hi aporta cap etiqueta perquè no va aparèixer). **7 dels 11 datasets
+tenen etiquetes**; els altres 4 (`Team-DIANA/green-probe-dataset`,
+`nwu-ctext/nchlt`, `QFIN/FCMBench-Data`, `AILAB-VNUHCM/vivos`) en tenen 0
+-- confirmat pel log (cap crida `resolve/` per a cap d'ells) que els seus
 commits substantius només toquen fitxers BINARIS (àudio/vídeo/arxius),
 mai tabulars: és un resultat esperat i correcte, no un error.
 

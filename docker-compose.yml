@@ -1,22 +1,41 @@
 # Ús:
 #   docker compose build
 #
-#   # 1. Genera primer un CSV d'elegibilitat (queda a ./data via el volum):
+#   # Pipeline complet en un sol comandament (mostreig+elegibilitat, extracció
+#   # de versions, i classificació de canvis dels elegibles -- tot encadenat,
+#   # reutilitzant el mateix CSV entre fases):
+#   docker compose run --rm run-pipeline --sample-size 50 --threads 4 --seed 42 --max-scanned 5000
+#
+# Scripts individuals (ús manual/depuració d'una sola fase):
+#   # eligibility-scan -- NOMÉS Fase 0-1 (mostreig+elegibilitat), genera el CSV:
 #   docker compose run --rm eligibility-scan --sample-size 50 --threads 4 --seed 42 --max-scanned 5000
 #   ls data/eligibility_report_50_*.csv   # confirma el nom exacte (inclou el run_id)
 #
-#   # 2. Passa'l a version-extractor (Fase 1: seqüència de versions per dataset elegible):
+#   # version-extractor -- Fase 1b (seqüència de versions per dataset elegible):
 #   docker compose run --rm version-extractor --input data/eligibility_report_50_<run_id>.csv
 #
-#   # 3. Classificació de canvis (Fase 2, US-305) -- mateix servei eligibility-scan, flag diferent:
+#   # eligibility-scan --classify-eligible -- Fase 2 (US-305), reclassificar un CSV previ
+#   # sense tornar a mostrejar (mateix servei eligibility-scan, flag diferent):
 #   docker compose run --rm eligibility-scan --classify-eligible data/eligibility_report_50_<run_id>.csv
 #
 # Requereix un fitxer .env a l'arrel amb HF_TOKEN=hf_xxx (vegeu README.md).
+# --remove-orphans neteja contenidors aturats d'execucions anteriors, no és
+# obligatori (vegeu README.md per més detall).
 
 services:
+  run-pipeline:
+    build: .
+    image: hf-dataset-version-analysis:latest
+    entrypoint: ["python", "notebooks/run_pipeline.py"]
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+
   eligibility-scan:
     build: .
     image: hf-dataset-version-analysis:latest
+    entrypoint: ["python", "notebooks/eligibility_scan.py"]
     env_file:
       - .env
     volumes:

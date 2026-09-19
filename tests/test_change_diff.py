@@ -168,6 +168,59 @@ class TestDiffRowCount:
         assert result["delta"] == -2
 
 
+class TestDiffRowOrder:
+    def test_pure_reorder_detected(self):
+        before = pd.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+        after = before.iloc[[2, 0, 1]].reset_index(drop=True)
+        assert cd.diff_row_order(before, after) == {"reordered": True}
+
+    def test_identical_order_is_not_reordered(self):
+        df = pd.DataFrame({"a": [1, 2, 3]})
+        assert cd.diff_row_order(df, df.copy()) == {"reordered": False}
+
+    def test_different_row_count_is_never_reordered(self):
+        # Ja el cobreixen C421/C422 -- barrejar-ho amb reordenació seria ambigu.
+        before = pd.DataFrame({"a": [1, 2, 3]})
+        after = pd.DataFrame({"a": [1, 2]})
+        assert cd.diff_row_order(before, after) == {"reordered": False}
+
+    def test_content_change_same_order_is_not_reordered(self):
+        before = pd.DataFrame({"a": [1, 2, 3]})
+        after = pd.DataFrame({"a": [1, 2, 99]})
+        assert cd.diff_row_order(before, after) == {"reordered": False}
+
+    def test_reorder_mixed_with_content_change_is_not_pure_reorder(self):
+        # El multiset de contingut difereix -- no és una reordenació pura,
+        # el canvi ja el reflecteixen els altres codis (p.e. C322).
+        before = pd.DataFrame({"a": [1, 2, 3]})
+        after = pd.DataFrame({"a": [3, 1, 99]})
+        assert cd.diff_row_order(before, after) == {"reordered": False}
+
+    def test_duplicate_rows_reordered_still_detected(self):
+        before = pd.DataFrame({"a": [1, 1, 2]})
+        after = pd.DataFrame({"a": [2, 1, 1]})
+        assert cd.diff_row_order(before, after) == {"reordered": True}
+
+    def test_reorder_confined_to_non_hashable_column_not_detected(self):
+        # Limitació documentada: si les columnes hashables es mantenen en
+        # la mateixa posició i la reordenació només afecta una columna no
+        # hashable (p.e. bytes d'àudio), aquesta tècnica no ho detecta.
+        before = pd.DataFrame({
+            "id": [1, 2, 3],
+            "audio": [{"bytes": b"a"}, {"bytes": b"b"}, {"bytes": b"c"}],
+        })
+        after = pd.DataFrame({
+            "id": [1, 2, 3],
+            "audio": [{"bytes": b"c"}, {"bytes": b"a"}, {"bytes": b"b"}],
+        })
+        assert cd.diff_row_order(before, after) == {"reordered": False}
+
+    def test_all_columns_non_hashable_cannot_detect(self):
+        before = pd.DataFrame({"audio": [{"bytes": b"a"}, {"bytes": b"b"}]})
+        after = pd.DataFrame({"audio": [{"bytes": b"b"}, {"bytes": b"a"}]})
+        assert cd.diff_row_order(before, after) == {"reordered": False}
+
+
 class TestDiffMissingness:
     def test_no_change(self):
         df = pd.DataFrame({"a": [1, None, 3]})
@@ -258,10 +311,14 @@ class TestComputeAllDiffs:
         df = pd.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
         result = cd.compute_all_diffs(df, df.copy())
         for code in cd.TABULAR_CODES:
-            if code == "C410":
-                assert result[code] is None
-            else:
-                assert result[code] is False, f"{code} should be False"
+            assert result[code] is False, f"{code} should be False"
+
+    def test_reordered_rows_set_c410(self):
+        before = pd.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+        after = before.iloc[[2, 0, 1]].reset_index(drop=True)
+        result = cd.compute_all_diffs(before, after)
+        assert result["C410"] is True
+        assert result["C421"] is False and result["C422"] is False
 
     def test_added_row_sets_c421_not_c422(self):
         before = pd.DataFrame({"a": [1, 2]})
@@ -290,13 +347,13 @@ class TestComputeAllDiffs:
         assert "_details" in result
         assert set(result["_details"].keys()) == {
             "columns", "types", "categorical_values", "numeric_values",
-            "rows", "missingness", "correlation", "distribution",
+            "rows", "rows_order", "missingness", "correlation", "distribution",
         }
 
 
 def _no_signals() -> dict:
     """Diccionari de `compute_all_diffs` amb tots els codis sense senyal."""
-    return {code: (None if code == "C410" else False) for code in cd.TABULAR_CODES}
+    return {code: False for code in cd.TABULAR_CODES}
 
 
 class TestClassifyDiffs:
@@ -326,11 +383,13 @@ class TestClassifyDiffs:
         labels = cd.classify_diffs(diffs, "ds", "v1", "v2")
         assert labels[0].is_breaking is False
 
-    def test_c410_none_never_produces_a_label(self):
+    def test_c410_signal_produces_a_breaking_label(self):
         diffs = _no_signals()
-        assert diffs["C410"] is None
+        diffs["C410"] = True
         labels = cd.classify_diffs(diffs, "ds", "v1", "v2")
-        assert all(label.code != "C410" for label in labels)
+        assert len(labels) == 1
+        assert labels[0].code == "C410"
+        assert labels[0].is_breaking is True
 
     def test_multiple_signals_produce_multiple_labels(self):
         diffs = _no_signals()
@@ -345,7 +404,7 @@ class TestClassifyDiffs:
         # classificador -- no hi ha cap via per generar-lo.
         diffs = _no_signals()
         for code in diffs:
-            diffs[code] = True if code != "C410" else None
+            diffs[code] = True
         labels = cd.classify_diffs(diffs, "ds", "v1", "v2")
         assert all(label.code != "C100" for label in labels)
 

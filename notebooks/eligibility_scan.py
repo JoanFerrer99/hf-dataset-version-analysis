@@ -923,24 +923,16 @@ def write_results(rows: list[dict], run_id: int, sample_size: int, total_scanned
 # ---------------------------------------------------------------------------
 
 def run_sampling(
-    sample_size: int,
-    max_scanned: int | None,
-    num_threads: int,
-    tags_only: bool = False,
-    auto_classify: bool = True,
-) -> None:
+    sample_size: int, max_scanned: int | None, num_threads: int, tags_only: bool = False
+) -> tuple[str, str, dict]:
     """
-    Orquestrador principal: executa el pipeline complet en quatre fases --
+    Orquestrador principal: executa l'embut complet en tres fases --
     (1) reservoir sampling sobre tota la població, (2) classificació
     paral·lela de la mostra amb `classify_dataset_safe`, (3) escriptura
-    de resultats amb `write_results`, i (4) si `auto_classify` i hi ha
-    algun dataset elegible, classificació dels canvis d'aquests elegibles
-    amb `run_classification` reutilitzant el mateix CSV que acaba
-    d'escriure la Fase 3 -- sense pas manual d'un run a l'altre. La
-    Fase 4 mai afecta el cost de les Fases 1-3: només processa el
-    subconjunt elegible (~0.6% de la mostra), mai tota la població
-    escanejada (vegeu la docstring de `classify_dataset` sobre per què
-    `classify_changes` es manté fora de la Fase 2).
+    de resultats amb `write_results` -- i n'imprimeix un resum per
+    consola. NOMÉS fa mostreig/elegibilitat -- mai classifica canvis
+    (vegeu `run_classification`, i `notebooks/run_pipeline.py` per
+    l'orquestrador que encadena totes les fases del pipeline).
 
     :param sample_size: mida de la mostra a classificar (mida del
         reservori; vegeu `reservoir_sample_dataset_ids`).
@@ -954,17 +946,14 @@ def run_sampling(
     :param tags_only: es passa tal qual a `classify_dataset` per a cada
         dataset de la mostra (vegeu la documentació d'aquest paràmetre a
         `classify_dataset`).
-    :param auto_classify: si ``True`` (per defecte), encadena la Fase 4
-        (classificació de canvis dels elegibles) automàticament en acabar
-        la Fase 3, reutilitzant el `csv_path` que s'acaba d'escriure.
-        Posar-lo a ``False`` (``--skip-classification`` a la CLI) per
-        obtenir només el mostreig/elegibilitat, sense classificar canvis.
-    :return: None. Efectes: escriu `data/eligibility_report_*.csv` i
-        `data/funnel_summary_*.json` (via `write_results`), pot escriure
-        `data/failures.csv` (via `classify_dataset`/`errors.append_failure_row`
-        per cada fallada), imprimeix un resum de l'embut per consola, i --
-        si `auto_classify` i `eligible_total > 0` -- escriu també
-        `data/change_classification_*.csv` (via `run_classification`).
+    :return: tupla ``(csv_path, json_path, summary)``, el mateix que
+        retorna `write_results` -- perquè un cridant (p.e. `run_pipeline.
+        run_full_pipeline`) pugui encadenar altres fases amb el mateix CSV
+        sense re-derivar-ne la ruta. Efectes: escriu `data/eligibility_
+        report_*.csv` i `data/funnel_summary_*.json` (via `write_results`),
+        pot escriure `data/failures.csv` (via `classify_dataset`/`errors.
+        append_failure_row` per cada fallada), i imprimeix un resum de
+        l'embut per consola.
     """
     log.info(f"FASE 1: Reservoir sampling (objectiu={sample_size}, max_scanned={max_scanned})")
     dataset_ids, total_scanned = reservoir_sample_dataset_ids(
@@ -1002,14 +991,7 @@ def run_sampling(
     print(f"  JSON: {json_path}")
     print(f"  Fallades (detall): {FAILURES_LOG_PATH}\n")
 
-    if not auto_classify:
-        return
-    if summary["eligible_total"] == 0:
-        log.info("FASE 4: cap dataset elegible en aquesta mostra -- s'omet la classificació de canvis.")
-        return
-
-    log.info(f"FASE 4: Classificant canvis dels {summary['eligible_total']} datasets elegibles...")
-    run_classification(csv_path)
+    return csv_path, json_path, summary
 
 
 def _next_classification_run_id(output_dir: str) -> int:
@@ -1086,9 +1068,9 @@ def parse_args() -> argparse.Namespace:
     repeteix aquí per no duplicar-ho en dos llocs.
 
     :return: `argparse.Namespace` amb tots els arguments parsejats
-        (`classify_eligible`, `skip_classification`, `tags_only`,
-        `sample_size`, `max_scanned`, `threads`, `seed`,
-        `retry_max_attempts`, `retry_base_wait`, `retry_max_wait`).
+        (`classify_eligible`, `tags_only`, `sample_size`, `max_scanned`,
+        `threads`, `seed`, `retry_max_attempts`, `retry_base_wait`,
+        `retry_max_wait`).
     """
     parser = argparse.ArgumentParser(
         description="Filtratge de datasets de HF mitjançant mostreig (reservoir sampling).",
@@ -1099,19 +1081,10 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Classifica els canvis (C210-C530) dels datasets elegibles d'aquest CSV "
             "(eligibility_report_*.csv) EN LLOC de fer un mostreig nou -- "
-            "ignora --sample-size/--max-scanned/--threads/--seed/--tags-only/"
-            "--skip-classification. Útil per reclassificar un CSV d'un run previ "
-            "sense tornar a mostrejar; un mostreig nou (sense aquest flag) ja "
-            "encadena la classificació automàticament (vegeu --skip-classification)."
-        ),
-    )
-    parser.add_argument(
-        "--skip-classification", action="store_true",
-        help=(
-            "En un mostreig nou (sense --classify-eligible), omet la Fase 4 "
-            "(classificació automàtica de canvis dels datasets elegibles) i "
-            "es queda només amb el mostreig/elegibilitat. Per defecte les dues "
-            "fases s'encadenen sempre en una mateixa execució."
+            "ignora --sample-size/--max-scanned/--threads/--seed/--tags-only. "
+            "Útil per reclassificar un CSV d'un run previ sense tornar a "
+            "mostrejar; per encadenar mostreig+extracció+classificació en una "
+            "sola execució, useu notebooks/run_pipeline.py en lloc d'aquest flag."
         ),
     )
     parser.add_argument(
@@ -1200,5 +1173,4 @@ if __name__ == "__main__":
             max_scanned=args.max_scanned,
             num_threads=args.threads,
             tags_only=args.tags_only,
-            auto_classify=not args.skip_classification,
         )
