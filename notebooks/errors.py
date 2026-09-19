@@ -182,21 +182,6 @@ DEFAULT_MAX_RETRIES = 5
 DEFAULT_BASE_WAIT_S = 10.0
 DEFAULT_MAX_WAIT_S = 120.0
 
-# Forma canònica de la configuració de reintent que fa servir `with_retry`
-# -- cada script amb la seva pròpia CLI (`eligibility_scan.py`,
-# `version_extractor.py`) en fa una CÒPIA pròpia (`dict(errors.
-# DEFAULT_RETRY_CONFIG)`) i la muta amb els seus arguments `--retry-*`,
-# perquè cada procés pugui configurar el seu propi reintent sense afectar
-# els altres -- MAI usar aquest dict directament com a `RETRY_CONFIG`
-# d'un script (és compartit, mutar-lo mutaria el reintent de tothom).
-# Mòduls sense CLI pròpia (p.e. `change_diff.py`) no en necessiten còpia:
-# reben la configuració de reintent com a paràmetre del cridant.
-DEFAULT_RETRY_CONFIG: dict = {
-    "max_retries": DEFAULT_MAX_RETRIES,
-    "base_wait_s": DEFAULT_BASE_WAIT_S,
-    "max_wait_s": DEFAULT_MAX_WAIT_S,
-}
-
 # Excepcions de xarxa transitòries (a banda del 429) que també val la pena
 # reintentar: talls de connexió o timeouts puntuals no impliquen que el
 # dataset sigui inaccessible, només que la crida concreta ha fallat.

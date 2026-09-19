@@ -697,10 +697,7 @@ def cluster_commit_times(
     Agrupa dates de commits en "sessions" de treball diferenciades: un cop
     ordenades, una nova sessió comença quan dos commits consecutius estan
     separats per més de `gap_hours` hores. Funció pura, sense crides a
-    l'API -- usada tant per US-108 (validació de l'elegibilitat, ara
-    documentada a `docs/us108_validation_report.md`) com per `version_
-    extractor.py` (versions inferides per sessió per als datasets sense
-    tags, Criteri B).
+    l'API
 
     :param commit_times: dates (`datetime`) en qualsevol ordre; els
         elements `None` s'ignoren.
