@@ -1,5 +1,5 @@
 """
-US-201 + US-202: extracció de versions per als datasets elegibles (Fase 1).
+Extracció de versions per als datasets elegibles (Fase 1).
 
 Per cada dataset marcat elegible per `eligibility_scan.classify_dataset`
 (`data/eligibility_report_<N>_<run_id>.csv`), extreu la seqüència completa i
@@ -8,7 +8,7 @@ aproximada). El concepte de "versió" depèn de quin criteri va decidir
 l'elegibilitat d'aquell dataset -- es reutilitza directament la columna
 `eligibility_reason` ja calculada, no es recalcula el criteri aquí:
 
-  - **Criteri A** (tags explícits): cada TAG és una versió (US-201 literal).
+  - **Criteri A** (tags explícits): cada TAG és una versió.
     `commit_sha` ve directament de `GitRefInfo.target_commit` (l'API el
     dona sense cap crida addicional); data/autors via UNA crida
     `list_repo_commits(revision=tag_name)` per tag.
@@ -17,7 +17,7 @@ l'elegibilitat d'aquell dataset -- es reutilitza directament la columna
     `eligibility_report_2000_5.csv`: 8/11 amb `num_tags=0`). Una
     implementació literal de "llistar tags" deixaria buida la majoria de
     la població elegible, així que cada SESSIÓ de treball (commits
-    substantius agrupats per buit temporal, `validate_eligible.
+    substantius agrupats per buit temporal, `eligibility_scan.
     cluster_commit_times` -- LA MATEIXA lògica ja validada a US-108, no
     una reimplementació) es tracta com una versió inferida.
 
@@ -55,8 +55,7 @@ from dotenv import load_dotenv
 from huggingface_hub import list_repo_commits, list_repo_refs, list_repo_tree
 
 import errors
-from eligibility_scan import bare_clone, determine_commit_substantive
-from validate_eligible import cluster_commit_times
+from eligibility_scan import bare_clone, cluster_commit_times, determine_commit_substantive
 
 log = logging.getLogger(__name__)
 
@@ -67,11 +66,7 @@ FAILURES_LOG_PATH = os.path.join(OUTPUT_DIR, "failures.csv")
 
 MAX_COMMITS = 50  # mateix límit que classify_dataset()/gather_evidence_for_dataset(), per coherència
 
-RETRY_CONFIG: dict = {
-    "max_retries": errors.DEFAULT_MAX_RETRIES,
-    "base_wait_s": errors.DEFAULT_BASE_WAIT_S,
-    "max_wait_s": errors.DEFAULT_MAX_WAIT_S,
-}
+RETRY_CONFIG: dict = dict(errors.DEFAULT_RETRY_CONFIG)
 
 
 @dataclass
@@ -175,7 +170,7 @@ def build_sessions_from_commits(commits: list, clone_dir: str | None) -> list[di
     """
     Agrupa una llista de commits en sessions de treball substantives,
     reutilitzant `eligibility_scan.determine_commit_substantive` (mateixa
-    lògica que decideix l'elegibilitat via Criteri B) i `validate_eligible.
+    lògica que decideix l'elegibilitat via Criteri B) i `eligibility_scan.
     cluster_commit_times` (mateix llindar `MIN_SUBSTANTIVE_GAP_HOURS`).
 
     Els commits substantius sense `created_at` s'ignoren (no poden entrar a
@@ -335,7 +330,8 @@ def _extract_tag_versions(dataset_id: str, hf_token: str | None, retry_config: d
     hauria d'esborrar la resta de versions conegudes del dataset.
 
     :param dataset_id: identificador del dataset (`owner/name`).
-    :param hf_token: token HF.
+    :param hf_token: token HF.(), per coherència
+
     :param retry_config: mateix format que `RETRY_CONFIG`.
     :return: llista de diccionaris de versió (sense `version_order` encara).
     :raises Exception: propaga qualsevol fallada de `fetch_tags` (fallada
