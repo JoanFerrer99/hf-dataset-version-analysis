@@ -1201,6 +1201,52 @@ Estat: ✅ Fet
   total, `ruff check` net.
 
 
+DECISIÓ T-18: comparativa codi per codi real contra Census Income -- Taula 1 del paper transcrita a mà
+Data: setembre 2026
+Responsable: Joan
+Estat: ✅ Fet
+
+  MOTIU: `docs/census_income_alignment_study.md` (mateixa sessió)
+  recomanava, com a única via real cap a una comparació exacta,
+  transcriure a mà la Taula 1 del paper des de la imatge original --
+  l'extracció automàtica del PDF mai va conservar l'alineació de
+  columnes. Joan l'ha transcrita directament per a D1-D7.
+
+  DADES: els totals per fila de la transcripció coincideixen EXACTAMENT
+  amb `PAPER_ROW_TOTALS` (ja documentat a T-08) -- confirma consistència
+  abans de fer-hi cap comparació. Comparat contra `data/census_income_
+  diff_report_2.csv` (motor actual, C410+renom corregits), EXCLÒS C100
+  (mai comptat pel nostre motor):
+
+    Total: TP=20, FN=6, FP=13 -- Precisió=60.6%, Recall=76.9%, F1=67.8%.
+    D1/D2/D5: coincidència EXACTA (0 FN, 0 FP).
+    D3/D4/D6/D7: coincidència parcial (detall complet al document).
+
+  Verificat PROGRAMÀTICAMENT (Python), no a mà -- el primer intent manual
+  va confondre les columnes C422/C510 en llegir el CSV (error real,
+  detectat en re-verificar), confirmant per què aquest tipus de càlcul
+  no s'ha de confiar a l'aritmètica manual per a un document permanent.
+
+  TROBALLES NOVES (patrons sistemàtics, mai vistos abans perquè calia
+  ground truth cel·la a cel·la per detectar-los):
+  - **C312 (valors categòrics) mai es detecta correctament** (0 TP, 3
+    FN) -- el paper el marca 3 cops, el motor cap.
+  - **C221/C322 es sobre-detecten sistemàticament** (precisió 20% i 0%)
+    -- el motor hi troba senyal que el paper no confirma.
+  - **C210/C421/C422 detectats perfectament** (5/5 TP, 0 errors).
+  - **C223 mai un fals positiu, però perd D6/D7** -- exactament els
+    renoms semàntics que l'heurística per nom normalitzat (T-16) no pot
+    atrapar per disseny, confirmant amb dades reals una limitació ja
+    coneguda.
+
+  RESULTAT: cap canvi de codi -- `docs/census_income_validation_report.
+  md` (nova secció "Comparativa codi per codi"), `docs/census_income_
+  alignment_study.md` (actualitzat, l'opció recomanada ja s'ha fet),
+  `docs/decisions_tfg.txt` (aquesta entrada + pendent històric marcat
+  `[x]`). C312 i C221/C322 queden com a pistes pendents d'investigar,
+  no corregides en aquesta sessió.
+
+
 ================================================================================
 BLOC 4 — DECISIONS D'ABAST
 ================================================================================
@@ -1537,13 +1583,14 @@ PRÒXIMES DECISIONS PENDENTS
     (`data/change_classification_1.csv`). 2 bugs reals corregits durant
     l'execució (`unhashable type: 'dict'` en columnes d'àudio/imatge;
     cost desproporcionat de datasets "chunked", vegeu T-10).
-[ ] Si es vol el "% d'acord codi per codi" exacte contra Census Income
-    (no només el total agregat), algú (Joan) ha de transcriure a mà la
-    Taula 1 del paper mirant la imatge original — l'extracció del PDF no
-    conserva quines cel·les concretes tenen "✔". Estudi d'opcions complet
-    a `docs/census_income_alignment_study.md`: abans de transcriure-la a
-    mà, PREGUNTAR AL DIRECTOR si la Taula 1 original existeix en un
-    format estructurat (full de càlcul/CSV) — més ràpid si existeix.
+[x] "% d'acord codi per codi" exacte contra Census Income — RESOLT (T-18):
+    Joan ha transcrit a mà la Taula 1 del paper (imatge original) per a
+    D1-D7. Comparativa real: Precisió 60.6%, Recall 76.9%, F1 67.8%.
+    Detall complet a `docs/census_income_validation_report.md`, secció
+    "Comparativa codi per codi". Pendent nou (no aquest): investigar per
+    què C312 mai es detecta correctament i per què C221/C322 es
+    sobre-detecten — vegeu `docs/census_income_alignment_study.md`,
+    "Pas pendent (actualitzat)".
 [ ] Confirmació humana final (Joan + director) de la classificació TP/REVIEW
     de US-108 — l'automatització és una heurística, no una validació
     manual tancada

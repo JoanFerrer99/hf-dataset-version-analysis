@@ -3,8 +3,15 @@
 > Motivat per una pregunta directa: la comparativa contra el ground
 > truth de Census Income actualment no és exacta -- són els diffs la
 > millor opció? Com es podria arreglar? Aquest document estudia les
-> opcions i recomana un camí, **sense tancar-lo** -- l'opció recomanada
-> exigeix feina manual fora de l'abast d'una sessió de codi.
+> opcions i en recomana una.
+>
+> **ACTUALITZACIÓ: l'opció recomanada (1, transcripció manual) ja s'ha
+> fet.** Joan ha transcrit a mà la Taula 1 del paper (mirant la imatge
+> original) per a D1-D7. La comparativa codi per codi real -- Precisió
+> 60.6%, Recall 76.9%, F1 67.8% -- ja està documentada a `docs/
+> census_income_validation_report.md`, secció "Comparativa codi per
+> codi". Aquest document es manté com a registre de les opcions
+> considerades i com a base per als propers passos (secció final).
 
 ## És el motor de diffing el problema?
 
@@ -79,8 +86,19 @@ distribution`/`diff_correlation`, actualment un 5% fix -- vegeu `docs/
 taiga/taxonomy.md`, "Tècniques alternatives considerades") -- però no
 abans de tenir un ground truth fiable amb què comparar-los.
 
-## Pas pendent
+## Pas pendent (actualitzat)
 
-Preguntar al director (opció 2) si la Taula 1 original existeix en un
-format estructurat abans de decidir si cal transcriure-la a mà (opció 1).
-Registrat com a punt pendent a `docs/decisions_tfg.txt`.
+L'opció 2 (demanar la taula original al director) ha quedat superada --
+ja es va transcriure a mà (opció 1). Els passos pendents ara són els que
+la comparativa real ha revelat (`docs/census_income_validation_report.md`,
+"Comparativa codi per codi"):
+1. Investigar per què C312 (valors d'una columna categòrica) mai es
+   detecta correctament (0 TP, 3 FN) -- possible llindar massa estricte
+   o solapament conceptual amb C530.
+2. Investigar per què C221/C322 es sobre-detecten sistemàticament
+   (precisió 20% i 0%) -- possible manca de llindar de sensibilitat a
+   `diff_numeric_values`, o revisió manual incompleta del propi paper.
+
+Cap d'aquests dos punts s'ha corregit en aquesta sessió -- són candidats
+per a un treball futur, un cop es confirmi amb el director si val la pena
+prioritzar-los.

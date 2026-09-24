@@ -49,9 +49,10 @@ Un cop construït el classificador (US-305, reutilitzant el mateix motor sense r
 
 ## Limitacions
 
-- **"% d'acord codi per codi" mai resolt**: l'extracció del PDF del paper no conserva l'alineació de columnes de la Taula 1 amb marques "✔" -- només els totals per fila/columna són fiables. La comparació d'aquest exercici és per total agregat per dataset, no codi per codi. No és una limitació resoluble sense accedir a una font del paper amb estructura de taula preservada (p.e. el dataset original de l'autor, si existeix).
-- **D6 (`ETdanR/adult_income`)**: l'ambigüitat de quin dels 3 fitxers correspon a la versió D6 del paper queda sense resoldre -- la sobre-detecció observada (6 vs 4) és coherent amb haver triat un fitxer incorrecte, però no s'ha confirmat.
+- **"% d'acord codi per codi" -- RESOLT** (vegeu "Comparativa codi per codi" més avall): Joan ha transcrit a mà la Taula 1 del paper mirant la imatge original, permetent una comparació cel·la a cel·la real (Precisió 60.6%, Recall 76.9%, F1 67.8%). La limitació d'integritat de l'extracció automàtica del PDF (que no conservava l'alineació de columnes) segueix sent certa -- només es va resoldre transcrivint-la a mà, tal com recomanava `docs/census_income_alignment_study.md`.
+- **D6 (`ETdanR/adult_income`)**: l'ambigüitat de quin dels 3 fitxers correspon a la versió D6 del paper queda sense resoldre -- la sobre-detecció observada (4 FP a D6) és coherent amb haver triat un fitxer incorrecte, però no s'ha confirmat.
 - **C100 fora d'abast**: cap dels totals d'aquest exercici inclou C100 (metadada/dataset card) -- el motor de diffing tabular mai el tracta (vegeu `docs/taiga/taxonomy.md`, "Limitacions conegudes").
+- **C312 i C221/C322**: patrons sistemàtics reals trobats a la comparativa codi per codi (C312 mai es detecta correctament; C221/C322 es sobre-detecten) -- pendents d'investigar, vegeu la secció corresponent.
 
 ## Re-validació posterior amb C410 (Decisió T-15)
 
@@ -127,6 +128,75 @@ verificat manualment que els canvis detectats a D6/D7 són REALS (p.e.
 quartils d'edat 28/37/48 -> 31/40/49 a D6) -- no un bug de la tècnica. No
 es pot confirmar si coincideix amb la cel·la exacta del paper (mateixa
 limitació d'integritat del ground truth que la resta de codis).
+
+## Comparativa codi per codi (Taula 1 del paper transcrita a mà)
+
+La limitació d'integritat del ground truth (extracció del PDF sense
+alineació de columnes) es resol AQUÍ per primer cop: Joan ha transcrit a
+mà, mirant la imatge original del paper, quins codis concrets marca la
+Taula 1 per a cada D_i (D1-D7). Els totals per fila coincideixen
+EXACTAMENT amb `PAPER_ROW_TOTALS` (ja documentat a T-08) -- confirma que
+la transcripció és consistent amb el que ja se sabia dels totals agregats.
+
+Comparat contra `data/census_income_diff_report_2.csv` (motor actual,
+amb C410 i l'heurística de renom corregits -- T-14/T-16), **exclosos els
+codis on el paper marca `C100`** (fora d'abast del nostre motor, mai
+comptat):
+
+| Versió | Paper (15 codis) | Paper - C100 | El nostre motor | TP | FN | FP |
+|---|---|---|---|---|---|---|
+| D1 | 3 | 2 | 2 | 2 | 0 | 0 |
+| D2 | 3 | 2 | 2 | 2 | 0 | 0 |
+| D3 | 7 | 6 | 7 | 4 | 2 | 3 |
+| D4 | 7 | 6 | 7 | 5 | 1 | 2 |
+| D5 | 4 | 3 | 3 | 3 | 0 | 0 |
+| D6 | 4 | 3 | 6 | 2 | 1 | 4 |
+| D7 | 5 | 4 | 6 | 2 | 2 | 4 |
+| **Total** | | **26** | | **20** | **6** | **13** |
+
+**Precisió = 60.6% (20/33), Cobertura (recall) = 76.9% (20/26), F1 = 67.8%.**
+D1/D2/D5 són coincidències EXACTES (0 FN, 0 FP).
+
+Detall per dataset (codis exactes):
+- **D1**: TP={C223,C410}
+- **D2**: TP={C223,C410}
+- **D3**: TP={C210,C223,C311,C422}; FN={C312,C410}; FP={C221,C222,C322}
+- **D4**: TP={C210,C222,C223,C311,C422}; FN={C312}; FP={C221,C322}
+- **D5**: TP={C221,C223,C410}
+- **D6**: TP={C422,C530}; FN={C223}; FP={C221,C222,C312,C322}
+- **D7**: TP={C222,C421}; FN={C223,C312}; FP={C221,C311,C322,C530}
+
+Per codi (només els codis que apareixen almenys un cop en algun costat):
+
+| Codi | TP | FN | FP | Lectura |
+|---|---|---|---|---|
+| C210 | 2 | 0 | 0 | Perfecte |
+| C221 | 1 | 0 | 4 | Sobre-detectat (precisió 20%) |
+| C222 | 2 | 0 | 2 | Precisió 50% |
+| C223 | 5 | 2 | 0 | Mai un fals positiu; perd D6/D7 -- exactament els renoms SEMÀNTICS (`income`->`over_threshold` a D6/D7-estil) que l'heurística per nom normalitzat (T-16) no pot atrapar per disseny |
+| C311 | 2 | 0 | 1 | Precisió 67% |
+| C312 | 0 | 3 | 1 | **Mai un vertader positiu** -- els 3 cops que el paper el marca, el motor no el detecta |
+| C322 | 0 | 0 | 4 | El paper mai el marca; el motor el detecta 4 cops -- 0% precisió |
+| C410 | 3 | 1 | 0 | Mai un fals positiu; recall 75% |
+| C421 | 1 | 0 | 0 | Perfecte |
+| C422 | 3 | 0 | 0 | Perfecte |
+| C530 | 1 | 0 | 1 | Precisió 50% |
+
+**Dos patrons sistemàtics reals que val la pena investigar** (no
+corregits en aquesta sessió -- registrat com a pas pendent):
+1. **C312 (valors d'una columna categòrica) mai es detecta correctament**
+   (0 TP, 3 FN) -- el paper el marca 3 cops (D3, D4, D7) i el motor no
+   n'hi troba cap senyal. Candidat a revisar: potser el llindar actual
+   de `diff_categorical_values` (canvi de CONJUNT de categories, no de
+   freqüència) és massa estricte, o el paper compta canvis de categoria
+   que el nostre disseny classifica com a C530 (distribució) en lloc de
+   C312.
+2. **C221/C322 es sobre-detecten sistemàticament** (precisió 20% i 0%
+   respectivament) -- el motor hi troba senyal que el paper no confirma.
+   Podria ser detecció genuïna que el paper no va anotar (revisió manual
+   incompleta del propi paper), o llindars massa sensibles al nostre
+   motor (`diff_numeric_values` no té llindar de sensibilitat -- qualsevol
+   diferència de mitjana/std/min/max compta, per petita que sigui).
 
 ## Estat i reproduïbilitat
 
