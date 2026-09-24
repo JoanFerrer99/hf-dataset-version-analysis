@@ -1540,7 +1540,10 @@ PRÒXIMES DECISIONS PENDENTS
 [ ] Si es vol el "% d'acord codi per codi" exacte contra Census Income
     (no només el total agregat), algú (Joan) ha de transcriure a mà la
     Taula 1 del paper mirant la imatge original — l'extracció del PDF no
-    conserva quines cel·les concretes tenen "✔".
+    conserva quines cel·les concretes tenen "✔". Estudi d'opcions complet
+    a `docs/census_income_alignment_study.md`: abans de transcriure-la a
+    mà, PREGUNTAR AL DIRECTOR si la Taula 1 original existeix en un
+    format estructurat (full de càlcul/CSV) — més ràpid si existeix.
 [ ] Confirmació humana final (Joan + director) de la classificació TP/REVIEW
     de US-108 — l'automatització és una heurística, no una validació
     manual tancada
