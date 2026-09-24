@@ -1,0 +1,77 @@
+dataset_id,extension,file_count,is_tabular,is_substantive
+ykorkmaz/aloha_open_bottle_failure,(sense extensio),1,False,False
+ykorkmaz/aloha_open_bottle_failure,.md,1,False,False
+ykorkmaz/aloha_open_bottle_failure,.parquet,1,True,True
+ykorkmaz/aloha_open_bottle_failure,.parquet,2,True,False
+ykorkmaz/aloha_open_bottle_failure,.json,2,False,False
+ykorkmaz/aloha_open_bottle_failure,.mp4,4,False,True
+davidgoss/so100_test,(sense extensio),1,False,False
+davidgoss/so100_test,.md,1,False,False
+davidgoss/so100_test,.parquet,7,True,True
+davidgoss/so100_test,.jsonl,2,False,False
+davidgoss/so100_test,.json,2,False,False
+davidgoss/so100_test,.mp4,14,False,True
+jackvial/koch_test,(sense extensio),1,False,False
+jackvial/koch_test,.md,1,False,False
+jackvial/koch_test,.parquet,3,True,True
+jackvial/koch_test,.jsonl,2,False,False
+jackvial/koch_test,.json,3,False,False
+jackvial/koch_test,.safetensors,2,False,False
+jackvial/koch_test,.mp4,5,False,True
+hotosm/fAIr-guru-td-buildings,(sense extensio),1,False,False
+hotosm/fAIr-guru-td-buildings,.md,1,False,False
+hotosm/fAIr-guru-td-buildings,.parquet,1,True,True
+yunosuken/sentiment-train,(sense extensio),1,False,False
+yunosuken/sentiment-train,.md,1,False,False
+yunosuken/sentiment-train,.parquet,3,True,True
+xhaka3456/Pick_Place,(sense extensio),1,False,False
+xhaka3456/Pick_Place,.md,1,False,False
+xhaka3456/Pick_Place,.parquet,140,True,True
+xhaka3456/Pick_Place,.jsonl,3,False,False
+xhaka3456/Pick_Place,.json,2,False,False
+xhaka3456/Pick_Place,.mp4,280,False,True
+HanyueShen/YunXiaoHe-RISA-Avalon-Eval,(sense extensio),1,False,False
+HanyueShen/YunXiaoHe-RISA-Avalon-Eval,.csv,4,True,True
+HanyueShen/YunXiaoHe-RISA-Avalon-Eval,.md,3,False,False
+HanyueShen/YunXiaoHe-RISA-Avalon-Eval,.json,2,False,True
+HanyueShen/YunXiaoHe-RISA-Avalon-Eval,.pdf,5,False,True
+HanyueShen/YunXiaoHe-RISA-Avalon-Eval,.png,3,False,True
+HanyueShen/YunXiaoHe-RISA-Avalon-Eval,.svg,3,False,True
+nvidia/earth2studio-assets,(sense extensio),1,False,False
+nvidia/earth2studio-assets,.md,1,False,False
+nvidia/earth2studio-assets,.png,13,False,True
+nvidia/earth2studio-assets,.webp,1,False,True
+nvidia/earth2studio-assets,.gif,1,False,True
+nvidia/earth2studio-assets,.json,227,False,True
+aaron-ser/so101-cardboard-box-pickup-dataset,(sense extensio),1,False,False
+aaron-ser/so101-cardboard-box-pickup-dataset,.parquet,35,True,True
+aaron-ser/so101-cardboard-box-pickup-dataset,.jsonl,3,False,False
+aaron-ser/so101-cardboard-box-pickup-dataset,.json,1,False,False
+aaron-ser/so101-cardboard-box-pickup-dataset,.mp4,70,False,True
+lipsop/so101-block-in-bin-100ep,(sense extensio),4,False,True
+lipsop/so101-block-in-bin-100ep,(sense extensio),1,False,False
+lipsop/so101-block-in-bin-100ep,.md,1,False,False
+lipsop/so101-block-in-bin-100ep,.parquet,100,True,True
+lipsop/so101-block-in-bin-100ep,.jsonl,3,False,False
+lipsop/so101-block-in-bin-100ep,.json,1,False,False
+lipsop/so101-block-in-bin-100ep,.sh,1,False,True
+lipsop/so101-block-in-bin-100ep,.mp4,200,False,True
+andrewatef/p-small,(sense extensio),1,False,False
+andrewatef/p-small,.md,1,False,False
+andrewatef/p-small,.parquet,3,True,True
+AfonsoLob/xarm_smolvla,(sense extensio),1,False,False
+AfonsoLob/xarm_smolvla,.md,1,False,False
+AfonsoLob/xarm_smolvla,.parquet,1,True,True
+AfonsoLob/xarm_smolvla,.parquet,2,True,False
+AfonsoLob/xarm_smolvla,.json,2,False,False
+AfonsoLob/xarm_smolvla,.mp4,1,False,True
+Angry-Lasagna/redcube_bluebox,(sense extensio),1,False,False
+Angry-Lasagna/redcube_bluebox,.md,1,False,False
+Angry-Lasagna/redcube_bluebox,.parquet,1,True,True
+Angry-Lasagna/redcube_bluebox,.parquet,2,True,False
+Angry-Lasagna/redcube_bluebox,.json,2,False,False
+Angry-Lasagna/redcube_bluebox,.mp4,2,False,True
+nkandpa2/mediawiki-dolma,(sense extensio),1,False,False
+nkandpa2/mediawiki-dolma,.md,1,False,False
+nkandpa2/mediawiki-dolma,.gz,681,False,True
+nkandpa2/mediawiki-dolma,.sh,1,False,True
