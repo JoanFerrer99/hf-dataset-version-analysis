@@ -70,6 +70,12 @@ def download_tabular_file_at_revision(
     `eligibility_scan.classify_dataset` (població real, intra-repositori)
     per obtenir el "abans"/"després" a comparar.
 
+    Carrega el fitxer SENCER amb `pandas` (`read_parquet`/`read_csv`), no
+    projecció per columnes -- vegeu `docs/decisions_tfg.txt`, Decisió
+    T-15 ("per què pandas, i per què és l'opció correcta al cost
+    actual") per a la justificació completa i la primera optimització
+    pendent si la població elegible creix.
+
     :param repo_id: identificador del dataset (`owner/name`).
     :param path: ruta relativa del fitxer dins del repositori.
     :param revision: SHA del commit a llegir.
