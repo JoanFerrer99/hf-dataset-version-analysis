@@ -1378,5 +1378,16 @@ PRÒXIMES DECISIONS PENDENTS
     només es verificava amb `is_tabular_path` monkeypatched), vegeu
     `tests/test_eligibility_scan.py::TestClassifyCommitTabularChanges::
     test_real_binary_extensions_never_reach_download_or_classification`.
+[ ] Feedback del director (reunió): un repositori pot tenir més d'un
+    fitxer tabular -- estudiar-los per separat? Investigació feta amb
+    dades reals (`docs/multi_file_repos_investigation.md`,
+    `data/extension_report_1.csv`): dels 14 elegibles, 5 tenen >2 fitxers
+    tabulars; 4 segueixen el patró de "chunking" LeRobot
+    (`chunk-XXX/episode_XXXXXX.parquet`, un sol dataset partit, NO
+    diversos), 1 (`HanyueShen/YunXiaoHe-RISA-Avalon-Eval`) sembla taules
+    genuïnament diferents (leaderboard/ablació/puntuacions). PENDENT: cap
+    canvi de codi implementat -- decisió final amb el director sobre si
+    val la pena afegir un camp `path` a `ChangeLabel` per al cas de
+    taules genuïnes (només 1/14 casos actualment).
 
 ================================================================================
