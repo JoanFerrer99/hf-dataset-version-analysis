@@ -1018,6 +1018,135 @@ Estat: ✅ Fet
   `ruff check` net.
 
 
+DECISIÓ T-15: notebooks/validate_census_income.py -- re-validació de Census Income com a script aïllat, permanent
+Data: setembre 2026
+Responsable: Joan
+Estat: ✅ Fet
+
+  MOTIU (petició directa de Joan: "podries revalidar el census income en
+  un altre script apart sense afectar el pipeline actual d'una altra
+  manera?"): la validació original (US-304, `docs/census_income_
+  validation_report.md`) es va fer ABANS d'implementar C410 (T-14) -- no
+  hi ha cap registre de si el motor detecta reordenacions de files sobre
+  el ground truth Census Income. Calia tancar aquest buit SENSE revifar
+  codi d'adquisició dins de `change_diff.py` (contradiria T-11: aquest
+  tipus de codi puntual no ha de viure com a codi actiu del pipeline).
+
+  TROBALLA EN RECUPERAR EL CODI D'ADQUISICIÓ: el codi original
+  (`CENSUS_INCOME_SOURCES`, `download_uci_adult_baseline`, `download_
+  census_income_version`) NOMÉS va arribar a existir, comitejat, al
+  commit `bd37bf9` (el "desat d'editor obsolet" identificat i corregit
+  en aquesta mateixa sessió, vegeu la nota de disseny sobre la regressió
+  detectada abans de T-13) -- la resta de vegades que va existir va ser
+  només en l'arbre de treball local, mai comitejat. Els ajudants de
+  classificació (`build_classification_table`, `summarize_agreement`,
+  `run_census_income_classification`) esmentats a T-11 NO es van arribar
+  a comitejar MAI mai -- no recuperables de l'historial de git.
+
+  DISSENY -- nou fitxer `notebooks/validate_census_income.py`, AÏLLAT del
+  pipeline principal (no l'importa `eligibility_scan.py`/`version_
+  extractor.py`/`run_pipeline.py`, ni ell els importa a ells -- l'única
+  reutilització és `version_extractor.get_next_run_id`, una funció pura
+  de numeració de fitxers, sense cap efecte sobre el pipeline):
+  1. `download_uci_adult_baseline`/`download_census_income_version`/
+     `CENSUS_INCOME_SOURCES` recuperats de `bd37bf9`, adaptats per usar
+     `errors.DEFAULT_RETRY_CONFIG` (consolidat a T-12, no existia quan es
+     va escriure l'original).
+  2. En lloc de reconstruir `build_classification_table`/`summarize_
+     agreement` (mai comitejats, doncs no recuperables), l'orquestració
+     nova crida DIRECTAMENT el motor VIU (`change_diff.compute_all_diffs`/
+     `classify_diffs`, incloent C410) -- disseny més net que ressuscitar
+     bastida antiga, i garanteix que la re-validació usa exactament el
+     mateix motor que la població real.
+  3. Outputs NUMERATS (`census_income_diff_report_<run_id>.csv`/
+     `census_income_classification_<run_id>.csv`, via `version_extractor.
+     get_next_run_id`) -- MAI sobreescriuen els originals congelats
+     (`data/census_income_diff_report.csv`/`data/census_income_
+     classification.csv`, que segueixen sent el registre pre-C410).
+
+  RESULTAT REAL (`data/census_income_diff_report_1.csv`/`data/
+  census_income_classification_1.csv`, 32 etiquetes): **C410 detecta
+  reordenació de files a D1, D2 i D5** (3 de 7) -- contrast interessant
+  amb la població real, on C410 va aparèixer 0 cops (T-14): D1/D2/D5 són
+  repujades independents d'un dataset públic conegut, exactament el
+  context on una reordenació (`shuffle` a l'exportació, ordre d'escriptura
+  diferent) és habitual -- confirma que la tècnica funciona correctament
+  fora del cas sintètic amb què es va verificar originalment (T-14).
+  `codes_detected` puja d'1 a 2 (D1/D2) i de 2 a 3 (D5); D3/D4/D6/D7 no
+  canvien (C410=False).
+
+  RESULTAT: script nou, `ruff check` net, cap canvi a cap fitxer del
+  pipeline principal. Registre complet a `docs/census_income_validation_
+  report.md`, secció "Re-validació posterior amb C410".
+
+
+DECISIÓ T-16: heurística de renom (C223) canvia de posició ordinal a nom normalitzat -- bug real confirmat i corregit
+Data: setembre 2026
+Responsable: Joan
+Estat: ✅ Fet
+
+  MOTIU (pregunta directa de Joan, comparant amb el veredicte del paper:
+  "we detect codes of 221/222 and 530 than sometimes are wrong. Is it
+  for some known problem? can we solve it?"): en lloc de respondre en
+  abstracte, es va inspeccionar directament la sortida de `diff_columns`
+  sobre D3/D4/D6/D7 (`notebooks/validate_census_income.py`, ja disponible
+  des de T-15). Confirmat: **bug real** a l'heurística de renom anterior
+  (posició ordinal + dtype).
+
+  DIAGNÒSTIC: D3 té les columnes completament reordenades respecte D0.
+  L'heurística antiga aparellava `cols_before[i]` amb `cols_after[i]` --
+  amb tot reordenat, aquest aparellament esdevé COINCIDÈNCIA, no senyal.
+  Resultat real observat: `renamed = [(fnlwgt, capital_loss), (education-
+  num, final_weight), (capital-loss, is_male)]` -- CAP d'aquests 3
+  parells té relació semàntica real; són aparellaments purament
+  accidentals de posició+dtype. Pitjor encara: NO calia reordenació
+  completa perquè el bug aparegués -- a D6/D7 (`fnlwgt`/`education`
+  simplement ELIMINADES, sense reordenar la resta), la columna eliminada
+  desplaça la posició de TOTES les columnes següents, trencant
+  l'alineació per a renoms genuïns més endavant a la seqüència
+  (`education-num`->`educational-num` a D6, `income`->`Y` a D7, cap
+  detectat per l'heurística antiga tot i ser renoms plausibles).
+
+  CORRECCIÓ: nova funció `_normalize_column_name` (minúscules, sense
+  `-`/`_`/`.`/espai). `diff_columns` ara aparella una columna eliminada
+  amb una afegida com a renom si el NOM NORMALITZAT coincideix EXACTAMENT
+  (no per posició) i el dtype és de la mateixa família. Deliberadament
+  NO es fa servir similitud de text aproximada (Levenshtein) -- només
+  diferències de separador -- per no arriscar aparellar columnes NOMÉS
+  semblants textualment però no relacionades (p.e. NO aparellar
+  `"education-num"` amb `"educational-num"`, que difereixen en 2
+  caràcters reals, no només de separador).
+
+  RESULTAT REAL sobre Census Income (`data/census_income_diff_report_2.
+  csv`/`census_income_classification_2.csv`, re-executat amb la
+  correcció): D3 ara detecta correctament 4 renoms reals (`marital-
+  status`->`marital_status`, `capital-gain`->`capital_gain`, `capital-
+  loss`->`capital_loss`, `native-country`->`native_country`) que abans
+  es perdien (mal classificats com a add/remove separats), SENSE cap
+  aparellament incorrecte. **`codes_detected` NO canvia** (D3/D4 segueixen
+  a 7/7, D6/D7 a 6) -- el bug afectava QUINES columnes concretes
+  s'atribuïen a renom vs. add/remove, no el booleà agregat per codi (amb
+  prou columnes afegides/eliminades ja fora del cas, C221/C222/C223 ja
+  eren `True` de totes maneres). El valor de la correcció és la
+  CORRECCIÓ MECÀNICA (arribar al resultat correcte pel motiu correcte),
+  no un canvi de xifres visibles al resum.
+
+  SOBRE C530 (l'altra part de la pregunta de Joan): verificat manualment
+  que els canvis de distribució detectats a D6/D7 són REALS (p.e.
+  quartils d'edat 28/37/48 -> 31/40/49 a D6, canvi de balanç de classe
+  d'`income` de 26 punts percentuals) -- NO és un bug de la tècnica.
+  El que NO es pot confirmar és si coincideix amb la cel·la exacta que
+  marca el paper -- mateixa limitació d'integritat del ground truth
+  (T-08) que la resta de codis, no una cosa nova ni solucionable sense
+  accedir a una font del paper amb estructura de taula preservada.
+
+  RESULTAT: `tests/test_change_diff.py::TestDiffColumns` actualitzat (2
+  tests antics reescrits, 3 de nous incloent una regressió explícita del
+  bug real trobat) + `TestNormalizeColumnName` (2 tests). 180 tests en
+  total, `ruff check` net. `docs/taiga/taxonomy.md` (C223) i
+  `docs/census_income_validation_report.md` actualitzats.
+
+
 ================================================================================
 BLOC 4 — DECISIONS D'ABAST
 ================================================================================

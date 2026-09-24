@@ -1,6 +1,6 @@
 # US-304 — Validació d'extractibilitat del motor de diffing (Census Income D1–D7)
 
-> **Instantània històrica congelada**, consolidada manualment (setembre 2026) a partir de `docs/decisions_tfg.txt` (Decisions T-07, T-08, T-09, T-11) i `docs/architecture.md`. El codi que va generar aquests resultats (`CENSUS_INCOME_SOURCES`, `download_uci_adult_baseline`, `download_census_income_version`, `build_detectability_report`, `run_validation`, `run_census_income_classification`, `summarize_agreement`) es va **eliminar deliberadament** de `notebooks/change_diff.py` (Decisió T-11) un cop la pregunta que responia va quedar contestada. Aquest document, junt amb `data/census_income_diff_report.csv` i `data/census_income_classification.csv` (totes dues fitxers tracked a git), és el **registre permanent** d'aquest exercici -- no es regenera a cap execució, i **no cal tornar-lo a córrer**.
+> **Instantània històrica** (setembre 2026), consolidada manualment a partir de `docs/decisions_tfg.txt` (Decisions T-07, T-08, T-09, T-11) i `docs/architecture.md`. L'exercici ORIGINAL (D1–D7 vs D0, sense C410) és tancat i el seu codi d'adquisició es va eliminar deliberadament de `notebooks/change_diff.py` (Decisió T-11) -- `data/census_income_diff_report.csv`/`data/census_income_classification.csv` en són el registre permanent, mai regenerat. Des de la Decisió T-15, aquest exercici SÍ és re-validable quan calgui, via `notebooks/validate_census_income.py` -- un script permanent i aïllat del pipeline principal (vegeu "Re-validació posterior amb C410" més avall).
 
 ## Abast: D1–D7, no D1–D9
 
@@ -53,11 +53,96 @@ Un cop construït el classificador (US-305, reutilitzant el mateix motor sense r
 - **D6 (`ETdanR/adult_income`)**: l'ambigüitat de quin dels 3 fitxers correspon a la versió D6 del paper queda sense resoldre -- la sobre-detecció observada (6 vs 4) és coherent amb haver triat un fitxer incorrecte, però no s'ha confirmat.
 - **C100 fora d'abast**: cap dels totals d'aquest exercici inclou C100 (metadada/dataset card) -- el motor de diffing tabular mai el tracta (vegeu `docs/taiga/taxonomy.md`, "Limitacions conegudes").
 
+## Re-validació posterior amb C410 (Decisió T-15)
+
+Els resultats de dalt (D1–D7 vs D0) es van obtenir ABANS d'implementar
+C410 (ordre de files, Decisió T-14) -- no reflectien si el motor detecta
+reordenacions de files sobre aquest ground truth. `notebooks/
+validate_census_income.py` (nou script, AÏLLAT del pipeline principal --
+no l'importa cap script de `eligibility_scan.py`/`version_extractor.py`/
+`run_pipeline.py`, ni ell els importa a ells) reexecuta la MATEIXA
+comparació D_i vs D0 amb el motor actual de `change_diff.py` (reutilitzat
+sense canvis), per tancar aquest buit sense revifar codi d'adquisició
+dins del mòdul principal.
+
+**Resultat real** (`data/census_income_diff_report_2.csv` / `data/
+census_income_classification_2.csv` -- re-executat un cop més a la
+Decisió T-16, veure secció següent; els `codes_detected` no van canviar
+entre la primera execució i aquesta, 32 etiquetes en total):
+
+| Versió | Codis detectats (abans) | Codis detectats (amb C410) | C410 |
+|---|---|---|---|
+| D1 | 1 | 2 | **True** |
+| D2 | 1 | 2 | **True** |
+| D3 | 7 | 7 | False |
+| D4 | 7 | 7 | False |
+| D5 | 2 | 3 | **True** |
+| D6 | 6 | 6 | False |
+| D7 | 6 | 6 | False |
+
+**C410 detecta reordenació de files en D1, D2 i D5** -- un senyal real i
+plausible: a diferència de la població real (on C410 va aparèixer 0 cops
+sobre 11 datasets, vegeu `docs/architecture.md`), aquí D1/D2/D5 són
+repujades independents d'un dataset públic ben conegut a comptes/orgs
+diferents -- exactament el tipus de context on un reordenament (p.e. un
+`shuffle` en preparar l'export, o un ordre d'escriptura diferent del
+`DataFrame`) és habitual, i confirma que la tècnica de hash de contingut
+(vegeu `docs/taiga/taxonomy.md`, "Limitacions conegudes") funciona
+correctament fora del cas sintètic amb què es va verificar originalment.
+
+## Bug real trobat i corregit: heurística de renom (C223, Decisió T-16)
+
+Inspeccionant directament la sortida de `diff_columns` sobre D3/D4/D6/D7
+(possible gràcies a `validate_census_income.py`, T-15) es va confirmar un
+bug real a l'heurística de renom ANTERIOR (posició ordinal + dtype): amb
+columnes reordenades (D3/D4) o simplement amb UNA columna eliminada abans
+d'una altra de renombrada (D6/D7, sense reordenar res més), l'aparellament
+per posició deixa de ser fiable -- confirmat empíricament, no suposat:
+
+```
+D3, ABANS de la correcció:
+  renamed = [(fnlwgt, capital_loss), (education-num, final_weight), (capital-loss, is_male)]
+```
+
+Cap d'aquests 3 parells té relació semàntica real -- són aparellaments
+purament accidentals de posició+dtype (una columna eliminada anteriorment
+havia desplaçat totes les posicions següents). **Corregit**: l'heurística
+ara aparella per NOM NORMALITZAT (minúscules, sense separador) en lloc de
+posició:
+
+```
+D3, DESPRÉS de la correcció:
+  renamed = [(marital-status, marital_status), (capital-gain, capital_gain),
+             (capital-loss, capital_loss), (native-country, native_country)]
+```
+
+4 renoms genuïns detectats correctament (abans es perdien, mal classificats
+com a add/remove separats), zero aparellaments incorrectes. **Els
+`codes_detected` no canvien** (D3/D4 segueixen a 7/7) -- el bug afectava
+QUINES columnes s'atribuïen a renom vs. add/remove, no el booleà agregat
+per codi. Detall complet a `docs/decisions_tfg.txt`, T-16.
+
+**Sobre C530** (distribució, també qüestionat en la mateixa revisió):
+verificat manualment que els canvis detectats a D6/D7 són REALS (p.e.
+quartils d'edat 28/37/48 -> 31/40/49 a D6) -- no un bug de la tècnica. No
+es pot confirmar si coincideix amb la cel·la exacta del paper (mateixa
+limitació d'integritat del ground truth que la resta de codis).
+
 ## Estat i reproduïbilitat
 
-**Exercici tancat, d'un sol ús.** El codi d'adquisició/informe (D0–D7) es va eliminar deliberadament de `notebooks/change_diff.py` (Decisió T-11) -- no viu com a codi actiu al projecte. Els registres permanents d'aquest exercici són:
-1. Aquest document.
-2. `data/census_income_diff_report.csv` (detall per codi, `C210`...`C530`).
-3. `data/census_income_classification.csv` (30 etiquetes de canvi).
+**Exercici original tancat, d'un sol ús** (D1–D7 vs D0, sense C410) --
+el codi d'adquisició es va eliminar deliberadament de `notebooks/
+change_diff.py` (Decisió T-11), no viu com a codi actiu al pipeline
+principal. **Re-validable, sí** (Decisió T-15): `notebooks/
+validate_census_income.py` és un script permanent i aïllat -- es pot
+tornar a executar quan calgui (p.e. després d'un altre canvi important al
+motor de diffing) sense tocar `eligibility_scan.py`/`version_extractor.
+py`/`run_pipeline.py`, numerant els seus outputs (`census_income_diff_
+report_<run_id>.csv`/`census_income_classification_<run_id>.csv`) sense
+sobreescriure mai els originals congelats.
 
-Si mai calgués tornar a córrer aquest exercici (p.e. per validar un canvi important al motor de diffing), el codi d'adquisició es pot recuperar de l'historial de git: `git show ab62d07 -- notebooks/change_diff.py` (commit on es va introduir originalment). El motor de diffing en si (`diff_*`/`compute_all_diffs`, incloent `diff_row_order`/C410 afegit a la Decisió T-14, posterior a aquest exercici) es manté viu i es reutilitza sense canvis sobre la població real -- vegeu `docs/architecture.md`, "Resultats reals — classificació sobre la població elegible".
+Registres permanents d'aquest exercici:
+1. Aquest document.
+2. `data/census_income_diff_report.csv` / `data/census_income_classification.csv` (registre original, pre-C410, 30 etiquetes).
+3. `data/census_income_diff_report_2.csv` / `data/census_income_classification_2.csv` (re-validació amb C410 (T-15) i l'heurística de renom corregida (T-16), 32 etiquetes -- `_1` es va generar i descartar al mig d'aquesta mateixa sessió, previ a T-16, sense diferència als `codes_detected`).
+4. `notebooks/validate_census_income.py` (codi viu, reutilitzable -- l'adquisició D0-D7 ja no cal recuperar-la de l'historial de git).

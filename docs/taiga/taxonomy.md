@@ -162,12 +162,22 @@ heurístiques explícitament documentades -- cap és una "caixa negra".
   un canvi d'ordre pot afectar pipelines d'ML que accedeixen a les dades
   per posició, potencialment requerint adaptació als components d'ingesta
   o preprocessament.
-- **C223** (renom de columna): heurística explícita -- una columna
-  eliminada i una afegida es tracten com a renom NOMÉS si ocupen la
-  mateixa posició ordinal i tenen dtype de la mateixa família; qualsevol
-  altre cas es reporta com a add/remove per separat, no com a renom.
-  Cap tècnica purament estructural distingeix un renom d'un remove+add
-  sense heurística (`change_diff.py:117-162`, `diff_columns`).
+- **C223** (renom de columna, Decisió T-16): heurística explícita -- una
+  columna eliminada i una afegida es tracten com a renom NOMÉS si el seu
+  NOM NORMALITZAT (minúscules, sense `-`/`_`/`.`/espai) coincideix
+  EXACTAMENT i tenen dtype de la mateixa família; qualsevol altre cas
+  (nom normalitzat diferent, p.e. `"sex"`->`"is_male"`) es reporta com a
+  add/remove per separat, no com a renom. Cap tècnica purament
+  estructural distingeix un renom SEMÀNTIC d'un remove+add sense
+  informació externa (`change_diff.py`, `diff_columns`/`_normalize_
+  column_name`). **Substitueix l'heurística anterior (posició ordinal +
+  dtype), que produïa aparellaments incorrectes** -- confirmat
+  empíricament sobre Census Income D3: `fnlwgt`->`capital_loss` i
+  `education-num`->`final_weight` es detectaven com a "renom" NOMÉS
+  perquè compartien posició per casualitat (una altra columna eliminada
+  abans havia desplaçat totes les posicions següents), sense cap relació
+  real entre elles -- vegeu `docs/census_income_validation_report.md`,
+  "Re-validació posterior amb C410 i renoms (T-16)".
 - **C421/C422** (afegir/eliminar fila): sense un identificador d'instància
   estable, NO es pot atribuir un canvi de recompte a "files afegides" vs
   "files eliminades" amb certesa -- només al signe del delta
@@ -187,13 +197,23 @@ heurístiques explícitament documentades -- cap és una "caixa negra".
 Per a cada codi següent, es va triar una tècnica més simple per sobre
 d'una alternativa més sofisticada -- decisions conscients, no llacunes
 obertes:
-- **C223 (renom)**: heurística posició+dtype triada per sobre d'una
-  alternativa de similitud de contingut (comparar distribucions de valors
-  entre la columna eliminada i l'afegida) -- menys risc de falsos
-  positius, cost computacional més baix.
+- **C223 (renom)**: nom normalitzat (insensible a separador) triat per
+  sobre d'una alternativa de similitud de text aproximada (p.e. distància
+  de Levenshtein, que hauria capturat `"education-num"`->`"educational-
+  num"` també) -- menys risc d'aparellar columnes NOMÉS semblants
+  textualment però no relacionades. També triat per sobre de comparar
+  distribucions de valors entre la columna eliminada i l'afegida --
+  cost computacional més baix, i el nom és un senyal més directe que la
+  distribució quan està disponible.
 - **C530 (distribució)**: quartils/freqüència relativa triats per sobre
   d'un test estadístic formal (Kolmogorov-Smirnov, `scipy`) -- evita una
   dependència nova només per a aquesta heurística (`change_diff.py:327-334`).
+  Verificat manualment sobre Census Income D6/D7 (`docs/census_income_
+  validation_report.md`) que els canvis detectats són reals (p.e. quartils
+  d'edat 28/37/48 -> 31/40/49 a D6, no un artefacte de la tècnica) --
+  el que NO es pot verificar és si coincideixen amb la cel·la exacta que
+  marca el paper (mateixa limitació d'integritat del ground truth que la
+  resta de codis).
 - **C520 (correlació)**: només Pearson (relacions lineals) -- Spearman
   (monotòniques, no lineals) detectaria més casos amb més cost
   computacional; límit conegut, no un error.

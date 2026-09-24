@@ -25,12 +25,7 @@ errors.py                                                    DuckDB/Postgres)
 
 ## Fase 0 — Mostreig i elegibilitat (`eligibility_scan.py`, `errors.py`)
 
-**Estat: pràcticament tancat.** Sobre la mostra original de 13 elegibles
-(n=1000), la validació manual (`docs/us108_validation_report.md`, versió
-històrica) va trobar una precisió de 5/13 ≈ 38.5%, amb 8/13 falsos
-positius atribuïbles a un únic patró (eines com LeRobot que generen
-desenes de commits automàtics en una sola sessió de pujada). Això va
-motivar dues millores, totes dues implementades:
+Sobre la mostra original de 13 elegibles (n=1000), la validació manual (`docs/us108_validation_report.md`, versió històrica) va trobar una precisió de 5/13 ≈ 38.5%, amb 8/13 falsos positius atribuïbles a un únic patró (eines com LeRobot que generen desenes de commits automàtics en una sola sessió de pujada). Això va motivar dues millores, totes dues implementades:
 
 1. **Dispersió temporal mínima al Criteri B** (`MIN_SUBSTANTIVE_GAP_HOURS`,
    actualment 6h, entre el commit substantiu més antic i el més recent).
@@ -171,7 +166,6 @@ reals, un objecte escalar pla suggereix configuració/metadada. Aquesta
 tècnica NO resol l'ambigüitat de `.jsonl` (un catàleg/índex i dades reals
 per fila són estructuralment indistingibles); per a `.jsonl` caldria
 acceptar el fail-open residual actual amb `log.debug`, igual que ara.
-Decisió de disseny final pendent de Joan/director.
 
 ### Flux
 
@@ -405,15 +399,17 @@ comparar.
 
 ### Resultats reals — validació d'extractibilitat (Census Income D1–D7)
 
-**Exercici de validació PUNTUAL, ja fet, registre complet a
-`docs/census_income_validation_report.md`** (metodologia, taula de
-detectabilitat per versió D1-D7, resultats de classificació, limitacions,
-i estat de reproduïbilitat). El codi d'adquisició/informe específic de
-Census Income es va eliminar deliberadament de `change_diff.py` un cop la
-pregunta que responia va quedar contestada (Decisió T-11) -- **no cal
-tornar-lo a córrer**. El motor de diffing en si (`diff_*`/`compute_all_
-diffs`) SÍ es manté -- és el que fa servir `eligibility_scan.
-classify_dataset` sobre la població real.
+**Registre complet a `docs/census_income_validation_report.md`**
+(metodologia, taula de detectabilitat per versió D1-D7, resultats de
+classificació, limitacions, i estat de reproduïbilitat). L'exercici
+ORIGINAL és tancat i el seu codi d'adquisició es va eliminar
+deliberadament de `change_diff.py` (Decisió T-11) -- però és
+RE-VALIDABLE quan calgui via `notebooks/validate_census_income.py`, un
+script permanent i AÏLLAT del pipeline principal (Decisió T-15). El motor
+de diffing en si (`diff_*`/`compute_all_diffs`) es manté viu -- és el que
+fa servir tant `eligibility_scan.classify_dataset` sobre la població real
+com `validate_census_income.py` sobre Census Income, sense reimplementar
+res dues vegades.
 
 ### US-305 — Classificador de canvis, integrat a `classify_dataset`
 
