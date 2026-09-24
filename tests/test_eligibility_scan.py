@@ -861,3 +861,135 @@ class TestClusterCommitTimes:
         unordered = [base + timedelta(days=2), base, base + timedelta(minutes=5)]
         clusters = es.cluster_commit_times(unordered, gap_hours=1.0)
         assert clusters == [[base, base + timedelta(minutes=5)], [base + timedelta(days=2)]]
+
+
+# ---------------------------------------------------------------------------
+# group_substantive_commits_into_sessions / classify_session_boundary_
+# tabular_changes -- Fase 2 per a Criteri B: el "canvi" es compta per
+# sessio (mateixa unitat que la "versio"), no per parell de commits.
+# ---------------------------------------------------------------------------
+
+class TestGroupSubstantiveCommitsIntoSessions:
+    def test_empty_list(self):
+        assert es.group_substantive_commits_into_sessions([]) == []
+
+    def test_commits_without_created_at_are_ignored(self):
+        triples = [(0, _FakeCommit("a", created_at=None), ["f.csv"])]
+        assert es.group_substantive_commits_into_sessions(triples) == []
+
+    def test_commits_within_gap_form_one_session(self):
+        base = datetime(2026, 1, 1, 12, 0, 0)
+        newer = (0, _FakeCommit("newer", created_at=base, commit_id="c-newer"), ["a.csv"])
+        older = (1, _FakeCommit("older", created_at=base - timedelta(minutes=30), commit_id="c-older"), ["b.csv"])
+        sessions = es.group_substantive_commits_into_sessions([newer, older])
+        assert len(sessions) == 1
+        assert sessions[0] == [newer, older]
+
+    def test_commits_beyond_gap_form_separate_sessions(self):
+        base = datetime(2026, 1, 1, 12, 0, 0)
+        newer = (0, _FakeCommit("newer", created_at=base, commit_id="c-newer"), ["a.csv"])
+        older = (1, _FakeCommit("older", created_at=base - timedelta(hours=es.MIN_SUBSTANTIVE_GAP_HOURS + 1), commit_id="c-older"), ["b.csv"])
+        sessions = es.group_substantive_commits_into_sessions([newer, older])
+        assert len(sessions) == 2
+        assert sessions == [[newer], [older]]
+
+    def test_sessions_are_newest_first(self):
+        base = datetime(2026, 1, 1, 12, 0, 0)
+        gap = timedelta(hours=es.MIN_SUBSTANTIVE_GAP_HOURS + 1)
+        newest = (0, _FakeCommit("newest", created_at=base, commit_id="c1"), [])
+        middle = (1, _FakeCommit("middle", created_at=base - gap, commit_id="c2"), [])
+        oldest = (2, _FakeCommit("oldest", created_at=base - 2 * gap, commit_id="c3"), [])
+        sessions = es.group_substantive_commits_into_sessions([newest, middle, oldest])
+        assert [s[0][1].commit_id for s in sessions] == ["c1", "c2", "c3"]
+
+
+class TestClassifySessionBoundaryTabularChanges:
+    def test_single_session_produces_no_labels(self, monkeypatch):
+        base = datetime(2026, 1, 1, 12, 0, 0)
+        commits = [(0, _FakeCommit("a", created_at=base, commit_id="c1"), ["a.csv"])]
+        calls = []
+        monkeypatch.setattr(es, "classify_commit_tabular_changes", lambda *a, **kw: calls.append(a) or [])
+
+        labels = es.classify_session_boundary_tabular_changes("org/ds", commits, "tok", es.RETRY_CONFIG)
+
+        assert labels == []
+        assert calls == []  # una sola sessio -- no hi ha cap limit a diferenciar
+
+    def test_two_sessions_diff_boundary_commits_not_intra_session_pairs(self, monkeypatch):
+        base = datetime(2026, 1, 1, 12, 0, 0)
+        gap = timedelta(hours=es.MIN_SUBSTANTIVE_GAP_HOURS + 1)
+        # Sessio nova: 2 commits (c1 mes recent, c2). Sessio vella: 1 commit (c3).
+        commits = [
+            (0, _FakeCommit("c1", created_at=base, commit_id="c1"), ["a.csv"]),
+            (1, _FakeCommit("c2", created_at=base - timedelta(minutes=10), commit_id="c2"), ["b.csv"]),
+            (2, _FakeCommit("c3", created_at=base - gap, commit_id="c3"), ["c.csv"]),
+        ]
+        calls = []
+
+        def fake_classify(dataset_id, changed_paths, version_from, version_to, hf_token, retry_config):
+            calls.append((version_from, version_to, sorted(changed_paths)))
+            return [{"dataset_id": dataset_id, "version_from": version_from, "version_to": version_to,
+                      "code": "C421", "is_breaking": False}]
+
+        monkeypatch.setattr(es, "classify_commit_tabular_changes", fake_classify)
+
+        labels = es.classify_session_boundary_tabular_changes("org/ds", commits, "tok", es.RETRY_CONFIG)
+
+        # NOMES una crida (1 limit de sessio: la sessio nova [c1,c2] vs la vella [c3])
+        # -- MAI c1 vs c2 (son de la mateixa sessio).
+        assert calls == [("c3", "c1", ["a.csv", "b.csv"])]
+        assert len(labels) == 1
+
+    def test_three_sessions_produce_two_boundary_diffs(self, monkeypatch):
+        base = datetime(2026, 1, 1, 12, 0, 0)
+        gap = timedelta(hours=es.MIN_SUBSTANTIVE_GAP_HOURS + 1)
+        commits = [
+            (0, _FakeCommit("c1", created_at=base, commit_id="c1"), ["a.csv"]),
+            (1, _FakeCommit("c2", created_at=base - gap, commit_id="c2"), ["b.csv"]),
+            (2, _FakeCommit("c3", created_at=base - 2 * gap, commit_id="c3"), ["c.csv"]),
+        ]
+        calls = []
+        monkeypatch.setattr(
+            es, "classify_commit_tabular_changes",
+            lambda dataset_id, changed_paths, version_from, version_to, hf_token, retry_config: (
+                calls.append((version_from, version_to)) or []
+            ),
+        )
+
+        es.classify_session_boundary_tabular_changes("org/ds", commits, "tok", es.RETRY_CONFIG)
+
+        assert calls == [("c2", "c1"), ("c3", "c2")]
+
+
+class TestClassifyDatasetCriteriBUsesSessionBoundaries:
+    def test_criteri_b_dataset_diffs_session_boundaries_not_every_commit_pair(self, monkeypatch, tmp_path):
+        # 4 commits substantius formant 2 sessions de 2 commits cadascuna,
+        # separades per >6h -- Criteri B (sense tags). Amb el disseny antic
+        # (commit a commit) hi hauria 3 crides (c1-c2, c2-c3, c3-c4). Amb
+        # sessions, NOMES 1 (limit entre les 2 sessions).
+        base = datetime(2026, 1, 1, 12, 0, 0)
+        gap = timedelta(hours=es.MIN_SUBSTANTIVE_GAP_HOURS + 1)
+        commits = [
+            _FakeCommit("c1", created_at=base, commit_id="c1"),
+            _FakeCommit("c2", created_at=base - timedelta(minutes=10), commit_id="c2"),
+            _FakeCommit("c3", created_at=base - gap, commit_id="c3"),
+            _FakeCommit("c4", created_at=base - gap - timedelta(minutes=10), commit_id="c4"),
+        ]
+        monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(branches=["main", "dev"]))
+        monkeypatch.setattr(es, "list_repo_commits", lambda **kw: commits)
+        monkeypatch.setattr(es, "bare_clone", _fake_git_clone)
+        monkeypatch.setattr(es, "get_changed_files", lambda clone_dir, sha: ["data/file.csv"])
+        monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
+
+        calls = []
+        monkeypatch.setattr(
+            es, "classify_commit_tabular_changes",
+            lambda dataset_id, changed_paths, version_from, version_to, hf_token, retry_config: (
+                calls.append((version_from, version_to)) or []
+            ),
+        )
+
+        result = es.classify_dataset("org/ds", classify_changes=True)
+
+        assert result["eligibility_reason"].startswith("Criteri B")
+        assert calls == [("c3", "c1")]  # NOMES el limit de sessio, mai c1-c2/c2-c3/c3-c4

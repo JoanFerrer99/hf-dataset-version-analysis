@@ -260,18 +260,28 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
         mode (`tags < 2` i, com que el Criteri B està desactivat, no cal
         mirar `branches`).
     :param classify_changes: si `True`, A MÉS de determinar l'elegibilitat,
-        classifica cada commit substantiu amb un pare conegut dins la
-        finestra escanejada (fins a 50 commits) segons els 14 codis
-        NO-metadada de la taxonomia (C210-C530, `docs/taiga/taxonomy.md`
-        -- **C100 exclòs deliberadament**, no es classifiquen metadades).
-        Descarrega i compara contingut real NOMÉS dels fitxers tabulars
-        (`.parquet`/`.csv`/`.tsv`, `change_diff.is_tabular_path`) que van
-        canviar en cada commit substantiu -- els fitxers binaris (àudio/
-        vídeo/tensors) només compten per a l'elegibilitat, mai per a la
-        classificació (no tenen "columnes"/"files"). Quan és `True`, la
-        funció NO retorna anticipadament en trobar elegibilitat: escaneja
-        tots els commits fins al cap (per classificar-los tots), a costa
-        de moltes més crides i descàrregues de contingut real.
+        classifica els canvis dins la finestra escanejada (fins a 50
+        commits) segons els 14 codis NO-metadada de la taxonomia
+        (C210-C530, `docs/taiga/taxonomy.md` -- **C100 exclòs
+        deliberadament**, no es classifiquen metadades). Descarrega i
+        compara contingut real NOMÉS dels fitxers tabulars (`.parquet`/
+        `.csv`/`.tsv`, `change_diff.is_tabular_path`) -- els fitxers
+        binaris (àudio/vídeo/tensors) només compten per a l'elegibilitat,
+        mai per a la classificació (no tenen "columnes"/"files"). La
+        UNITAT de canvi depèn del criteri d'elegibilitat:
+        - **Criteri A** (tags): un canvi per cada commit substantiu amb
+          un pare conegut (el seu propi pare de git), com sempre.
+        - **Criteri B** (sessions): un canvi NOMÉS entre CADA PARELL DE
+          SESSIONS consecutives (mateix agrupament que decideix
+          l'elegibilitat, `group_substantive_commits_into_sessions`) --
+          els commits DINS de la mateixa sessió NO generen cap diff
+          propi, perquè el "canvi" es compti amb la mateixa unitat que
+          la "versió" (vegeu `classify_session_boundary_tabular_
+          changes`).
+        Quan és `True`, la funció NO retorna anticipadament en trobar
+        elegibilitat: escaneja tots els commits fins al cap (per
+        classificar-los tots), a costa de moltes més crides i
+        descàrregues de contingut real.
         **NOMÉS s'ha de fer servir sobre datasets ja coneguts com a
         elegibles.
     :return: diccionari amb els camps del CSV final:
@@ -327,6 +337,7 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
         num_commits_substantive = 0
         earliest_substantive_time: datetime | None = None
         latest_substantive_time: datetime | None = None
+        substantive_commits: list[tuple[int, object, list[str]]] = []
 
         if len(tags) >= 2 or (not tags_only and len(branches) >= 2):
             commits = errors.with_retry(
@@ -346,14 +357,8 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
                                 earliest_substantive_time = commit_time
                             if latest_substantive_time is None or commit_time > latest_substantive_time:
                                 latest_substantive_time = commit_time
-                        if classify_changes and changed_paths and i + 1 < len(commits):
-                            parent_commit = commits[i + 1]
-                            result["change_labels"].extend(
-                                classify_commit_tabular_changes(
-                                    dataset_id, changed_paths, parent_commit.commit_id, commit.commit_id, HF_TOKEN,
-                                    RETRY_CONFIG,
-                                )
-                            )
+                        if classify_changes and changed_paths:
+                            substantive_commits.append((i, commit, changed_paths))
 
                     if not result["eligible"]:
                         if len(tags) >= 2 and num_commits_substantive >= 2:
@@ -374,6 +379,22 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
 
                     if commits_scanned >= 50:
                         break
+
+            if classify_changes and substantive_commits:
+                if result["eligibility_reason"].startswith("Criteri B"):
+                    result["change_labels"] = classify_session_boundary_tabular_changes(
+                        dataset_id, substantive_commits, HF_TOKEN, RETRY_CONFIG,
+                    )
+                else:
+                    for i, commit, changed_paths in substantive_commits:
+                        if i + 1 < len(commits):
+                            parent_commit = commits[i + 1]
+                            result["change_labels"].extend(
+                                classify_commit_tabular_changes(
+                                    dataset_id, changed_paths, parent_commit.commit_id, commit.commit_id, HF_TOKEN,
+                                    RETRY_CONFIG,
+                                )
+                            )
 
         result["num_commits_substantive"] = num_commits_substantive
         if not result["eligible"]:
@@ -661,6 +682,94 @@ def classify_commit_tabular_changes(
         after_df = change_diff.download_tabular_file_at_revision(dataset_id, path, version_to, hf_token, retry_config)
         for label in change_diff.classify_file_change(dataset_id, before_df, after_df, version_from, version_to):
             labels.append(asdict(label))
+    return labels
+
+
+def group_substantive_commits_into_sessions(
+    substantive_commits: list[tuple[int, object, list[str]]],
+) -> list[list[tuple[int, object, list[str]]]]:
+    """
+    Agrupa commits substantius en sessions de treball -- mateix criteri
+    que `cluster_commit_times` (un cop ordenats cronològicament, una
+    nova sessió comença quan dos commits consecutius estan separats per
+    més de `MIN_SUBSTANTIVE_GAP_HOURS`), però preservant l'associació
+    `(índex, commit, changed_paths)` que `cluster_commit_times` no porta
+    (aquella funció NOMÉS treballa amb `datetime` solts -- reutilitzada
+    igual per a l'elegibilitat, `has_time_dispersed_substantive_commits`,
+    i per a `version_extractor.build_sessions_from_commits`).
+
+    :param substantive_commits: `(índex a la llista completa de commits
+        de `classify_dataset`, commit, changed_paths)`, en ordre
+        NEWEST-FIRST (tal com els retorna `list_repo_commits` i els va
+        trobant `classify_dataset`). Els commits sense `created_at`
+        s'ignoren (no poden entrar a cap sessió temporal) -- mateix
+        comportament que `cluster_commit_times` amb els `None`.
+    :return: llista de sessions (cada sessió, una llista de triples,
+        també NEWEST-FIRST dins la sessió), ordenades NEWEST-FIRST (la
+        sessió `[0]` és la MÉS RECENT) -- llista buida si cap commit té
+        `created_at`.
+    """
+    dated = [t for t in substantive_commits if getattr(t[1], "created_at", None) is not None]
+    if not dated:
+        return []
+
+    sessions: list[list[tuple[int, object, list[str]]]] = [[dated[0]]]
+    for triple in dated[1:]:
+        prev_time = sessions[-1][-1][1].created_at
+        if (prev_time - triple[1].created_at) > timedelta(hours=MIN_SUBSTANTIVE_GAP_HOURS):
+            sessions.append([triple])
+        else:
+            sessions[-1].append(triple)
+    return sessions
+
+
+def classify_session_boundary_tabular_changes(
+    dataset_id: str, substantive_commits: list[tuple[int, object, list[str]]], hf_token: str | None,
+    retry_config: dict,
+) -> list[dict]:
+    """
+    Classifica els canvis d'un dataset Criteri B (sessions) entre LÍMITS
+    DE SESSIÓ, no entre cada parell de commits consecutius: reutilitza
+    el mateix agrupament que decideix l'elegibilitat
+    (`group_substantive_commits_into_sessions`), perquè el "canvi" es
+    compti amb la mateixa unitat que la "versió" -- els commits DINS de
+    la mateixa sessió no generen cap diff propi.
+
+    Per cada parell de sessions consecutives, es compara el commit MÉS
+    RECENT de la sessió posterior contra el commit MÉS RECENT de la
+    sessió anterior -- els `changed_paths` a comparar són la UNIÓ de tots
+    els fitxers canviats en QUALSEVOL commit de la sessió posterior (tots
+    els commits substantius entre els dos límits de sessió pertanyen, per
+    construcció, a la sessió posterior). La sessió MÉS ANTIGA mai genera
+    cap etiqueta (no hi ha cap sessió anterior amb qui comparar-la) --
+    mateixa simetria "N versions -> N-1 diffs" que ja s'aplica als tags.
+
+    :param dataset_id: identificador del dataset.
+    :param substantive_commits: mateix format que `group_substantive_
+        commits_into_sessions`.
+    :param hf_token: token HF.
+    :param retry_config: mateix format que `RETRY_CONFIG`.
+    :return: llista de `dict` (via `dataclasses.asdict`), acumulada de
+        cridar `classify_commit_tabular_changes` un cop per límit de
+        sessió (reutilitzat sense canvis -- el cap `MAX_TABULAR_FILES_
+        PER_COMMIT` hi segueix aplicant-se igual, ara sobre la unió de
+        fitxers de tota la sessió en lloc d'un sol commit).
+    """
+    sessions = group_substantive_commits_into_sessions(substantive_commits)
+    if len(sessions) < 2:
+        return []
+
+    labels: list[dict] = []
+    for newer_session, older_session in zip(sessions, sessions[1:]):
+        version_to_commit = newer_session[0][1]
+        version_from_commit = older_session[0][1]
+        changed_paths = sorted({path for _, _, paths in newer_session for path in paths})
+        labels.extend(
+            classify_commit_tabular_changes(
+                dataset_id, changed_paths, version_from_commit.commit_id, version_to_commit.commit_id,
+                hf_token, retry_config,
+            )
+        )
     return labels
 
 

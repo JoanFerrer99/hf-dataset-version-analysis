@@ -1147,6 +1147,60 @@ Estat: ✅ Fet
   `docs/census_income_validation_report.md` actualitzats.
 
 
+DECISIÓ T-17: la unitat de "canvi" a la Fase 2 passa a ser la sessió per als datasets de Criteri B
+Data: setembre 2026
+Responsable: Joan
+Estat: ✅ Fet
+
+  MOTIU (petició directa de Joan): fins ara, `classify_dataset(classify_
+  changes=True)` diferenciava CADA commit substantiu contra el seu propi
+  pare de git, sense cap noció de "sessió" -- però l'elegibilitat via
+  Criteri B (i `version_extractor.py`) ja fa servir el concepte de sessió
+  (`cluster_commit_times`, buit > `MIN_SUBSTANTIVE_GAP_HOURS`) com a
+  unitat de "versió". Resultat: un dataset amb 3 commits substantius
+  dins de LA MATEIXA sessió de treball generava 2 diffs interns
+  (commit1-commit2, commit2-commit3) que no representaven cap "canvi de
+  versió" real, només soroll intra-sessió.
+
+  CANVI: per als datasets Criteri B (`eligibility_reason` comença per
+  "Criteri B"), la Fase 2 ara NOMÉS diferencia entre LÍMITS DE SESSIÓ
+  (el commit més recent de cada sessió contra el de la sessió anterior),
+  reutilitzant el mateix agrupament que decideix l'elegibilitat -- els
+  commits DINS de la mateixa sessió ja no generen cap diff propi. Els
+  datasets Criteri A (tags) NO canvien -- segueixen diferenciant cada
+  commit substantiu contra el seu pare, exactament com abans.
+
+  DISSENY: `group_substantive_commits_into_sessions` (nova, pura, mateix
+  criteri que `cluster_commit_times` però preservant l'associació
+  commit-changed_paths) + `classify_session_boundary_tabular_changes`
+  (nova, crida `classify_commit_tabular_changes` un cop per límit de
+  sessió, amb la UNIÓ dels `changed_paths` de tots els commits de la
+  sessió posterior). `classify_dataset` ja no diferencia INLINE durant
+  l'escaneig -- ara acumula `(índex, commit, changed_paths)` de cada
+  commit substantiu i, un cop acabat l'escaneig i coneguda la raó
+  d'elegibilitat, tria l'estratègia (sessió o commit a commit).
+
+  RESULTAT REAL (re-execució sobre els 14 elegibles de `eligibility_
+  report_2000_6.csv`, `data/change_classification_3.csv`): 14/14
+  classificats, 0 fallats, **110 etiquetes (abans 121)**. Els 10 datasets
+  Criteri A queden EXACTAMENT igual (89 etiquetes, confirmat byte a
+  byte). Dels 4 Criteri B: `davidgoss/so100_test` 4 parells de commits
+  -> 2 límits de sessió (15->11 etiquetes); `andrewatef/p-small` 11
+  parells -> 3 límits (17->8); `nvidia/earth2studio-assets` sense canvis
+  (0->0, una sola sessió); `jackvial/koch_test` **0->2 etiquetes** --
+  abans no generava cap diff (el seu commit substantiu no tenia un pare
+  substantiu dins la finestra), ara sí que troba un límit de sessió real
+  a comparar -- el canvi no només elimina soroll, també recupera senyal
+  que abans es perdia.
+
+  RESULTAT: `tests/test_eligibility_scan.py` guanya `TestGroupSubstantive
+  CommitsIntoSessions` (4 tests), `TestClassifySessionBoundaryTabular
+  Changes` (3 tests), `TestClassifyDatasetCriteriBUsesSessionBoundaries`
+  (1 test, confirma sobre `classify_dataset` complet que NOMÉS el límit
+  de sessió es diferencia, mai els parells intra-sessió). 189 tests en
+  total, `ruff check` net.
+
+
 ================================================================================
 BLOC 4 — DECISIONS D'ABAST
 ================================================================================

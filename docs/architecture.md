@@ -467,10 +467,15 @@ més endavant.
   False)`: nou paràmetre **opt-in**. Quan `classify_changes=True`:
   - NO retorna anticipadament en trobar elegibilitat -- escaneja tots
     els commits fins al cap de 50 (per classificar-los tots).
-  - Per cada commit substantiu amb un pare conegut DINS la finestra
-    escanejada (`commits[i+1]`, ja que `list_repo_commits` ve ordenat de
-    més nou a més vell -- assumeix historial lineal, sense merges), crida
-    `classify_commit_tabular_changes`.
+  - La unitat de "canvi" depèn del criteri d'elegibilitat (Decisió
+    T-17): **Criteri A** (tags) -- per cada commit substantiu amb un
+    pare conegut DINS la finestra escanejada (`commits[i+1]`, ja que
+    `list_repo_commits` ve ordenat de més nou a més vell -- assumeix
+    historial lineal, sense merges), crida `classify_commit_tabular_
+    changes`. **Criteri B** (sessions) -- NOMÉS entre límits de sessió
+    (`group_substantive_commits_into_sessions`, mateix criteri que
+    decideix l'elegibilitat): els commits dins la mateixa sessió no
+    generen cap diff propi, evitant soroll intra-sessió.
   - El resultat inclou `change_labels` (`list[dict]`, `[]` si
     `classify_changes=False`).
 - `classify_commit_tabular_changes`: NOMÉS diferencia contingut per als
@@ -541,12 +546,12 @@ d'adquisició (inter-repositori D1-D7 vs. intra-repositori).
 
 ### Resultats reals — classificació sobre la població elegible
 
-Execució real (`python run_pipeline.py --input-csv
-data/eligibility_report_2000_5.csv --skip-version-extraction`,
-`data/change_classification_2.csv` -- re-execució amb C410 implementat,
-Decisió T-14; els totals coincideixen exactament amb el run anterior,
-`data/change_classification_1.csv`, previ a C410): **11/11 datasets
-classificats, 0 fallats, 67 etiquetes de canvi.**
+Execució real (`python eligibility_scan.py --classify-eligible
+data/eligibility_report_2000_6.csv`, `data/change_classification_3.csv`
+-- amb la correcció de renom per nom normalitzat (Decisió T-16) i la
+unitat de canvi per sessió per als datasets Criteri B (Decisió T-17) ja
+actives): **14/14 datasets classificats, 0 fallats, 110 etiquetes de
+canvi.**
 
 Els 14 codis tabulars (tot excepte C100, fora d'abast per disseny --
 vegeu "Limitacions conegudes" a `docs/taiga/taxonomy.md`), agrupats per
@@ -556,35 +561,39 @@ si van aparèixer en aquesta mostra real:
 
 | Codi | Descripció | Recompte |
 |---|---|---|
-| C421 | Afegir fila | 53 |
-| C422 | Eliminar fila | 10 |
-| C223 | Renom de columna | 3 |
-| C311 | Tipus de columna categòrica | 1 |
+| C421 | Afegir fila | 65 |
+| C422 | Eliminar fila | 23 |
+| C322 | Valors d'una columna numèrica | 9 |
+| C530 | Distribució de les dades | 8 |
+| C312 | Valors d'una columna categòrica | 4 |
+| C221 | Afegir columna | 1 |
 
 **Implementats però 0 ocurrències en aquesta mostra:** C210 (ordre de
-columnes), C221 (afegir columna), C222 (eliminar columna), C312 (valors
-categòrics), C321 (tipus numèric), C322 (valors numèrics), C410
-(**ordre de files -- implementat a la Decisió T-14, 0 ocurrències reals
-és un resultat legítim, no un indici que la tècnica no funcioni; vegeu
-els 7 casos sintètics verificats a `tests/test_change_diff.py::
-TestDiffRowOrder`**), C510 (missingness), C520 (correlació), C530
-(distribució).
+columnes), C222 (eliminar columna), C223 (renom de columna), C311 (tipus
+de columna categòrica), C321 (tipus numèric), C410 (ordre de files --
+implementat a la Decisió T-14, 0 ocurrències reals és un resultat
+legítim, no un indici que la tècnica no funcioni; vegeu els 7 casos
+sintètics verificats a `tests/test_change_diff.py::TestDiffRowOrder`, i
+la re-validació amb C410=True a 3 de 7 versions de Census Income,
+`docs/census_income_validation_report.md`), C510 (missingness), C520
+(correlació).
 
 **Fora d'abast:** C100 (metadada -- inspecció de dataset card/README, no
 una comparació tabular).
 
-4 etiquetes `is_breaking=True` (les 3 de C223 + la de C311), 63 `False`
--- coherent amb l'heurística (afegir/eliminar files no "trenca" un
-pipeline, un renom o un canvi de tipus sí; C410, tot i ser `is_breaking`,
-no hi aporta cap etiqueta perquè no va aparèixer). **7 dels 11 datasets
-tenen etiquetes**; els altres 4 (`Team-DIANA/green-probe-dataset`,
-`nwu-ctext/nchlt`, `QFIN/FCMBench-Data`, `AILAB-VNUHCM/vivos`) en tenen 0
--- confirmat pel log (cap crida `resolve/` per a cap d'ells) que els seus
-commits substantius només toquen fitxers BINARIS (àudio/vídeo/arxius),
-mai tabulars: és un resultat esperat i correcte, no un error.
+**0 etiquetes `is_breaking=True`** en aquesta mostra concreta (cap dels
+codis de `BREAKING_CODES` -- C210/C222/C223/C311/C321/C410 -- ha
+aparegut; els codis que sí han aparegut, C421/C422/C322/C530/C312/C221,
+són tots `is_breaking=False` per disseny). **12 dels 14 datasets tenen
+etiquetes**; els altres 2 (`nkandpa2/mediawiki-dolma`,
+`nvidia/earth2studio-assets`) en tenen 0 -- `nvidia/earth2studio-assets`
+és Criteri B amb una única sessió (sense límit de sessió a comparar,
+Decisió T-17); resultat esperat i correcte, no un error.
 
-**Durant aquesta execució es van trobar i corregir 2 problemes reals**
-(no hipotètics -- observats en dades reals):
+**Durant una execució anterior (`eligibility_report_2000_5.csv`) es van
+trobar i corregir 2 problemes reals** (no hipotètics -- observats en
+dades reals; les correccions es mantenen actives, per això no reapareixen
+a l'execució de dalt):
 1. **`unhashable type: 'dict'`**: columnes d'àudio/imatge (`adalat-ai/
    fleurs-ro`, `theayos/libero_spatial_image`) arriben com a `dict` en
    llegir-les amb `pandas.read_parquet` sense la decodificació especial
