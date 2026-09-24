@@ -1367,5 +1367,16 @@ PRÒXIMES DECISIONS PENDENTS
     real a l'esquema en estrella (T-04) o a l'anàlisi final (US-403), o
     si es descarten en no aportar-hi res — capturats per cost marginal
     baix, no perquè l'esquema ja els exigeixi
+[x] Feedback del director (reunió): confirmar que els fitxers binaris
+    (àudio/vídeo/tensors) no es classifiquen amb la taxonomia de canvis —
+    JA SATISFET pel disseny existent, no calia cap canvi de codi:
+    `classify_commit_tabular_changes` (`eligibility_scan.py`) ja filtra a
+    `change_diff.is_tabular_path` (`.parquet`/`.csv`/`.tsv`) ABANS de
+    classificar; els binaris només compten per a l'elegibilitat
+    (`is_substantive_path`), mai per a la classificació. Reforçat amb un
+    test de regressió contra la llista real d'extensions binàries (abans
+    només es verificava amb `is_tabular_path` monkeypatched), vegeu
+    `tests/test_eligibility_scan.py::TestClassifyCommitTabularChanges::
+    test_real_binary_extensions_never_reach_download_or_classification`.
 
 ================================================================================
