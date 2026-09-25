@@ -51,12 +51,7 @@ CENSUS_INCOME_SOURCES = {
     "D7": {"repo_id": "kuldeepbishnoi29/adult-fairness", "filename": "adult_processed.csv"},
 }
 
-# Ground truth REAL de la Taula 1 del paper, transcrit a mà per Joan
-# mirant la IMATGE ORIGINAL (no el text extret del PDF, que no conserva
-# l'alineació de columnes -- vegeu docs/census_income_alignment_study.md).
-# Inclou C100 (el nostre motor mai el compta -- es filtra a l'hora de
-# comparar, vegeu `compare_detectability_with_paper`) perquè cada
-# conjunt representi FIDELMENT la fila completa de la taula.
+# Ground truth REAL de la Taula 1 del paper
 PAPER_GROUND_TRUTH: dict[str, frozenset[str]] = {
     "D1": frozenset({"C100", "C223", "C410"}),
     "D2": frozenset({"C100", "C223", "C410"}),

@@ -763,16 +763,6 @@ Data: setembre 2026
 Responsable: Joan
 Estat: ✅ Fet
 
-  MOTIU (petició directa de Joan): un cop la classificació funcionava
-  sobre la població real (T-10) i la validació contra Census Income ja
-  havia respost la pregunta que calia respondre (T-08/T-09), gran part
-  del codi de `change_diff.py`/`change_classifier.py` havia deixat de
-  tenir cap cridant real -- i `validate_eligible.py` (US-108) sempre
-  havia estat una eina de validació PUNTUAL, mai part del pipeline en
-  marxa. Mantenir-los com a codi viu (testejat, lintat, retocat a cada
-  canvi de l'engine compartit) no aportava res un cop la seva conclusió
-  ja estava documentada.
-
   1. `change_diff.py`/`change_classifier.py` TRIMATS al motor realment
      cridat per `eligibility_scan.classify_dataset`:
        - ELIMINAT (mai cridat, C100/metadada deliberadament fora
@@ -832,21 +822,6 @@ Data: setembre 2026
 Responsable: Joan
 Estat: ✅ Fet
 
-  MOTIU (petició directa de Joan, després de preguntar "què fa change_
-  classifier que no pugui fer eligibility_scan.py? no és codi repetitiu?
-  per què fer-ho per separat?"): un cop T-11 va deixar `change_
-  classifier.py` reduït a ~120 línies (la meitat docstrings) amb NOMÉS 4
-  coses reals (`BREAKING_CODES`, `ChangeLabel`, `classify_diffs`,
-  `classify_file_change`) i **un únic cridant a tot el projecte**
-  (`eligibility_scan.py`, i només indirectament -- `classify_file_
-  change` ja cridava `change_diff.compute_all_diffs` interna), la
-  separació en dos fitxers havia deixat de comprar res: no hi havia cap
-  segon consumidor que es beneficiés d'una interfície independent, i
-  `classify_diffs` ja llegia directament l'estructura interna de
-  `change_diff.py` (`TABULAR_CODES`, la forma exacta del dict de
-  `compute_all_diffs`) -- mateix acoblament que si haguessin estat sempre
-  un sol fitxer.
-
   1. `change_classifier.py` ELIMINAT -- el seu contingut (`BREAKING_
      CODES`, `ChangeLabel`, `classify_diffs`, `classify_file_change`) es
      va moure DINS de `change_diff.py`, al final, amb una secció pròpia
@@ -897,18 +872,6 @@ DECISIÓ T-13: notebooks/run_pipeline.py encadena Fase 0-1 + Fase 1b + Fase 2 en
 Data: setembre 2026
 Responsable: Joan
 Estat: ✅ Fet
-
-  MOTIU (petició directa de Joan: "el que fa falta al projecte és que
-  cada execució faci el pipeline d'extracció i després classifiqui els
-  elegibles, per fer l'estudi de la tesi"): fins ara, obtenir el CSV de
-  canvis classificats (`data/change_classification_<run_id>.csv`) que
-  alimenta l'estudi exigia DOS passos manuals -- (1) `eligibility_scan.py
-  --sample-size N` (Fase 0-3, genera `eligibility_report_<N>_<run_id>.
-  csv`), i (2) copiar aquest camí a mà i tornar a invocar el mateix
-  script amb `--classify-eligible <aquell csv>` (Fase 2/US-305). Aquest
-  pas manual d'enganxar el camí és exactament el que va portar a una
-  confusió real en aquesta mateixa sessió (verificar `--classify-eligible`
-  contra un CSV d'un run diferent al que s'acabava d'executar).
 
   PRIMERA VARIANT PROVADA I DESCARTADA (mateixa sessió, mai comitejada):
   encadenar la Fase 2 directament dins de `eligibility_scan.run_sampling`
@@ -966,19 +929,6 @@ Data: setembre 2026
 Responsable: Joan
 Estat: ✅ Fet
 
-  MOTIU (rebuig directe de Joan a un pla que documentava C410 com a
-  llacuna permanent): "hi ha alguna manera de detectar encara que no sigui
-  amb diffs el codi 410, modifications to row ordering, may affect ML
-  pipelines that rely on positional access to data". El comentari original
-  a `change_diff.compute_all_diffs` ("C410 no detectable de forma fiable
-  sense garantir que l'adquisició preserva l'ordre") confonia dos
-  problemes diferents: `download_tabular_file_at_revision` (`pandas.
-  read_parquet`/`read_csv`, sense cap `sort`/`reindex` implícit) JA
-  preservava l'ordre original del fitxer -- el problema real mai va ser
-  l'adquisició, sinó distingir "reordenat" de "contingut diferent" sense
-  un identificador d'instància estable. Aquest segon problema SÍ que té
-  una tècnica sòlida, no heurística.
-
   TÈCNICA IMPLEMENTADA -- nova funció `diff_row_order(before, after)`:
   hash de contingut per fila (`pandas.util.hash_pandas_object`), NOMÉS
   sobre el subconjunt de columnes hashables (reutilitzant `_is_hashable_
@@ -1022,15 +972,6 @@ DECISIÓ T-15: notebooks/validate_census_income.py -- re-validació de Census In
 Data: setembre 2026
 Responsable: Joan
 Estat: ✅ Fet
-
-  MOTIU (petició directa de Joan: "podries revalidar el census income en
-  un altre script apart sense afectar el pipeline actual d'una altra
-  manera?"): la validació original (US-304, `docs/census_income_
-  validation_report.md`) es va fer ABANS d'implementar C410 (T-14) -- no
-  hi ha cap registre de si el motor detecta reordenacions de files sobre
-  el ground truth Census Income. Calia tancar aquest buit SENSE revifar
-  codi d'adquisició dins de `change_diff.py` (contradiria T-11: aquest
-  tipus de codi puntual no ha de viure com a codi actiu del pipeline).
 
   TROBALLA EN RECUPERAR EL CODI D'ADQUISICIÓ: el codi original
   (`CENSUS_INCOME_SOURCES`, `download_uci_adult_baseline`, `download_
@@ -1084,14 +1025,6 @@ DECISIÓ T-16: heurística de renom (C223) canvia de posició ordinal a nom norm
 Data: setembre 2026
 Responsable: Joan
 Estat: ✅ Fet
-
-  MOTIU (pregunta directa de Joan, comparant amb el veredicte del paper:
-  "we detect codes of 221/222 and 530 than sometimes are wrong. Is it
-  for some known problem? can we solve it?"): en lloc de respondre en
-  abstracte, es va inspeccionar directament la sortida de `diff_columns`
-  sobre D3/D4/D6/D7 (`notebooks/validate_census_income.py`, ja disponible
-  des de T-15). Confirmat: **bug real** a l'heurística de renom anterior
-  (posició ordinal + dtype).
 
   DIAGNÒSTIC: D3 té les columnes completament reordenades respecte D0.
   L'heurística antiga aparellava `cols_before[i]` amb `cols_after[i]` --
@@ -1259,13 +1192,7 @@ Estat: ✅ Fet
 DECISIÓ T-19: PAPER_GROUND_TRUTH i la comparativa codi per codi passen a ser codi reutilitzable
 Data: setembre 2026
 Responsable: Joan
-Estat: ✅ Fet
-
-  MOTIU (petició directa de Joan): la comparativa de T-18 es va calcular
-  amb un script d'una línia de comandes (`python3 << 'EOF' ... EOF`),
-  no guardat enlloc -- Joan va demanar que fos un `.py` executable cada
-  cop que calgués, que regenerés la taula comparativa automàticament, no
-  un càlcul ad-hoc a repetir a mà cada vegada que canviï el motor.
+Estat: Fet
 
   CANVI a `notebooks/validate_census_income.py`:
   1. `PAPER_GROUND_TRUTH: dict[str, frozenset[str]]` -- substitueix
@@ -1301,10 +1228,10 @@ Estat: ✅ Fet
   tests en total, `ruff check` net.
 
 
-DECISIÓ T-15: pandas per a la classificació de canvis -- per què, i per què és l'opció correcta al cost actual
+DECISIÓ T-20: pandas per a la classificació de canvis -- per què, i per què és l'opció correcta al cost actual
 Data: setembre 2026
 Responsable: Joan
-Estat: ✅ Tancada (documentació, cap canvi de codi)
+Estat: Tancada (documentació, cap canvi de codi)
 
   MOTIU (feedback del director, reunió): avís que els `DataFrame` de
   pandas escalen malament -- calia explicar per què s'ha fet servir
@@ -1433,7 +1360,7 @@ BLOC 5 — PROBLEMES I RISCOS IDENTIFICATS
 
 RISC R-01: Endpoint de llista de fitxers per commit
 Detectat: juny 2026
-Estat: ✅ RESOLT (juliol 2026)
+Estat: RESOLT (juliol 2026)
 
 L'API pública de HF no exposa de forma estable i documentada la llista
 completa de fitxers modificats per commit via REST. CONFIRMAT
@@ -1456,7 +1383,7 @@ de referència (vegeu R-04).
 
 RISC R-02: Rate limits de l'API de HF
 Detectat: juny 2026
-Estat: ✅ MITIGAT i validat empíricament (juny-juliol 2026)
+Estat: MITIGAT i validat empíricament (juny-juliol 2026)
 
 L'API de HF té rate limits que varien amb el token. Implementat
 `errors.with_retry()` amb backoff exponencial + jitter (4 alternatives
@@ -1475,7 +1402,7 @@ cap missatge de permisos/rol). Detall complet a `notebooks/errors.py`.
 
 RISC R-03: Canvis a l'API de HF
 Detectat: juny 2026
-Estat: 🟡 VIGILAT (sense canvis, risc obert per naturalesa)
+Estat: VIGILAT (sense canvis, risc obert per naturalesa)
 
 L'API de HF és activa i pot canviar. Tots els resultats s'han de guardar
 amb timestamp. Si es torna a executar el pipeline mesos més tard, els
@@ -1487,7 +1414,7 @@ sobreescriure execucions prèvies.
 
 RISC R-04 (NOU): Falsos positius sistemàtics al Criteri B — patró LeRobot
 Detectat: agost 2026 (validació manual US-108)
-Estat: ✅ MITIGAT (vegeu M-02)
+Estat: MITIGAT (vegeu M-02)
 
 La validació manual de la mostra de referència (13 datasets elegibles,
 execució original) va trobar que el Criteri B tenia una precisió de només
@@ -1508,7 +1435,7 @@ mida dels casos observats.
 
 RISC R-05 (NOU): Bug de desplegament — `git` no instal·lat a la imatge Docker
 Detectat: agost 2026
-Estat: ✅ RESOLT
+Estat: RESOLT
 
 La primera execució via Docker amb la millora de detecció real de fitxers
 (R-01) es va beneficiar només de la millora de dispersió temporal (R-04):
@@ -1528,7 +1455,7 @@ funciona.
 
 RISC R-06 (NOU): Falsos positius del "push protection" de GitHub (secret scanning)
 Detectat: juliol-agost 2026 (recurrent)
-Estat: 🟡 VIGILAT (friction point conegut, no un risc real de seguretat)
+Estat: VIGILAT (friction point conegut, no un risc real de seguretat)
 
 Alguns noms de dataset de HF (generats automàticament per usuaris, p.e.
 `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`) coincideixen per atzar amb el

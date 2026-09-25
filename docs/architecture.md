@@ -242,6 +242,44 @@ calcular amb metodologies intermèdies de l'informe (llindar de sessió
 d'1h, o comprovació de sessions aplicada també al Criteri A) ja
 corregides -- no comparables directament.)
 
+
+## Mida de la mostra i interval de confiança
+
+L'objectiu és estimar, amb un 95% de confiança, la proporció de datasets de
+HF que són elegibles (≥2 versions reals). Una execució real i no esbiaixada
+(`--sample-size 1000`, sense `--max-scanned`) va donar:
+
+| Mètrica                | Valor          |
+|-------------------------|----------------|
+| Població escanejada (N) | 949.991        |
+| Elegibles                | 13             |
+| No elegibles             | 938            |
+| Accés restringit (403)   | 49             |
+| Errors                   | 0              |
+| Proporció elegible (p)   | 0.0137 (1.37%) |
+
+Aquesta p observada és molt més baixa que les proves ràpides amb
+`--max-scanned` (~10-17%), perquè `list_datasets()` no retorna els datasets
+en ordre aleatori: capar l'escaneig als primers N esbiaixa la mostra. Només
+un escaneig complet (sense `--max-scanned`) dona una p fiable.
+
+Amb aquesta p (en lloc de l'assumpció conservadora p=0.5, que sobredimensiona
+molt la mostra necessària quan la proporció real és petita), la mida de
+mostra necessària per a un marge d'error E amb 95% de confiança és
+n = z²·p·(1-p)/E² (z=1.96):
+
+| Marge d'error (E) | n necessària |
+|---|---|
+| ±1.0 punts percentuals | ~520 |
+| ±0.5 punts percentuals | ~2.070 |
+| ±0.3 punts percentuals | ~5.730 |
+
+Per això el valor per defecte de `--sample-size` és **2000**: marge d'error
+±0.51pp (interval aprox. [0.86%, 1.88%]), doblant la precisió respecte a
+n=1000 (±0.72pp) per només el doble de cost de classificació (~2 minuts amb
+4 threads). La correcció per població finita és negligible en aquest rang
+(fracció de mostreig < 0.6%).
+
 ## Fase 1 — Extracció de versions (`version_extractor.py`)
 
 **Estat: implementat (US-201 + US-202).** Objectiu: per cada dataset
