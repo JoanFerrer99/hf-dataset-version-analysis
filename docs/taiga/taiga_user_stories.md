@@ -6,11 +6,22 @@ amb criteris d'acceptació.
 
 Llegenda d'estat: `✅ Done` · `🔄 In progress` · `⛔ Blocked` · `📋 To do`
 
-**v2 (aquesta versió):** taxonomia actualitzada amb els 15 codis oficials
-del paper del director (C100–C530). Vegeu `docs/taiga/taxonomy.md` per al
-detall complet. Canvis principals respecte a v1: US-003 tancada, Epic 3
+**v2:** taxonomia actualitzada amb els 15 codis oficials del paper del
+director (C100–C530). Vegeu `docs/taiga/taxonomy.md` per al detall
+complet. Canvis principals respecte a v1: US-003 tancada, Epic 3
 reestructurat (noves US-303/US-304, antiga US-303 renumerada a US-305),
 US-402 actualitzada.
+
+**v3 (aquesta versió, agost 2026) — Fase 0 i Fase 1 tancades:** US-108
+tancada (validació automàtica 11/11 = 100% TP sobre `eligibility_report_
+2000_5.csv`, referència vigent). US-201/US-202 tancades amb ampliació
+d'abast decidida durant la implementació (`notebooks/version_extractor.py`):
+~70% dels elegibles no tenen tags (Criteri B), així que el concepte de
+"versió" també cobreix sessions de commits inferides, no només tags
+explícits (Criteri A) — vegeu la nota a US-201 i `docs/architecture.md`
+(Fase 1) per al disseny complet. Situació actual: desbloquejar Fase 2
+(Epic 3) és el següent pas actiu, pendent de les decisions d'abast amb el
+director a US-303/US-304.
 
 ---
 
@@ -266,6 +277,14 @@ positius sistemàtics.
   dispersió temporal mínima (`MIN_SUBSTANTIVE_GAP_HOURS`, actualment 6h)
   + detecció real de fitxers (US-302); precisió automàtica 38.5% → 100%
 
+**Nota (setembre 2026)**: `notebooks/validate_eligible.py` s'ha eliminat
+del repositori -- era una eina de validació PUNTUAL, no part del pipeline
+en marxa; un cop la conclusió (100% TP) queda documentada aquí i a
+`docs/us108_validation_report.md` (mantingut com a document històric), no
+calia mantenir-la com a codi viu. `cluster_commit_times` es va moure a
+`eligibility_scan.py` (l'única part que encara es fa servir, via
+`version_extractor.py`). Vegeu `docs/decisions_tfg.txt`, T-11.
+
 **Estat:** 🔄 In progress (automatitzat i re-executat net; pendent només
 confirmació humana final de Joan/director)
 **Story points:** 5
@@ -284,16 +303,29 @@ ordenada de versions amb les seves metadades.*
 comprovar que n'hi ha ≥2) de cada dataset elegible, **per tal de** tenir
 la seqüència completa de versions a analitzar.
 
-**Criteris d'acceptació:**
-- [ ] Per cada dataset de la llista d'elegibles (Epic 1), cridar
-  `list_repo_refs` i extreure tots els tags
-- [ ] Ordenar els tags cronològicament (per data de commit associat, no
-  per ordre alfabètic del nom del tag)
-- [ ] Gestionar el mateix sistema de retry/error de l'Epic 1
-  (reutilitzar `errors.py`)
-- [ ] Output: taula `dataset_id, tag_name, commit_sha, tag_order`
+**Ampliació d'abast (decidida durant la implementació)**: sobre
+`eligibility_report_2000_5.csv`, 8/11 (~70%) dels datasets elegibles ho
+són via Criteri B i NO tenen cap tag — una implementació literal d'aquesta
+story hauria deixat buida la majoria de la població elegible. En lloc de
+restringir l'abast només als datasets amb tags i deferir la resta, es va
+decidir en aquell mateix moment estendre el concepte de "versió" també als
+datasets sense tags: cada SESSIÓ de treball (`eligibility_scan.
+cluster_commit_times`, mateixa lògica que US-108) es tracta com una versió
+inferida. Vegeu `docs/architecture.md` (Fase 1) per al disseny complet.
 
-**Estat:** 📋 To do
+**Criteris d'acceptació:**
+- [x] Per cada dataset de la llista d'elegibles (Epic 1), cridar
+  `list_repo_refs` i extreure tots els tags
+- [x] Ordenar els tags cronològicament (per data de commit associat, no
+  per ordre alfabètic del nom del tag)
+- [x] Gestionar el mateix sistema de retry/error de l'Epic 1
+  (reutilitzar `errors.py`)
+- [x] Output: taula `dataset_id, version_label, commit_sha, version_order`
+  (`version_label`/`version_order` en lloc de `tag_name`/`tag_order` —
+  cobreix també les versions inferides per sessió, vegeu ampliació
+  d'abast més amunt)
+
+**Estat:** ✅ Done
 **Story points:** 5
 **Tags:** extraction
 **Depèn de:** US-108 (llista d'elegibles validada)
@@ -305,15 +337,26 @@ la seqüència completa de versions a analitzar.
 aproximada de cada versió, **per tal de** alimentar les dimensions del
 data warehouse (Epic 4).
 
-**Criteris d'acceptació:**
-- [ ] Per cada tag, extreure data del commit associat
-- [ ] Extreure autor/committer del commit
-- [ ] Extreure mida aproximada del dataset en aquella versió (via API,
-  sense descarregar els fitxers complets — Git-LFS fa inviable la
-  descàrrega completa a escala)
-- [ ] Output persistit a `data/raw/versions_<run_id>.csv`
+**Limitació coneguda**: `huggingface_hub` no distingeix autor de committer
+com el git natiu — `GitCommitInfo.authors` (`list[str]` de noms d'usuari)
+és l'únic camp que exposa l'API. El criteri d'acceptació "autor/committer"
+es cobreix amb aquest únic camp disponible, no és una decisió de disseny
+pròpia.
 
-**Estat:** 📋 To do
+**Criteris d'acceptació:**
+- [x] Per cada tag, extreure data del commit associat
+- [x] Extreure autor/committer del commit (limitació de l'API documentada
+  més amunt: només `authors`, sense distinció autor/committer)
+- [x] Extreure mida aproximada del dataset en aquella versió (via API,
+  sense descarregar els fitxers complets — `list_repo_tree(recursive=
+  True)`/`RepoFile.size`, ja resolt per a LFS, sense cap tècnica de
+  lectura de punter)
+- [x] Output persistit a `data/versions_<run_id>.csv` (no
+  `data/raw/versions_<run_id>.csv`: cap altra sortida del projecte fa
+  servir una subcarpeta `raw/`, s'ha mantingut la mateixa convenció plana
+  que la resta de `data/`)
+
+**Estat:** ✅ Done
 **Story points:** 5
 **Tags:** extraction
 **Depèn de:** US-201
@@ -388,71 +431,158 @@ no comprometre's a implementar categories que requereixen contingut real
 de les dades sense haver-ho parlat amb el director.
 
 **Criteris d'acceptació:**
-- [ ] Taula de detectabilitat completada: 7 codis schema-level (C100,
-  C210, C221, C222, C223, C311, C321) vs 8 codis content-level (C312,
-  C322, C410, C421, C422, C510, C520, C530) — vegeu `taxonomy.md`
-- [ ] Avaluar viabilitat de descarregar contingut real NOMÉS per als
-  datasets elegibles (població petita, ~1.37%), a diferència de la
-  decisió original que ho descartava per a tota la població
-- [ ] Decisió consultada i tancada amb el director
-- [ ] Decisió registrada a `docs/decisions_tfg.txt` (actualitza la
-  Decisió A-02 original)
+- [x] Taula de detectabilitat completada: la binària original (7
+  schema-level / 8 content-level) s'ha substituït per **3 nivells**
+  (metadada pura / lectura parcial de schema / contingut complet) —
+  vegeu `taxonomy.md`, secció "Detectabilitat: 3 nivells"
+- [x] Avaluar viabilitat de descarregar contingut real NOMÉS per als
+  datasets elegibles — calculat amb dades reals (`data/versions_1.csv`):
+  151.4 GB si es baixa el Nivell 3 sencer sobre els 11 elegibles actuals
+  (no és "petit" en bytes, encara que ho sigui en nombre de datasets).
+  Hipòtesi d'exclusió per >500 commits (Castaño et al. 2025) provada i
+  descartada (màxim real: 25 commits, sense correlació amb el pes).
+  Estratègia recomanada: lectura selectiva per columna (Nivell 3), no
+  exclusió de datasets.
+- [ ] Decisió consultada i tancada amb el director — **pendent, requereix
+  una conversa real de Joan amb Alberto Abelló**; l'anàlisi (AC1+AC2) ja
+  està preparada per a aquesta conversa
+- [ ] Decisió registrada a `docs/decisions_tfg.txt` (Decisió A-02 —
+  esborrany ja afegit, pendent de tancar amb el resultat de la conversa)
 
-**Estat:** 📋 To do
+**Estat:** 🔄 In progress — AC1/AC2 fets, AC3/AC4 pendents de Joan
 **Story points:** 3
 **Tags:** planning, taxonomy, scope
 **Prioritat:** Alta — condiciona tot el disseny de US-305
 
 ---
 
-### US-304 — Validar la classificació amb el ground truth Census Income (NOVA)
-**Com a** investigador, **vull** comparar el resultat del meu pipeline de
-classificació amb les etiquetes manuals del director sobre 9 versions
-reals del dataset Census Income (Taula 1 del paper), **per tal de**
-obtenir una mesura de precisió abans d'escalar a tota la població
-elegible.
+### US-304 — Validar l'extractibilitat mecànica de canvis (Census Income D1–D7) (REDEFINIDA)
+**Com a** investigador, **vull** confirmar que el meu motor de diffing
+detecta mecànicament un senyal allà on el ground truth del director marca
+un canvi, **per tal de** validar el mecanisme d'extracció ABANS de
+construir el classificador de codis (US-305) sobre seu.
+
+**Redefinició respecte a la v1 d'aquesta story**: la versió original
+pressuposava un classificador de codis ja construït ("comparar-ho codi
+per codi"), però el classificador (US-305) depèn d'aquesta story —
+dependència circular. Redefinit: US-304 valida NOMÉS l'extracció/diffing
+(detectar QUÈ ha canviat), no l'etiquetatge amb un codi concret. El "%
+d'acord codi per codi" es mou a US-305 (vegeu allà), un cop el
+classificador existeixi de debò. Vegeu `docs/decisions_tfg.txt` (T-07).
+
+**Troballa d'abast**: dels 9 datasets del ground truth (D1–D9), només
+D1–D7 són a Hugging Face (D8 = Zenodo, D9 = AIF360/UCI, no repos de HF).
+Aquesta story cobreix **només D1–D7**; D8/D9 queden documentats com a
+fora d'abast a `taxonomy.md` (2 connectors únics per a 2/9 files, sense
+reutilitat per a la resta del projecte).
 
 **Criteris d'acceptació:**
-- [ ] Executar el pipeline propi (extracció + classificació) sobre els 9
-  repositoris D1–D9 llistats a `taxonomy.md`
-- [ ] Comparar el resultat, codi per codi, amb la Taula 1 del paper
-- [ ] Calcular % d'acord global i per codi
-- [ ] Documentar discrepàncies i, si escau, ajustar les regles de
-  detecció abans d'aplicar-les a la població elegible completa
-- [ ] Resultat documentat a la memòria com a validesa del mètode
-  (equivalent al Cohen's Kappa del paper dels LLM per a la classificació
-  de commits)
+- [x] Motor de diffing (`notebooks/change_diff.py`) amb funcions pures
+  que comparen dos `DataFrame` i produeixen fets estructurals per a
+  cadascun dels 15 codis (excepte C100, fora d'abast d'una comparació
+  tabular) — reutilitzable tal qual a US-305
+- [x] Adquisició de D0 (baseline UCI) i D1–D7 (HF, incloent les 2
+  subrutes de `mstz/adult` per a D3/D4)
+- [x] Executar el motor sobre cada D_i (i=1..7) contra D0 i produir una
+  taula de detectabilitat empírica — SENSE assignar-hi encara el codi
+  C1XX automàticament. **Resultat real**: D3/D4 encaixen EXACTAMENT amb
+  el total de fila del paper (7/7 els dos); D1/D2/D5 per sota (esperat,
+  C100 fora d'abast + llindars conservadors); D6 clarament per sobre
+  (6 detectats vs 4 del paper) — confirma que la tria del fitxer font
+  per a D6 (`train_data.csv`, entre 3 candidats al repo, sense
+  confirmació del paper) probablement no és la correcta; D7 una mica per
+  sobre (6 vs 5). Detall a `docs/architecture.md`, secció "Resultats
+  reals — validació d'extractibilitat"
+- [x] Documentar limitacions conegudes del motor (heurística de renom
+  C223, atribució add/remove de files C421/C422 sense ID d'instància
+  estable, ambigüitat del fitxer font de D6) — docstrings a
+  `change_diff.py`, consolidat a `docs/taiga/taxonomy.md`, "Limitacions
+  conegudes del motor de diffing". (C410 -- en aquell moment es creia no
+  detectable sense garantir l'ordre de l'adquisició; implementat més
+  endavant amb una tècnica de hash de contingut, Decisió T-14.)
+- [x] Resultat: `data/census_income_diff_report.csv` + nova subsecció a
+  `docs/architecture.md`
 
-**Estat:** 📋 To do
+**Estat:** ✅ Done — resultats reals sobre D1–D7, limitacions i
+ambigüitats (fitxer de D6) documentades honestament, no amagades
 **Story points:** 5
-**Tags:** validation, taxonomy
-**Depèn de:** US-303, US-302 (parcialment — es pot fer amb detecció
-manual/semi-automàtica si US-302 encara no està llesta)
+**Tags:** validation, taxonomy, extraction
+**Depèn de:** US-301, US-302 (ja fetes). Tècnicament ja NO depèn de
+US-303 ni de US-305 (l'antiga dependència circular queda trencada, vegeu
+T-07) — es manté DESPRÉS de US-303 a la seqüència real de treball perquè
+US-303 ja estava planificada abans (Sprint 4) i el seu AC1/AC2 donen
+context útil (la taula de 3 nivells) abans d'intentar-los empíricament
+aquí.
 
 ---
 
-### US-305 — Mapar canvis detectats als 15 codis oficials de la taxonomia
+### US-305 — Mapar canvis detectats als 14 codis estructurals de la taxonomia (SENSE C100)
 *(Anteriorment US-303 a la v1 d'aquest document)*
 
 **Com a** investigador, **vull** classificar cada canvi de fitxer
-detectat segons els 15 codis oficials (C100–C530), **per tal de**
+detectat segons els codis oficials de la taxonomia, **per tal de**
 respondre la pregunta central del TFG amb una classificació formal,
 reproduïble i validada.
 
-**Criteris d'acceptació:**
-- [ ] Regles de classificació definides per a cada codi dins l'abast
-  acordat a US-303 (mínim: els 7 codis schema-level)
-- [ ] Cada canvi detectat s'etiqueta amb el codi corresponent (C1XX–C5XX)
-- [ ] El classificador NO usa informació de quina columna és el target
-  (regla de disseny explícita de la taxonomia — vegeu `taxonomy.md`)
-- [ ] Documentar limitacions per als codis fora de l'abast decidit
-- [ ] Output: taula `dataset_id, version_from, version_to, code,
-  is_breaking`
+**Redisseny important (aquesta sessió)**: la classificació ja NO viu en
+un script separat -- s'ha integrat **DINS de `eligibility_scan.
+classify_dataset()`** (paràmetre opt-in `classify_changes=True`), l'eina
+sobre la qual "parteix l'escalabilitat del projecte". Reutilitza el
+motor de `change_diff.py` sense reimplementar-lo -- `change_classifier.
+py` (existia com a fitxer separat) es va fusionar dins de `change_diff.
+py` un cop reduït a ~120 línies amb un únic cridant real. **Decidit: NO
+es classifica C100 (metadada)** — deliberadament fora d'abast, només els
+14 codis estructurals/de contingut (C210-C530).
 
-**Estat:** 📋 To do (bloquejat per US-301, US-302, US-303, US-304)
+**Criteris d'acceptació:**
+- [x] Integrat dins de `classify_dataset()` (`notebooks/eligibility_
+  scan.py`), no com a script separat — `classify_changes=True` (opt-in,
+  MAI actiu durant `run_sampling`, l'escaneig poblacional de Fase 0 fins
+  a 2000 datasets, per no disparar el cost de 151GB de US-303 multiplicat
+  per ~180x)
+- [x] Reutilitza el motor de diffing/classificació (`change_diff.py`,
+  motor + classificador en un sol fitxer) sense reimplementar-lo
+- [x] Regles de classificació definides per als 14 codis C210-C530 (C100
+  explícitament exclòs, no interessa classificar metadades)
+- [x] Cada canvi detectat s'etiqueta amb el codi corresponent
+- [x] El classificador NO usa informació de quina columna és el target
+  (verificat amb un test d'introspecció de la signatura)
+- [x] Documentar limitacions: heurística d'`is_breaking` pròpia de
+  l'estudi; historial lineal assumit (sense merges) per emparellar
+  commit amb el seu pare; fitxers binaris (àudio/vídeo/tensors) mai es
+  diferencien a nivell de contingut, només compten per a l'elegibilitat
+- [x] Output: taula `dataset_id, version_from, version_to, code,
+  is_breaking` — `data/change_classification_<run_id>.csv` (població
+  real, via `--classify-eligible`) i `data/census_income_classification.
+  csv` (validació Census Income, 30 etiquetes sobre D1-D7)
+- [x] Torna a córrer sobre D1–D7 (Census Income, mantenint la seva pròpia
+  adquisició inter-repositori -- `classify_dataset` és intra-repositori
+  per disseny, no es pot aplicar directament a Census Income): mateixos
+  totals que abans (D3/D4=7/7, D1/D2=1/3, D5=2/4, D6=6/4, D7=6/5).
+  **Limitació d'integritat, no resolta**: el "% d'acord codi per codi"
+  EXACTE no es pot calcular (extracció del PDF no conserva l'alineació de
+  columnes de la Taula 1) — es compara per total agregat.
+- [x] Executat sobre la població real (11 datasets elegibles de
+  `eligibility_report_2000_5.csv`, via `python eligibility_scan.py
+  --classify-eligible ...`): **11/11 classificats, 0 fallats, 67
+  etiquetes de canvi** (`data/change_classification_1.csv`). Per codi:
+  C421 (afegir fila) = 53, C422 (eliminar fila) = 10, C223 (renom) = 3,
+  C311 (tipus categòric) = 1. 4 breaking (C223×3, C311×1), 63 no. 7 dels
+  11 datasets tenen etiquetes; els altres 4 (`Team-DIANA/green-probe-
+  dataset`, `nwu-ctext/nchlt`, `QFIN/FCMBench-Data`, `AILAB-VNUHCM/
+  vivos`) tenen 0 -- confirmat pel log que els seus commits substantius
+  no toquen cap fitxer tabular (només binaris: àudio/vídeo/arxius), no
+  un error. Durant aquesta execució es van trobar i corregir 2 problemes
+  reals: `unhashable type: 'dict'` en columnes d'àudio/imatge (`_is_
+  hashable_series`, ara les salta en lloc de fer fallar tot el dataset)
+  i el cost desproporcionat de datasets "chunked" com `edinburghcstr/
+  ami` (`MAX_TABULAR_FILES_PER_COMMIT = 5`, nou cap).
+
+**Estat:** ✅ Done — mecanisme integrat, validat contra Census Income i
+executat amb èxit sobre la població real elegible
 **Story points:** 13
 **Tags:** classification, taxonomy
-**Depèn de:** US-003, US-302, US-303, US-304
+**Depèn de:** US-003, US-302, US-303 (AC1/AC2 fets, AC3/AC4 pendents), US-304 (fet)
 
 ---
 

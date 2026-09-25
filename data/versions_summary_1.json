@@ -1,0 +1,9 @@
+{
+  "timestamp": "2026-08-27T12:31:54.146933",
+  "source_csv": "/home/joanferrer/Documentos/UNIVERSITAT/TFG/hf-dataset-version-analysis/data/eligibility_report_2000_5.csv",
+  "n_eligible": 11,
+  "n_via_tags": 3,
+  "n_via_sessions": 8,
+  "n_dataset_level_failures": 0,
+  "n_rows_written": 40
+}

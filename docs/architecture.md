@@ -18,19 +18,14 @@ Fase 0            Fase 1              Fase 2                 Fase 3
 Mostreig i    →   Extracció de   →    Classificació de   →   Data warehouse
 elegibilitat      versions            canvis (taxonomia)     i anàlisi
 
-eligibility_      version_          change_                 warehouse/
-scan.py           extractor.py      classifier.py            (a decidir:
-errors.py         (a crear)         (a crear)                DuckDB/Postgres)
+eligibility_      version_          change_diff.py           warehouse/
+scan.py           extractor.py      (motor + classificador)  (a decidir:
+errors.py                                                    DuckDB/Postgres)
 ```
 
 ## Fase 0 — Mostreig i elegibilitat (`eligibility_scan.py`, `errors.py`)
 
-**Estat: pràcticament tancat.** Sobre la mostra original de 13 elegibles
-(n=1000), la validació manual (`docs/us108_validation_report.md`, versió
-històrica) va trobar una precisió de 5/13 ≈ 38.5%, amb 8/13 falsos
-positius atribuïbles a un únic patró (eines com LeRobot que generen
-desenes de commits automàtics en una sola sessió de pujada). Això va
-motivar dues millores, totes dues implementades:
+Sobre la mostra original de 13 elegibles (n=1000), la validació manual (`docs/us108_validation_report.md`, versió històrica) va trobar una precisió de 5/13 ≈ 38.5%, amb 8/13 falsos positius atribuïbles a un únic patró (eines com LeRobot que generen desenes de commits automàtics en una sola sessió de pujada). Això va motivar dues millores, totes dues implementades:
 
 1. **Dispersió temporal mínima al Criteri B** (`MIN_SUBSTANTIVE_GAP_HOURS`,
    actualment 6h, entre el commit substantiu més antic i el més recent).
@@ -49,12 +44,18 @@ datasets i el pipeline recorria sempre al fallback de títol. Corregit al
 execució neta (`eligibility_report_2000_3.csv`, amb `git` disponible i
 totes dues millores realment actives) confirma la correcció.
 
-`notebooks/validate_eligible.py` genera automàticament
-`docs/us108_validation_report.md` a cada execució (US-108, criteri
-d'acceptació 4), amb un veredicte TP/REVIEW per dataset. La comprovació
-de sessions de treball (`cluster_commit_times`, buit >
+**`notebooks/validate_eligible.py` (eliminat, setembre 2026)** va generar
+`docs/us108_validation_report.md`, amb un veredicte TP/REVIEW per
+dataset -- eina de validació PUNTUAL (US-108, criteri d'acceptació 4), no
+part del pipeline en marxa: un cop la conclusió (100% TP sobre l'execució
+de referència) queda documentada, no calia mantenir-la com a codi viu.
+`cluster_commit_times` (la única funció que en depenia `version_
+extractor.py`) es va moure a `eligibility_scan.py` abans d'eliminar la
+resta -- vegeu `docs/decisions_tfg.txt`, T-11. El report generat es manté
+com a document històric, no es regenera. La comprovació de sessions de
+treball que hi feia servir (`cluster_commit_times`, buit >
 `MIN_SUBSTANTIVE_GAP_HOURS` entre commits CONSECUTIUS -- el MATEIX
-llindar que decideix l'elegibilitat via Criteri B) **només s'aplica al
+llindar que decideix l'elegibilitat via Criteri B) **només s'aplicava al
 Criteri B**: el Criteri A (tags explícits) mai ha exigit dispersió
 temporal a `classify_dataset` -- la presència de >=2 tags ja és un
 senyal deliberat de versionat pel mantenidor, independent de quan es van
@@ -96,13 +97,75 @@ LeRobot que els falsos positius originals, però aquest cas concret
 (Criteri B) té commits substantius genuïnament repartits en 3 dies
 diferents (11, 13 i 16 de gener).
 
-**Pendent**: `eligibility_report_2000_3.csv` es va generar amb el
-llindar antic de 24h per a l'ELEGIBILITAT del Criteri B (no només per a
-l'informe); com que 6h és més PERMISSIU per a l'elegibilitat (tot i ser
-més ESTRICTE per al recompte de sessions -- efectes en sentits oposats
-del mateix llindar unificat), caldria una execució neta amb 6h per
-confirmar si sorgeixen nous elegibles que abans no complien el llindar
-de 24h. I, com sempre, confirmació final de Joan/director.
+**Resolt**: `eligibility_report_2000_5.csv` és l'execució neta amb 6h ja
+actiu tant per a l'ELEGIBILITAT del Criteri B com per al recompte de
+sessions de l'informe (vegeu taula de resultats més avall) -- substitueix
+`eligibility_report_2000_3.csv` com a execució de referència. Com sempre,
+confirmació final de Joan/director pendent.
+
+### Detecció de fitxers substantius: de denylist pura a allowlist+prefix (agost 2026)
+
+**Problema detectat**: `is_substantive_path()` (US-302) determinava si un
+fitxer era substantiu amb una única llista negra de noms exactes
+(`NON_SUBSTANTIVE_FILES`): tot el que NO hi era explícitament es
+considerava substantiu per defecte ("fail-open total"). Aquest disseny és
+estructuralment incapaç de ser complet -- un denylist enumera exclusions
+d'un espai obert (qualsevol nom de fitxer possible), així que sempre hi
+ha convencions noves que se n'escapen (`CARD.md`, `pyproject.toml`,
+`changelog.json`, etc.).
+
+**Calibratge empíric** (4 datasets reals clonats i inspeccionats:
+`AG42/lerobot_dataset_try1`, `villekuosmanen/close_shoebox`,
+`unitreerobotics/G1_Dex3_ObjectPlacement_Dataset`,
+`AndreaBozzo/ceres-open-data-index`): es va explorar fer servir la MIDA
+del fitxer com a desempat per a extensions ambigües (`.json`/`.txt`),
+llegint la mida real via el punter LFS (el "blob" que git guarda per a un
+fitxer LFS és només ~130 bytes de text amb un camp `size:`, així que
+llegir-lo no trenca la garantia de "mai descarregar dades reals" de
+`bare_clone`). **Resultat descartat**: la mida NO separa bé metadada de
+dades reals -- fitxers de metadades poden ser MÉS GRANS que fitxers de
+dades genuïns del mateix dataset (`meta/episodes_stats.jsonl` de
+villekuosmanen pesa 393KB, més que la majoria dels
+`data/chunk-*/episode_*.parquet` del mateix dataset; `meta/episodes/
+chunk-000/file-000.parquet` d'unitreerobotics pesa 482KB, també metadada
+tot i l'extensió `.parquet`). El senyal que SÍ va separar-ho de forma
+consistent en els 4 datasets: el **prefix de la ruta** (`meta/` conté
+sempre metadada, `data/`/`videos/` sempre contingut real).
+
+**Disseny final** (`NON_SUBSTANTIVE_PATH_PREFIXES`,
+`NON_SUBSTANTIVE_EXTENSIONS`, `SUBSTANTIVE_DATA_EXTENSIONS`,
+`NON_SUBSTANTIVE_FILES`), en ordre de decisió dins `is_substantive_path`:
+1. Prefix de ruta a `meta/`/`meta_data/`/`.github/` → NO substantiu,
+   **independentment de l'extensió** (comprovat abans que l'extensió a
+   propòsit: un `.parquet` sota `meta/` és metadada, no dades).
+2. Nom exacte a `NON_SUBSTANTIVE_FILES` (inclou `changelog.json`, trobat
+   al calibratge), o extensió a `NON_SUBSTANTIVE_EXTENSIONS` (`.md`,
+   `.yml`, `.yaml`, `.toml`, `.cfg`, `.ini`, `.lock` -- generalitzat per
+   extensió, no només `README.md`/`setup.cfg` un per un) → NO substantiu.
+3. Extensió a `SUBSTANTIVE_DATA_EXTENSIONS` (parquet, csv, arrow, tensors,
+   multimèdia, arxius) → substantiu.
+4. Qualsevol altre cas (p.e. `.json`/`.txt` fora de `meta/`, o una
+   extensió no prevista) → substantiu per defecte (fail-open), però
+   registrat (`log.debug`) perquè es pugui revisar i ampliar les llistes
+   amb dades reals més endavant, en lloc d'endevinar-les.
+
+**Pendent (obert, no implementat)**: el pas 1 (`NON_SUBSTANTIVE_PATH_
+PREFIXES`, `meta/` com a prefix universal de metadada) es basa en un
+calibratge de només 4 datasets, 3 dels quals són del mateix format
+LeRobot -- no és mostra independent, i `meta/` és una convenció pròpia de
+LeRobot documentada al seu format, no un estàndard de la plataforma
+Hugging Face en general. Tractar-lo com a regla universal (per davant
+fins i tot de l'extensió) està sota revisió. Alternativa proposada, NO
+implementada: en lloc de decidir per prefix de ruta, decidir NOMÉS per
+extensió, i per als fitxers `.json` ambigus (que ni `NON_SUBSTANTIVE_
+EXTENSIONS` ni `SUBSTANTIVE_DATA_EXTENSIONS` cobreixen) fer "schema/content
+sniffing": llegir el contingut (només blobs petits, no-LFS, per no trencar
+mai la garantia de "no descarregar dades reals") i classificar segons la
+forma estructural -- un array pla d'objectes homogenis suggereix dades
+reals, un objecte escalar pla suggereix configuració/metadada. Aquesta
+tècnica NO resol l'ambigüitat de `.jsonl` (un catàleg/índex i dades reals
+per fila són estructuralment indistingibles); per a `.jsonl` caldria
+acceptar el fail-open residual actual amb `log.debug`, igual que ara.
 
 ### Flux
 
@@ -123,7 +186,9 @@ de 24h. I, com sempre, confirmació final de Joan/director.
      `git show --name-status`, amb fallback a l'heurística de títol
      `is_substantive_commit` si el clonatge falla -- **cal `git`
      instal·lat al sistema/imatge**, vegeu nota de bug de Docker més
-     amunt).
+     amunt). Un fitxer concret es considera substantiu segons
+     `is_substantive_path` (prefix de ruta + extensió, vegeu secció
+     "Detecció de fitxers substantius" més avall).
    - Mode `--tags-only`: només permet elegibilitat via Criteri A (el
      Criteri B mai s'avalua), però segueix verificant els commits
      substantius (`list_repo_commits` + clonatge) -- només estalvia
@@ -157,37 +222,127 @@ de 24h. I, com sempre, confirmació final de Joan/director.
 |---|---|---|---|---|---|---|
 | `eligibility_report_1000_3` (baseline històric, esborrat de `data/`, vegeu historial de git) | 1000 | 949.991 | 13 | 49 | 1.37% | Cap (pipeline original, pre-US-302) |
 | `eligibility_report_2000_2` | 2000 | 979.377 | 11 | 74 | 0.58% | Només dispersió temporal (bug de Docker) |
-| **`eligibility_report_2000_3` (execució de referència vigent)** | 2000 | 979.480 | 12 | 87 | 0.63% | Totes dues (dispersió temporal + US-302) |
+| `eligibility_report_2000_3` | 2000 | 979.480 | 12 | 87 | 0.63% | Totes dues, però amb el llindar antic de 24h |
+| **`eligibility_report_2000_5` (execució de referència vigent)** | 2000 | 1.019.447 | 11 | 79 | 0.58% | Totes dues, llindar de 6h ja actiu (elegibilitat i informe) |
 
-La proporció d'elegibles (~0.6%) es manté estable entre les dues
+La proporció d'elegibles (~0.6%) es manté estable entre totes les
 execucions amb dispersió temporal activa, molt per sota del baseline
 històric (1.37%): la major part de la reducció ve de la dispersió
 temporal, i la detecció real de fitxers (US-302) afina encara més la
 qualitat de la classificació. Precisió automàtica (`docs/
 us108_validation_report.md`, comprovació de sessions només per al Criteri
-B, llindar unificat i actualment a 6h): **12/12 = 100%** sobre
-`eligibility_report_2000_3` (totes dues millores actives; execució
-classificada amb el llindar antic de 24h, vegeu nota més amunt), molt per
-sobre del 38.5% del
-baseline històric. (Els percentatges de 81.8%/83.3% citats en versions
-anteriors d'aquest document es van calcular amb metodologies intermèdies
-de l'informe (llindar de sessió d'1h, o comprovació de sessions aplicada
-també al Criteri A) ja corregides -- no comparables directament.)
+B, llindar unificat a 6h): **11/11 = 100%** sobre `eligibility_report_
+2000_5` (referència vigent, única execució amb el llindar de 6h actiu
+també per a l'elegibilitat -- no només per a l'informe), molt per sobre
+del 38.5% del baseline històric. Cada dataset elegible d'aquesta execució
+té una fitxa a `data/versions_1.csv` (Fase 1, vegeu més avall): 3 via
+Criteri A (tags), 8 via Criteri B (sessions de commits). (Els percentatges
+de 81.8%/83.3% citats en versions anteriors d'aquest document es van
+calcular amb metodologies intermèdies de l'informe (llindar de sessió
+d'1h, o comprovació de sessions aplicada també al Criteri A) ja
+corregides -- no comparables directament.)
 
-## Fase 1 — Extracció de versions (pendent d'implementar)
 
-Objectiu: per cada dataset elegible, obtenir la seqüència completa i
-ordenada de tags/versions amb metadades (data, autor, mida aproximada).
+## Mida de la mostra i interval de confiança
 
-Mòdul previst: `version_extractor.py`. Ha de reutilitzar `errors.py`
-(mateix sistema de retry/classificació d'errors que Fase 0).
+L'objectiu és estimar, amb un 95% de confiança, la proporció de datasets de
+HF que són elegibles (≥2 versions reals). Una execució real i no esbiaixada
+(`--sample-size 1000`, sense `--max-scanned`) va donar:
 
-## Fase 2 — Classificació de canvis / taxonomia (pendent)
+| Mètrica                | Valor          |
+|-------------------------|----------------|
+| Població escanejada (N) | 949.991        |
+| Elegibles                | 13             |
+| No elegibles             | 938            |
+| Accés restringit (403)   | 49             |
+| Errors                   | 0              |
+| Proporció elegible (p)   | 0.0137 (1.37%) |
 
-**Estat: desbloquejat.** US-301 ja no condiciona el disseny d'aquesta
-fase: confirmat que `commit.files` no és accessible via `huggingface_hub`,
-i implementada l'alternativa (clonatge "bare" + `git show --name-status`,
-US-302, ja integrada a `eligibility_scan.py`).
+Aquesta p observada és molt més baixa que les proves ràpides amb
+`--max-scanned` (~10-17%), perquè `list_datasets()` no retorna els datasets
+en ordre aleatori: capar l'escaneig als primers N esbiaixa la mostra. Només
+un escaneig complet (sense `--max-scanned`) dona una p fiable.
+
+Amb aquesta p (en lloc de l'assumpció conservadora p=0.5, que sobredimensiona
+molt la mostra necessària quan la proporció real és petita), la mida de
+mostra necessària per a un marge d'error E amb 95% de confiança és
+n = z²·p·(1-p)/E² (z=1.96):
+
+| Marge d'error (E) | n necessària |
+|---|---|
+| ±1.0 punts percentuals | ~520 |
+| ±0.5 punts percentuals | ~2.070 |
+| ±0.3 punts percentuals | ~5.730 |
+
+Per això el valor per defecte de `--sample-size` és **2000**: marge d'error
+±0.51pp (interval aprox. [0.86%, 1.88%]), doblant la precisió respecte a
+n=1000 (±0.72pp) per només el doble de cost de classificació (~2 minuts amb
+4 threads). La correcció per població finita és negligible en aquest rang
+(fracció de mostreig < 0.6%).
+
+## Fase 1 — Extracció de versions (`version_extractor.py`)
+
+**Estat: implementat (US-201 + US-202).** Objectiu: per cada dataset
+elegible de `eligibility_report_2000_5.csv` (execució de referència),
+obtenir la seqüència completa i ordenada de versions amb metadades (data,
+autors, mida aproximada), reutilitzant `errors.py` (mateix sistema de
+retry/classificació d'errors que Fase 0).
+
+**Ampliació d'abast respecte al text original de US-201/US-202**: la
+majoria de la població elegible (8/11 a `eligibility_report_2000_5.csv`,
+~70%) ho és via Criteri B i NO té cap tag de Git -- una implementació
+literal de "llistar tags" hauria deixat buida la majoria de la població.
+En lloc de restringir l'abast a només els datasets amb tags (Criteri A) i
+deixar la resta per a una user story futura, es va decidir ampliar l'abast
+immediatament: el concepte de "versió" es defineix segons quin criteri va
+fer elegible el dataset (reutilitzant `eligibility_reason`, sense
+recalcular el criteri):
+
+- **Criteri A** (tags explícits): cada TAG és una versió (US-201 literal).
+  `GitRefInfo.target_commit` dona el SHA directament, sense cap crida
+  extra per resoldre tag -> commit.
+- **Criteri B** (sense tags): cada SESSIÓ de treball és una versió
+  inferida, reutilitzant `eligibility_scan.cluster_commit_times` -- LA
+  MATEIXA lògica ja validada a US-108 (buit > `MIN_SUBSTANTIVE_GAP_HOURS`
+  entre commits substantius consecutius), no una reimplementació.
+
+Cada fila de sortida porta un camp `version_source` (`"tag"` o
+`"commit_session"`) explícit: el nivell de confiança NO és el mateix (un
+tag és un senyal deliberat del mantenidor; una sessió és una heurística
+inferida, amb les mateixes cauteles que el Criteri B a
+`docs/us108_validation_report.md`).
+
+**Limitació coneguda**: `huggingface_hub` no distingeix autor de
+committer com el git natiu -- `GitCommitInfo.authors` (`list[str]` de
+noms d'usuari) és l'únic camp disponible. El camp `authors` de la sortida
+reflecteix aquesta limitació de l'API, no una decisió de disseny propia.
+
+**Detall tècnic rellevant**: `list_repo_tree` (usat per a `approx_size_
+bytes`, via `RepoFile.size` -- ja la mida real, resolta per a LFS, sense
+cap tècnica de lectura de punter) és un GENERADOR lazy: la crida HTTP no
+es fa en cridar-lo, només en iterar-lo. Es passa embolicat en un tancament
+de mida zero que el consumeix SENCER (`list(...)`) dins de la crida
+reintentada (`errors.with_retry`), perquè un error no es perdi fora del
+`try/except` de `with_retry` sense cap reintent (vegeu el comentari
+"DISSENY" a `version_extractor.fetch_tree_size_bytes`).
+
+**Sortida**: `data/versions_<run_id>.csv` (una fila per versió; columnes
+`dataset_id`, `version_label`, `version_order`, `version_source`,
+`commit_sha`, `commit_date`, `authors`, `approx_size_bytes`,
+`session_commit_count`, `status`) i `data/versions_summary_<run_id>.json`
+(resum de l'execució). Execució real sobre `eligibility_report_2000_5.csv`
+(11 datasets elegibles): 40 versions extretes, 0 fallades de dataset
+sencer, cap sessió buida (coherent amb l'elegibilitat original via
+Criteri B, que ja exigia >=2 commits substantius dispersos).
+
+## Fase 2 — Classificació de canvis / taxonomia (US-301/US-302/US-304/US-305 fetes; US-303 en curs)
+
+**Estat: US-301/US-302/US-304/US-305 fetes; US-303 en curs (AC1/AC2 fets,
+AC3/AC4 pendents del director -- única cosa que falta per tancar
+formalment aquesta fase).** US-301 ja no condiciona el disseny d'aquesta
+fase: confirmat que `commit.files` no és accessible via `huggingface_
+hub`, i implementada l'alternativa (clonatge "bare" + `git show
+--name-status`, US-302, ja integrada a `eligibility_scan.py`).
 
 ### Taxonomia (font: paper del director, `docs/taiga/taxonomy.md`)
 
@@ -218,27 +373,279 @@ codificada i validada amb un cas real (Census Income, 9 versions de HF).
 target del pipeline. La taxonomia classifica el dataset, no l'ús que se'n
 fa.
 
-### Decisió d'abast pendent (US-303, nova)
+### Decisió d'abast (US-303, treballada — pendent de tancar amb el director)
 
-No totes les categories són detectables sense descarregar el contingut
-real dels fitxers de dades:
+La taula binària original (7 codis "schema-level, sense descarregar
+dades" vs 8 "content-level") simplificava massa. Només C100 és
+realment metadada pura (API REST, zero accés al fitxer). Substituïda per
+**3 nivells**:
 
-- **Detectables per esquema/metadades** (sense descarregar dades): C100,
-  C210, C221, C222, C223, C311, C321.
-- **Requereixen contingut real de les dades**: C312, C322, C410, C421,
-  C422, C510, C520, C530.
+| Nivell | Codis | Cost | Mecanisme |
+|---|---|---|---|
+| 1 — Metadada pura | C100 | ~0 | API REST (`DatasetInfo`, dataset card) |
+| 2 — Lectura parcial (schema) | C210, C221, C222, C223, C311, C321 | Baix, constant | Capçalera CSV / footer Parquet (`pyarrow`, lectura per rangs) |
+| 3 — Contingut complet | C312, C322, C410, C421, C422, C510, C520, C530 | Proporcional a la mida | Lectura del fitxer, idealment només les columnes rellevants |
 
-Amb la població elegible petita (~1.37%), descarregar contingut real
-només per als elegibles deixa de ser inviable (a diferència de fer-ho
-sobre tota la població). **Cal decidir amb el director** si l'abast
-inclou les 15 categories o només les 7 de schema-level.
+**Viabilitat del Nivell 3, calculada amb dades pròpies** (`data/
+versions_1.csv`, no una suposició): 11 datasets elegibles, 29 parells de
+versions consecutius, **151.4 GB** si es baixa el contingut complet de
+cada versió un cop (`edinburghcstr/ami` sol, 78GB). "Població petita" en
+NOMBRE (11) no vol dir petita en BYTES.
 
-### Ground truth de validació
+**Hipòtesi provada i descartada**: exclusió de datasets amb >500 commits
+(Castaño et al. 2025, `docs/paper_techniques_ml_models_change.md` §3) com
+a manera de descartar-ne els més pesats. Comptat el nombre REAL de
+commits dels 11 elegibles (no el comptador capat a 50 de
+`classify_dataset`): màxim 25 (`QFIN/FCMBench-Data`) — cap s'acosta a
+500, i no hi ha correlació amb el pes (`edinburghcstr/ami`, el més pesat,
+només en té 20). Val la pena implementar aquesta guarda com a millora
+general (encara no feta), però no resol aquest problema.
 
-El paper del director inclou una taula (Taula 1) amb 9 versions reals de
-HF del dataset Census Income/Adult, etiquetades manualment contra les 15
-categories. Abans d'escalar el classificador a tota la població elegible,
-cal validar-lo contra aquest ground truth (US-304, nova).
+**Estratègia recomanada**: Nivell 1+2 sempre; Nivell 3 amb lectura
+selectiva **per columna** (projecció Parquet) en lloc del fitxer sencer
+— la major part dels 151GB són columnes binàries (àudio/vídeo/tensors)
+que no fan falta per a recompte de files/missings/distribució d'UNA
+columna. Mesura empírica del cost real amb projecció: pendent (US-305).
+
+**Cal tancar amb el director** si l'abast final inclou les 15 categories
+(amb lectura selectiva) o només Nivell 1+2. Detall complet a
+`docs/taiga/taxonomy.md` i `docs/decisions_tfg.txt` (A-02, T-07).
+
+### Ground truth de validació — Census Income (D1–D7, no D1–D9)
+
+El paper del director inclou una taula (Taula 1) amb 9 versions del
+dataset Census Income/Adult, etiquetades manualment contra les 15
+categories, cadascuna comparada contra l'**original de la UCI** (D0), no
+D_i contra D_{i-1} — són repositoris/fonts **independents entre si**, no
+commits/tags d'un mateix repo.
+
+**Troballa** (notes a peu de pàgina del paper, no el text principal):
+**només D1–D7 són a Hugging Face**. D8 és un registre de Zenodo
+(12533514); D9 és `AdultDataset` d'AIF360 (llibreria Python, baixa de
+l'UCI, no un repo). Descarregar-los requeriria 2 connectors únics sense
+reutilitat per a la resta del projecte (la població real només prové de
+HF). **US-304 cobreix només D1–D7**; D8/D9 documentats com a fora d'abast.
+
+**US-304 (redefinida)**: NO calcula cap "% d'acord" (pressuposaria un
+classificador que encara no existeix — dependència circular corregida,
+vegeu `docs/decisions_tfg.txt` T-07). Valida que el motor de diffing
+(`notebooks/change_diff.py`, funcions pures `df_before`/`df_after`,
+reutilitzables sense canvis a US-305) detecta mecànicament un senyal allà
+on el paper marca un canvi. El "% d'acord codi per codi" es calcula més
+endavant, a US-305, un cop hi hagi un classificador real amb qui
+comparar.
+
+### Resultats reals — validació d'extractibilitat (Census Income D1–D7)
+
+**Registre complet a `docs/census_income_validation_report.md`**
+(metodologia, taula de detectabilitat per versió D1-D7, resultats de
+classificació, limitacions, i estat de reproduïbilitat). L'exercici
+ORIGINAL és tancat i el seu codi d'adquisició es va eliminar
+deliberadament de `change_diff.py` (Decisió T-11) -- però és
+RE-VALIDABLE quan calgui via `notebooks/validate_census_income.py`, un
+script permanent i AÏLLAT del pipeline principal (Decisió T-15). El motor
+de diffing en si (`diff_*`/`compute_all_diffs`) es manté viu -- és el que
+fa servir tant `eligibility_scan.classify_dataset` sobre la població real
+com `validate_census_income.py` sobre Census Income, sense reimplementar
+res dues vegades.
+
+### US-305 — Classificador de canvis, integrat a `classify_dataset`
+
+**Estat: fet.** Redisseny important respecte a la primera versió
+d'aquest document (que descrivia `change_classifier.py` com un script
+separat de Fase 2, aïllat de Fase 0): **la classificació ara viu DINS de
+`eligibility_scan.classify_dataset()`**, reutilitzant, sense
+reimplementar-la, la lògica de `change_diff.py`. Decisió explícita:
+**no es classifica C100 (metadada)** -- només els 14 codis
+estructurals/de contingut (C210-C530).
+
+**Neteja posterior (setembre 2026, en dues passes)**:
+1. Un cop la classificació ja funcionava sobre la població real i la
+   validació contra Census Income havia respost la pregunta que calia
+   respondre, es van trimar `change_diff.py`/`change_classifier.py`
+   (encara dos fitxers en aquell moment) a NOMÉS el motor viu. Es van
+   eliminar: tot el codi C100 (`diff_metadata`, mai cridat -- decisió
+   del projecte de no classificar metadada) i tota l'adquisició/informe
+   específic de Census Income (`run_validation`, `run_census_income_
+   classification`, etc. -- vegeu nota a "Resultats reals — validació
+   d'extractibilitat" més amunt). `notebooks/validate_eligible.py`
+   (US-108) es va eliminar pel mateix motiu -- vegeu `docs/decisions_
+   tfg.txt`, T-11.
+2. Amb `change_classifier.py` ja reduït a ~120 línies i **un únic
+   cridant real** (`eligibility_scan.py`, via `change_diff`), la
+   separació en dos fitxers va deixar de justificar-se -- es va fusionar
+   dins de `change_diff.py` (`ChangeLabel`/`classify_diffs`/`classify_
+   file_change` hi viuen ara, `change_classifier.py` eliminat).
+   Aprofitant la fusió, `RETRY_CONFIG` (repetit amb la mateixa forma a
+   `eligibility_scan.py`/`version_extractor.py`/`change_diff.py`) es va
+   consolidar en `errors.DEFAULT_RETRY_CONFIG` -- un únic dict font de
+   veritat; els scripts amb CLI pròpia en fan una còpia mutable
+   (`dict(errors.DEFAULT_RETRY_CONFIG)`), `change_diff.py` (sense CLI)
+   ja no en necessita cap còpia -- rep `retry_config` com a paràmetre
+   explícit. Això també va corregir un bug real: les descàrregues de
+   contingut (`download_tabular_file_at_revision`) usaven el `RETRY_
+   CONFIG` propi de `change_diff.py`, mai tocat pels `--retry-*` de la
+   CLI d'`eligibility_scan.py` -- ara reben el `RETRY_CONFIG` de qui
+   crida, així que la CLI sí que els controla. Vegeu `docs/decisions_
+   tfg.txt`, T-12.
+
+**Per què dins de `classify_dataset` i no com un pas separat**:
+`classify_dataset()` ja itera commits i n'inspecciona els fitxers
+canviats (`bare_clone`/`get_changed_files`/`is_substantive_path`) per
+decidir l'elegibilitat -- és el punt natural on afegir "i quin tipus de
+canvi és" sense tornar a clonar/relistar commits en un script separat
+més endavant.
+
+**Disseny concret**:
+- `determine_commit_substantive_with_paths` (nova): com `determine_
+  commit_substantive`, però retorna també els camins canviats -- evita
+  una segona crida a `git show` quan calen per classificar.
+  `determine_commit_substantive` ara és un embolcall prim d'aquesta.
+- `classify_dataset(dataset_id, tags_only=False, classify_changes=
+  False)`: nou paràmetre **opt-in**. Quan `classify_changes=True`:
+  - NO retorna anticipadament en trobar elegibilitat -- escaneja tots
+    els commits fins al cap de 50 (per classificar-los tots).
+  - La unitat de "canvi" depèn del criteri d'elegibilitat (Decisió
+    T-17): **Criteri A** (tags) -- per cada commit substantiu amb un
+    pare conegut DINS la finestra escanejada (`commits[i+1]`, ja que
+    `list_repo_commits` ve ordenat de més nou a més vell -- assumeix
+    historial lineal, sense merges), crida `classify_commit_tabular_
+    changes`. **Criteri B** (sessions) -- NOMÉS entre límits de sessió
+    (`group_substantive_commits_into_sessions`, mateix criteri que
+    decideix l'elegibilitat): els commits dins la mateixa sessió no
+    generen cap diff propi, evitant soroll intra-sessió.
+  - El resultat inclou `change_labels` (`list[dict]`, `[]` si
+    `classify_changes=False`).
+- `classify_commit_tabular_changes`: NOMÉS diferencia contingut per als
+  fitxers TABULARS (`change_diff.is_tabular_path`: `.parquet`/`.csv`/
+  `.tsv`) que van canviar -- els binaris (àudio/vídeo/tensors) ja compten
+  per a l'elegibilitat via `is_substantive_path`, però no tenen
+  "columnes"/"files" a classificar. Per cada fitxer tabular, baixa
+  ambdues revisions (`change_diff.download_tabular_file_at_revision`,
+  generalització de l'adquisició de Census Income a QUALSEVOL
+  repositori/revisió, ara amb `errors.with_retry`) i crida `change_
+  classifier.classify_file_change`. **Cap de `MAX_TABULAR_FILES_PER_
+  COMMIT = 5`** fitxers tabulars per commit (mateix esperit que
+  `MAX_COMMITS = 50`) -- confirmat en una execució real que alguns
+  datasets "chunked" (p.e. `edinburghcstr/ami`, >40 fragments Parquet per
+  commit) haurien trigat més d'una hora sense aquest cap; mostra
+  representativa, no exhaustiva, per a commits amb més fitxers.
+
+**Bug real trobat i corregit en una primera execució**: columnes
+d'àudio/imatge arriben com a `dict` en llegir-les amb `pandas.
+read_parquet` (sense la decodificació especial de `datasets`) --
+`.unique()`/`.value_counts()` hi llançaven `TypeError: unhashable type:
+'dict'`, sense capturar-se, fent fallar tot el dataset. Corregit amb
+`change_diff._is_hashable_series`: salta la columna problemàtica
+(`log.debug`), no la resta del fitxer. Detall complet a
+`docs/decisions_tfg.txt`, T-10.
+
+**Cost, per què és opt-in**: `classify_dataset()` s'invoca fins a 2000
+cops per execució de Fase 0/1 (Fase 2 i 3 de `run_sampling`: mostreig +
+classificació d'elegibilitat), on només ~11-13 acaben elegibles. Fer
+classificació de contingut real a TOTS aquests 2000 descarregaria
+contingut a escala poblacional -- exactament el problema dels 151GB
+identificat a US-303 (Decisió A-02/T-07), multiplicat per ~180x. La
+Fase 2/3 de `run_sampling` (el bucle de `classify_dataset_safe`) MAI
+passa `classify_changes=True`; `write_results` descarta la columna
+`change_labels` del CSV principal (sempre buida allà). L'opt-in és,
+doncs, per COLUMNA de dades (contingut real només per als elegibles), no
+un flag manual que calgui recordar activar cada cop -- vegeu la Fase 2 de
+l'orquestrador tot seguit.
+
+**Encadenat per `notebooks/run_pipeline.py` (Decisió T-13)**: aquest
+orquestrador (no `eligibility_scan.py` mateix -- separació de
+responsabilitats, vegeu T-13) crida, amb el MATEIX CSV: Fase 0-1
+(`eligibility_scan.run_sampling`) -> Fase 1b (`version_extractor.
+run_extraction`) -> Fase 2 (`eligibility_scan.run_classification`, llevat
+de `--skip-classification`). `run_classification` itera NOMÉS els
+elegibles d'aquest CSV (`df["eligible"] == True`, mai la resta de la
+mostra) amb `classify_dataset(..., classify_changes=True)` i escriu
+`data/change_classification_<run_id>.csv` (`dataset_id, version_from,
+version_to, code, is_breaking`). Com que està filtrat a `eligible ==
+True` abans de baixar cap contingut, encadenar-ho sempre no reintrodueix
+el cost poblacional -- creix amb el nombre d'elegibles (~0.6% de la
+mostra), no amb `sample_size`. `eligibility_scan.py --classify-eligible
+<csv>` segueix disponible per reclassificar un CSV d'un run previ sense
+tornar a mostrejar (mode standalone, ignora `--sample-size` i la resta de
+flags de mostreig).
+
+`is_breaking` és una heurística **pròpia d'aquest estudi** (el paper no
+en defineix cap de formal): `C210`, `C222`, `C223`, `C311`, `C321`, `C410`
+("trenca" un pipeline que llegeix per nom/posició/tipus/ordre sense
+adaptar-se) són `True`; la resta `False`.
+
+**Relació amb la validació de Census Income (històrica)**: vegeu
+`docs/census_income_validation_report.md` -- exercici PUNTUAL, ja fet, amb
+el registre complet (metodologia, resultats per versió, limitacions). El
+motor de diffing/classificació que hi va validar-se és el MATEIX que fa
+servir `classify_dataset` sobre la població real; només canviava la capa
+d'adquisició (inter-repositori D1-D7 vs. intra-repositori).
+
+### Resultats reals — classificació sobre la població elegible
+
+Execució real (`python eligibility_scan.py --classify-eligible
+data/eligibility_report_2000_6.csv`, `data/change_classification_3.csv`
+-- amb la correcció de renom per nom normalitzat (Decisió T-16) i la
+unitat de canvi per sessió per als datasets Criteri B (Decisió T-17) ja
+actives): **14/14 datasets classificats, 0 fallats, 110 etiquetes de
+canvi.**
+
+Els 14 codis tabulars (tot excepte C100, fora d'abast per disseny --
+vegeu "Limitacions conegudes" a `docs/taiga/taxonomy.md`), agrupats per
+si van aparèixer en aquesta mostra real:
+
+**Han aparegut:**
+
+| Codi | Descripció | Recompte |
+|---|---|---|
+| C421 | Afegir fila | 65 |
+| C422 | Eliminar fila | 23 |
+| C322 | Valors d'una columna numèrica | 9 |
+| C530 | Distribució de les dades | 8 |
+| C312 | Valors d'una columna categòrica | 4 |
+| C221 | Afegir columna | 1 |
+
+**Implementats però 0 ocurrències en aquesta mostra:** C210 (ordre de
+columnes), C222 (eliminar columna), C223 (renom de columna), C311 (tipus
+de columna categòrica), C321 (tipus numèric), C410 (ordre de files --
+implementat a la Decisió T-14, 0 ocurrències reals és un resultat
+legítim, no un indici que la tècnica no funcioni; vegeu els 7 casos
+sintètics verificats a `tests/test_change_diff.py::TestDiffRowOrder`, i
+la re-validació amb C410=True a 3 de 7 versions de Census Income,
+`docs/census_income_validation_report.md`), C510 (missingness), C520
+(correlació).
+
+**Fora d'abast:** C100 (metadada -- inspecció de dataset card/README, no
+una comparació tabular).
+
+**0 etiquetes `is_breaking=True`** en aquesta mostra concreta (cap dels
+codis de `BREAKING_CODES` -- C210/C222/C223/C311/C321/C410 -- ha
+aparegut; els codis que sí han aparegut, C421/C422/C322/C530/C312/C221,
+són tots `is_breaking=False` per disseny). **12 dels 14 datasets tenen
+etiquetes**; els altres 2 (`nkandpa2/mediawiki-dolma`,
+`nvidia/earth2studio-assets`) en tenen 0 -- `nvidia/earth2studio-assets`
+és Criteri B amb una única sessió (sense límit de sessió a comparar,
+Decisió T-17); resultat esperat i correcte, no un error.
+
+**Durant una execució anterior (`eligibility_report_2000_5.csv`) es van
+trobar i corregir 2 problemes reals** (no hipotètics -- observats en
+dades reals; les correccions es mantenen actives, per això no reapareixen
+a l'execució de dalt):
+1. **`unhashable type: 'dict'`**: columnes d'àudio/imatge (`adalat-ai/
+   fleurs-ro`, `theayos/libero_spatial_image`) arriben com a `dict` en
+   llegir-les amb `pandas.read_parquet` sense la decodificació especial
+   de `datasets` -- `.unique()`/`.value_counts()` hi fallaven,
+   arrossegant TOT el dataset a `status="error"`. Corregit amb
+   `change_diff._is_hashable_series` -- salta NOMÉS la columna
+   problemàtica.
+2. **Cost desproporcionat en datasets "chunked"**: `edinburghcstr/ami`
+   té >40 fragments Parquet per commit; sense cap, hauria trigat més
+   d'una hora només per a aquest dataset (confirmat: una primera
+   execució amb `timeout 550s` es va aturar a mig `ami` sense acabar).
+   Corregit amb `MAX_TABULAR_FILES_PER_COMMIT = 5`.
+
+Detall complet a `docs/decisions_tfg.txt`, T-10.
 
 ## Fase 3 — Data warehouse i anàlisi (pendent)
 
