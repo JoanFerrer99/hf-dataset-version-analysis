@@ -1010,7 +1010,7 @@ Estat: ✅ Fet
   població real -- resultat legítim (cap reordenació pura al seu
   historial de commits real), no un indici que la tècnica no funcioni
   (vegeu els 7 casos verificats manualment més amunt). Output nou:
-  `data/change_classification_2.csv`.
+  `data/change_classification_3.csv`.
 
   RESULTAT: `tests/test_change_diff.py` guanya `TestDiffRowOrder` (7 tests)
   + 1 test a `TestComputeAllDiffs`; els tests que assumien `diffs["C410"]
@@ -1117,8 +1117,8 @@ Estat: ✅ Fet
   `"education-num"` amb `"educational-num"`, que difereixen en 2
   caràcters reals, no només de separador).
 
-  RESULTAT REAL sobre Census Income (`data/census_income_diff_report_2.
-  csv`/`census_income_classification_2.csv`, re-executat amb la
+  RESULTAT REAL sobre Census Income (`data/census_income_diff_report_3.
+  csv`/`census_income_classification_3.csv`, re-executat amb la
   correcció): D3 ara detecta correctament 4 renoms reals (`marital-
   status`->`marital_status`, `capital-gain`->`capital_gain`, `capital-
   loss`->`capital_loss`, `native-country`->`native_country`) que abans
@@ -1145,6 +1145,15 @@ Estat: ✅ Fet
   bug real trobat) + `TestNormalizeColumnName` (2 tests). 180 tests en
   total, `ruff check` net. `docs/taiga/taxonomy.md` (C223) i
   `docs/census_income_validation_report.md` actualitzats.
+
+  NOTA (sessió posterior): aquest canvi a `notebooks/change_diff.py` es
+  va perdre d'un commit intermedi (`a35a4f7`, que va capturar els tests
+  i outputs però no el codi) i es va haver de restaurar de nou
+  (`fix: heuristica de renom de columnes...`). Un cop restaurat, es va
+  tornar a executar `validate_census_income.py` per verificar
+  explícitament la reproduïbilitat -- resultat idèntic byte a byte a
+  `data/census_income_diff_report_3.csv`/`_classification_3.csv`, sense
+  cap desviació.
 
 
 DECISIÓ T-17: la unitat de "canvi" a la Fase 2 passa a ser la sessió per als datasets de Criteri B
@@ -1213,10 +1222,10 @@ Estat: ✅ Fet
   columnes. Joan l'ha transcrita directament per a D1-D7.
 
   DADES: els totals per fila de la transcripció coincideixen EXACTAMENT
-  amb `PAPER_ROW_TOTALS` (ja documentat a T-08) -- confirma consistència
-  abans de fer-hi cap comparació. Comparat contra `data/census_income_
-  diff_report_2.csv` (motor actual, C410+renom corregits), EXCLÒS C100
-  (mai comptat pel nostre motor):
+  amb els ja documentats a T-08 -- confirma consistència abans de fer-hi
+  cap comparació. Comparat contra `data/census_income_diff_report_3.csv`
+  (motor actual, C410+renom corregits), EXCLÒS C100 (mai comptat pel
+  nostre motor):
 
     Total: TP=20, FN=6, FP=13 -- Precisió=60.6%, Recall=76.9%, F1=67.8%.
     D1/D2/D5: coincidència EXACTA (0 FN, 0 FP).
@@ -1245,6 +1254,51 @@ Estat: ✅ Fet
   `docs/decisions_tfg.txt` (aquesta entrada + pendent històric marcat
   `[x]`). C312 i C221/C322 queden com a pistes pendents d'investigar,
   no corregides en aquesta sessió.
+
+
+DECISIÓ T-19: PAPER_GROUND_TRUTH i la comparativa codi per codi passen a ser codi reutilitzable
+Data: setembre 2026
+Responsable: Joan
+Estat: ✅ Fet
+
+  MOTIU (petició directa de Joan): la comparativa de T-18 es va calcular
+  amb un script d'una línia de comandes (`python3 << 'EOF' ... EOF`),
+  no guardat enlloc -- Joan va demanar que fos un `.py` executable cada
+  cop que calgués, que regenerés la taula comparativa automàticament, no
+  un càlcul ad-hoc a repetir a mà cada vegada que canviï el motor.
+
+  CANVI a `notebooks/validate_census_income.py`:
+  1. `PAPER_GROUND_TRUTH: dict[str, frozenset[str]]` -- substitueix
+     `PAPER_ROW_TOTALS` (consolidat, una sola font de veritat; el total
+     per fila ara és `len(PAPER_GROUND_TRUTH[v])`). Conté els 15 codis
+     COMPLETS (inclòs C100) transcrits a mà per Joan per a D1-D7.
+  2. `compare_detectability_with_paper(detectability_df)` -- funció
+     PURA, retorna TP/FN/FP per versió (exclòs C100 del costat del
+     paper, ja que el nostre motor mai el compta).
+  3. `summarize_agreement_by_code(detectability_df)` -- mateixa
+     comparació agregada per CODI, per detectar patrons sistemàtics.
+  4. `compute_agreement_metrics(comparison_df)` -- Precisió/Recall/F1,
+     0.0 en lloc de `ZeroDivisionError` si el denominador és 0.
+  5. `__main__` ara escriu SEMPRE (cada execució, sense cap flag nou)
+     `data/census_income_paper_comparison_<run_id>.csv` i `data/
+     census_income_paper_comparison_by_code_<run_id>.csv`, a més dels
+     dos CSV que ja escrivia -- i imprimeix Precisió/Recall/F1 per consola.
+
+  VERIFICAT: les 3 funcions noves reprodueixen EXACTAMENT els números
+  de T-18 (TP=20, FN=6, FP=13, Precisió=0.606, Recall=0.769, F1=0.678)
+  a partir del `detectability_df` real -- confirmat executant `validate_
+  census_income.py` de nou: `census_income_diff_report_3.csv` idèntic
+  byte a byte al `_2.csv` anterior (motor sense canvis), i els CSV de
+  comparativa nous coincideixen amb el càlcul manual de T-18. `_2.csv`
+  esborrat (superseït per `_3.csv`, que ara inclou tots els outputs
+  d'una mateixa execució coherent) -- totes les referències als fitxers
+  de T-14/T-15/T-16/T-18 actualitzades de `_2` a `_3`.
+
+  RESULTAT: `tests/test_validate_census_income.py` (nou, 11 tests --
+  `TestCompareDetectabilityWithPaper`, `TestSummarizeAgreementByCode`,
+  `TestComputeAgreementMetrics` amb un test de regressió que reprodueix
+  els números reals de T-18, `TestPaperGroundTruthConsistency`). 200
+  tests en total, `ruff check` net.
 
 
 ================================================================================

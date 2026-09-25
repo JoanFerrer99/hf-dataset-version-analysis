@@ -66,10 +66,17 @@ comparació D_i vs D0 amb el motor actual de `change_diff.py` (reutilitzat
 sense canvis), per tancar aquest buit sense revifar codi d'adquisició
 dins del mòdul principal.
 
-**Resultat real** (`data/census_income_diff_report_2.csv` / `data/
-census_income_classification_2.csv` -- re-executat un cop més a la
-Decisió T-16, veure secció següent; els `codes_detected` no van canviar
-entre la primera execució i aquesta, 32 etiquetes en total):
+**Resultat real** (`data/census_income_diff_report_3.csv` / `data/
+census_income_classification_3.csv`, 32 etiquetes en total). **Reproduïbilitat
+verificada explícitament dues vegades**: un cop després de restaurar el
+codi de T-16 (vegeu `docs/decisions_tfg.txt`, nota a T-16) i un altre cop
+després d'afegir la comparativa amb el paper (T-18, secció següent) --
+totes dues re-execucions de `validate_census_income.py` han produït un
+`census_income_diff_report_*.csv` idèntic byte a byte al d'abans (les
+còpies intermèdies, `_1.csv`/`_2.csv`, es van esborrar per no duplicar
+dades sense informació nova, mantenint només `_3.csv` -- ara amb els
+CSV de comparativa nous, `census_income_paper_comparison_3.csv`/`_by_
+code_3.csv`, generats a la MATEIXA execució):
 
 | Versió | Codis detectats (abans) | Codis detectats (amb C410) | C410 |
 |---|---|---|---|
@@ -134,14 +141,24 @@ limitació d'integritat del ground truth que la resta de codis).
 La limitació d'integritat del ground truth (extracció del PDF sense
 alineació de columnes) es resol AQUÍ per primer cop: Joan ha transcrit a
 mà, mirant la imatge original del paper, quins codis concrets marca la
-Taula 1 per a cada D_i (D1-D7). Els totals per fila coincideixen
-EXACTAMENT amb `PAPER_ROW_TOTALS` (ja documentat a T-08) -- confirma que
-la transcripció és consistent amb el que ja se sabia dels totals agregats.
+Taula 1 per a cada D_i (D1-D7) -- codificat com a `notebooks/
+validate_census_income.PAPER_GROUND_TRUTH` (dict de `frozenset`, un per
+D_i, INCLOENT C100). Els totals per fila coincideixen EXACTAMENT amb els
+ja documentats a T-08 -- confirma que la transcripció és consistent amb
+el que ja se sabia dels totals agregats (verificat també a `tests/
+test_validate_census_income.py::TestPaperGroundTruthConsistency`).
 
-Comparat contra `data/census_income_diff_report_2.csv` (motor actual,
-amb C410 i l'heurística de renom corregits -- T-14/T-16), **exclosos els
-codis on el paper marca `C100`** (fora d'abast del nostre motor, mai
-comptat):
+**Generat automàticament, no calculat a mà**: `validate_census_income.py`
+ara calcula aquesta comparativa a CADA execució (funcions pures
+`compare_detectability_with_paper`/`summarize_agreement_by_code`/
+`compute_agreement_metrics`, sense cap crida de xarxa), i l'escriu a
+`data/census_income_paper_comparison_<run_id>.csv` (per dataset) i
+`data/census_income_paper_comparison_by_code_<run_id>.csv` (per codi) --
+no cal tornar a transcriure-ho ni recalcular-ho a mà cada cop que el
+motor de diffing canviï. Comparat contra `data/census_income_diff_
+report_3.csv` (motor actual, amb C410 i l'heurística de renom corregits
+-- T-14/T-16), **exclosos els codis on el paper marca `C100`** (fora
+d'abast del nostre motor, mai comptat):
 
 | Versió | Paper (15 codis) | Paper - C100 | El nostre motor | TP | FN | FP |
 |---|---|---|---|---|---|---|
@@ -214,5 +231,6 @@ sobreescriure mai els originals congelats.
 Registres permanents d'aquest exercici:
 1. Aquest document.
 2. `data/census_income_diff_report.csv` / `data/census_income_classification.csv` (registre original, pre-C410, 30 etiquetes).
-3. `data/census_income_diff_report_2.csv` / `data/census_income_classification_2.csv` (re-validació amb C410 (T-15) i l'heurística de renom corregida (T-16), 32 etiquetes -- `_1` es va generar i descartar al mig d'aquesta mateixa sessió, previ a T-16, sense diferència als `codes_detected`).
-4. `notebooks/validate_census_income.py` (codi viu, reutilitzable -- l'adquisició D0-D7 ja no cal recuperar-la de l'historial de git).
+3. `data/census_income_diff_report_3.csv` / `data/census_income_classification_3.csv` (re-validació amb C410 (T-15) i l'heurística de renom corregida (T-16), 32 etiquetes -- `_1`/`_2` es van generar i descartar al llarg d'aquesta mateixa sessió, sense diferència als `codes_detected`).
+4. `data/census_income_paper_comparison_3.csv` / `data/census_income_paper_comparison_by_code_3.csv` (comparativa codi per codi contra `PAPER_GROUND_TRUTH`, T-18 -- generats automàticament per `validate_census_income.py`, no calculats a mà).
+5. `notebooks/validate_census_income.py` (codi viu, reutilitzable -- l'adquisició D0-D7 ja no cal recuperar-la de l'historial de git; cada execució regenera TOTS els CSV d'aquesta llista, punts 3-4).
