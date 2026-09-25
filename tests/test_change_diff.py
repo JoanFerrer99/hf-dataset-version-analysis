@@ -36,15 +36,39 @@ class TestDiffColumns:
         assert result["removed"] == ["b"]
         assert result["added"] == []
 
-    def test_renamed_same_position_compatible_dtype(self):
-        before = pd.DataFrame({"a": [1, 2], "old_name": [3, 4]})
-        after = pd.DataFrame({"a": [1, 2], "new_name": [3, 4]})
+    def test_renamed_separator_style_change_same_position(self):
+        before = pd.DataFrame({"a": [1, 2], "capital-gain": [3, 4]})
+        after = pd.DataFrame({"a": [1, 2], "capital_gain": [3, 4]})
         result = cd.diff_columns(before, after)
-        assert result["renamed"] == [("old_name", "new_name")]
+        assert result["renamed"] == [("capital-gain", "capital_gain")]
         assert result["added"] == []
         assert result["removed"] == []
 
-    def test_remove_and_add_different_position_is_not_a_rename(self):
+    def test_renamed_detected_despite_reordering_elsewhere(self):
+        # Regressió del bug real trobat sobre Census Income D3 (Decisió
+        # T-16): un renom (separator-style) s'ha de detectar encara que
+        # altres columnes s'hagin reordenat -- NO depèn de la posició.
+        before = pd.DataFrame({"a": [1], "native-country": ["x"], "c": [2]})
+        after = pd.DataFrame({"c": [2], "a": [1], "native_country": ["x"]})
+        result = cd.diff_columns(before, after)
+        assert result["renamed"] == [("native-country", "native_country")]
+        assert result["added"] == []
+        assert result["removed"] == []
+
+    def test_unrelated_columns_at_same_position_are_not_a_rename(self):
+        # Regressió del bug real: l'engine ANTERIOR (posició ordinal)
+        # aparellava columnes NO relacionades només per compartir posició
+        # i dtype -- confirmat sobre Census Income D3 (fnlwgt -> capital_
+        # loss, cap relació real, vegeu docs/census_income_validation_
+        # report.md). El nom normalitzat ha de discriminar-ho.
+        before = pd.DataFrame({"fnlwgt": [100], "b": [2]})
+        after = pd.DataFrame({"capital_loss": [50], "b": [2]})
+        result = cd.diff_columns(before, after)
+        assert result["renamed"] == []
+        assert result["removed"] == ["fnlwgt"]
+        assert result["added"] == ["capital_loss"]
+
+    def test_remove_and_add_different_name_is_not_a_rename(self):
         before = pd.DataFrame({"a": [1], "old_name": [2], "c": [3]})
         after = pd.DataFrame({"a": [1], "c": [3], "new_name": [2]})
         result = cd.diff_columns(before, after)
@@ -52,13 +76,13 @@ class TestDiffColumns:
         assert result["removed"] == ["old_name"]
         assert result["added"] == ["new_name"]
 
-    def test_remove_and_add_incompatible_dtype_is_not_a_rename(self):
-        before = pd.DataFrame({"old_name": [1, 2]})
-        after = pd.DataFrame({"new_name": ["x", "y"]})
+    def test_remove_and_add_same_normalized_name_incompatible_dtype_is_not_a_rename(self):
+        before = pd.DataFrame({"col-name": [1, 2]})
+        after = pd.DataFrame({"col_name": ["x", "y"]})
         result = cd.diff_columns(before, after)
         assert result["renamed"] == []
-        assert result["removed"] == ["old_name"]
-        assert result["added"] == ["new_name"]
+        assert result["removed"] == ["col-name"]
+        assert result["added"] == ["col_name"]
 
     def test_order_changed(self):
         before = pd.DataFrame({"a": [1], "b": [2]})
@@ -66,6 +90,20 @@ class TestDiffColumns:
         result = cd.diff_columns(before, after)
         assert result["order_changed"] is True
         assert result["added"] == [] and result["removed"] == []
+
+
+class TestNormalizeColumnName:
+    def test_strips_separators_and_lowercases(self):
+        assert cd._normalize_column_name("Capital-Gain") == "capitalgain"
+        assert cd._normalize_column_name("capital_gain") == "capitalgain"
+        assert cd._normalize_column_name("capital.gain") == "capitalgain"
+        assert cd._normalize_column_name("Capital Gain") == "capitalgain"
+
+    def test_does_not_fuzzy_match_beyond_separators(self):
+        # Diferència real de 2 caràcters ("al"), no només de separador --
+        # deliberadament NO es considera el mateix nom (vegeu docstring
+        # de diff_columns: sense similitud de text aproximada).
+        assert cd._normalize_column_name("education-num") != cd._normalize_column_name("educational-num")
 
 
 class TestDiffColumnTypes:
