@@ -317,6 +317,41 @@ def fetch_tree_size_bytes(dataset_id: str, commit_sha: str, hf_token: str | None
     return sum_tree_size(entries)
 
 
+def fetch_tree_paths(dataset_id: str, hf_token: str | None, retry_config: dict) -> list[str]:
+    """
+    Llista les rutes de tots els FITXERS (no carpetes) a la revisió MÉS
+    RECENT d'un repositori -- germana de `fetch_tree_size_bytes`, mateix
+    patró de tancament que consumeix el generador SENCER (`list(...)`)
+    dins de `errors.with_retry` (`list_repo_tree` és lazy, vegeu el
+    docstring de `fetch_tree_size_bytes` per al detall complet de per què
+    cal aquest embolcall).
+
+    Usada per `notebooks/extension_report.py` (cens de tipus d'extensió
+    de fitxer sobre els datasets elegibles, feedback del director) --
+    NOMÉS la revisió actual (HEAD), no cada versió històrica: és un cens
+    de l'estat ACTUAL del repositori, no dels fitxers realment tocats
+    pels commits substantius -- una aproximació deliberadament barata,
+    documentada com a tal (vegeu `extension_report.py`).
+
+    :param dataset_id: identificador del dataset (`owner/name`).
+    :param hf_token: token HF, passat explícitament a la crida.
+    :param retry_config: mateix format que `RETRY_CONFIG`.
+    :return: `list[str]` amb la ruta de cada fitxer (no s'inclouen
+        `RepoFolder`, que no tenen `.size` -- mateix filtre que `sum_
+        tree_size`, per duck-typing).
+    :raises Exception: repropaga qualsevol excepció després d'exhaurir
+        els reintents -- el cridant decideix com tractar-ho (p.e. saltar
+        aquest dataset al report).
+    """
+    entries = errors.with_retry(
+        lambda: list(
+            list_repo_tree(repo_id=dataset_id, repo_type="dataset", recursive=True, token=hf_token)
+        ),
+        **retry_config,
+    )
+    return [e.path for e in entries if getattr(e, "size", None) is not None]
+
+
 # ---------------------------------------------------------------------------
 # Orquestració per dataset
 # ---------------------------------------------------------------------------

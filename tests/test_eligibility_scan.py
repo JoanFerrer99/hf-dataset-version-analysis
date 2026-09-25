@@ -667,6 +667,44 @@ class TestClassifyCommitTabularChanges:
         )
         assert labels == []
 
+    def test_real_binary_extensions_never_reach_download_or_classification(self, monkeypatch):
+        # Reforç demanat pel director (feedback de reunió): confirmar amb
+        # `is_tabular_path` REAL (no monkeypatched) que els fitxers binaris
+        # (àudio/vídeo/tensors -- SUBSTANTIVE_DATA_EXTENSIONS a `eligibility_
+        # scan.py`, que SÍ compten per a l'elegibilitat) mai arriben a
+        # `download_tabular_file_at_revision`/classificació. Espia que fa
+        # fallar el test si es crida per a QUALSEVOL path binari.
+        import pandas as pd
+
+        binary_paths = [
+            "audio/sample.wav", "audio/sample.mp3", "audio/sample.flac",
+            "video/clip.mp4", "video/clip.avi", "video/clip.mov",
+            "images/frame.png", "images/frame.jpg", "images/frame.webp",
+            "tensors/weights.safetensors", "tensors/array.npy", "tensors/array.npz",
+            "archive/data.tar.gz", "archive/data.zip",
+        ]
+        # Confirma que aquests paths SÍ compten per a l'elegibilitat (substantius)
+        # -- el punt del test és que compten per elegibilitat PERÒ mai es classifiquen.
+        assert all(es.is_substantive_path(p) for p in binary_paths)
+
+        tabular_paths = ["data/train.csv", "data/test.parquet"]
+        df = pd.DataFrame({"a": [1]})
+
+        def _download_spy(repo_id, path, revision, token, retry_config):
+            assert path in tabular_paths, f"download cridat per a un path NO tabular: {path}"
+            return df
+
+        monkeypatch.setattr(es.change_diff, "download_tabular_file_at_revision", _download_spy)
+
+        # change_diff.is_tabular_path REAL (sense monkeypatch): confirma que
+        # NOMÉS els paths tabulars arriben a classificar-se, mai els binaris.
+        labels = es.classify_commit_tabular_changes(
+            "org/ds", binary_paths + tabular_paths, "sha1", "sha2", "tok", es.RETRY_CONFIG
+        )
+        # Amb before==after (mateix "df" a totes dues bandes) no hi ha senyal
+        # -- el que importa aquí és que l'espia no ha llençat cap AssertionError.
+        assert labels == []
+
     def test_caps_tabular_files_classified_per_commit(self, monkeypatch):
         # Datasets "chunked" (p.e. edinburghcstr/ami) poden tocar desenes
         # de fragments Parquet en un sol commit -- confirmat en una

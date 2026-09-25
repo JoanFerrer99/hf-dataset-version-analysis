@@ -1301,6 +1301,53 @@ Estat: ✅ Fet
   tests en total, `ruff check` net.
 
 
+DECISIÓ T-15: pandas per a la classificació de canvis -- per què, i per què és l'opció correcta al cost actual
+Data: setembre 2026
+Responsable: Joan
+Estat: ✅ Tancada (documentació, cap canvi de codi)
+
+  MOTIU (feedback del director, reunió): avís que els `DataFrame` de
+  pandas escalen malament -- calia explicar per què s'ha fet servir
+  igualment i per què és l'opció correcta en termes de cost.
+
+  RESPOSTA HONESTA, no "pandas és el més barat en absolut" -- és "millor
+  relació cost/complexitat a l'escala actual del projecte":
+
+  1. **El coll d'ampolla real és la XARXA, no el càlcul de pandas.** El
+     cost identificat i quantificat (`docs/taiga/taxonomy.md`, Nivell 3)
+     és 151.4 GB de DESCÀRREGA sobre 11 datasets elegibles / 29 parells
+     de versions -- bytes que han de baixar-se per xarxa abans que
+     pandas hi toqui res. Cap alternativa a pandas (Polars, Dask, DuckDB)
+     redueix aquest cost: el bottleneck és l'API d'HF i la mida real dels
+     fitxers, no el motor de còmput.
+  2. **Un cop descarregat, cada fitxer cap en memòria en un sol procés**
+     -- l'escala on pandas realment falla malament (datasets que no
+     caben en RAM, milions/milers de milions de files processades
+     repetidament) no s'assembla a l'escala d'aquest projecte: fitxers
+     individuals d'un dataset ja elegible, processats un cop cadascun.
+  3. **El motor evita deliberadament els patrons lents coneguts de
+     pandas** -- mai `.iterrows()`/`.apply()` fila a fila; totes les
+     operacions són vectoritzades (`.corr()`, `.quantile()`, `.value_
+     counts()`, `pandas.util.hash_pandas_object` per a C410, T-14).
+  4. **Les mitigacions de cost REALS ja en marxa** no toquen pandas --
+     retallen QUANTES dades hi arriben: classificació basada en mostra
+     (mai tota la població ~950K), NOMÉS per als elegibles (~11-14 d'unes
+     2000 mostrejades), `MAX_TABULAR_FILES_PER_COMMIT = 5`.
+
+  TROBALLA HONESTA (no amagada): `download_tabular_file_at_revision`
+  (`change_diff.py`) encara carrega el fitxer SENCER amb `pd.read_
+  parquet`/`read_csv` -- NO la projecció per columnes que `docs/taiga/
+  taxonomy.md` (Nivell 3) ja recomana des de US-303 però mai s'ha
+  implementat ("mesura empírica del cost real amb projecció de columnes:
+  pendent"). Si la mida de la població elegible creix significativament,
+  aquesta és la primera optimització a fer -- NO canviar de pandas a una
+  altra llibreria, sinó llegir menys columnes del mateix fitxer (Parquet
+  ho permet nativament sense cap dependència nova).
+
+  RESULTAT: cap canvi de codi -- documentació únicament. Referència
+  creuada des del docstring de `download_tabular_file_at_revision`.
+
+
 ================================================================================
 BLOC 4 — DECISIONS D'ABAST
 ================================================================================
@@ -1654,5 +1701,27 @@ PRÒXIMES DECISIONS PENDENTS
     real a l'esquema en estrella (T-04) o a l'anàlisi final (US-403), o
     si es descarten en no aportar-hi res — capturats per cost marginal
     baix, no perquè l'esquema ja els exigeixi
+[x] Feedback del director (reunió): confirmar que els fitxers binaris
+    (àudio/vídeo/tensors) no es classifiquen amb la taxonomia de canvis —
+    JA SATISFET pel disseny existent, no calia cap canvi de codi:
+    `classify_commit_tabular_changes` (`eligibility_scan.py`) ja filtra a
+    `change_diff.is_tabular_path` (`.parquet`/`.csv`/`.tsv`) ABANS de
+    classificar; els binaris només compten per a l'elegibilitat
+    (`is_substantive_path`), mai per a la classificació. Reforçat amb un
+    test de regressió contra la llista real d'extensions binàries (abans
+    només es verificava amb `is_tabular_path` monkeypatched), vegeu
+    `tests/test_eligibility_scan.py::TestClassifyCommitTabularChanges::
+    test_real_binary_extensions_never_reach_download_or_classification`.
+[ ] Feedback del director (reunió): un repositori pot tenir més d'un
+    fitxer tabular -- estudiar-los per separat? Investigació feta amb
+    dades reals (`docs/multi_file_repos_investigation.md`,
+    `data/extension_report_1.csv`): dels 14 elegibles, 5 tenen >2 fitxers
+    tabulars; 4 segueixen el patró de "chunking" LeRobot
+    (`chunk-XXX/episode_XXXXXX.parquet`, un sol dataset partit, NO
+    diversos), 1 (`HanyueShen/YunXiaoHe-RISA-Avalon-Eval`) sembla taules
+    genuïnament diferents (leaderboard/ablació/puntuacions). PENDENT: cap
+    canvi de codi implementat -- decisió final amb el director sobre si
+    val la pena afegir un camp `path` a `ChangeLabel` per al cas de
+    taules genuïnes (només 1/14 casos actualment).
 
 ================================================================================

@@ -42,6 +42,18 @@ Mostreig aleatori de datasets de Hugging Face per estimar quants tenen 2 o mes v
    no troba `HF_TOKEN` a l'entorn, així que aquest pas és obligatori abans
    d'executar res.
 
+## Executar sense Docker (copiar i enganxar)
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+echo "HF_TOKEN=hf_el_teu_token_aqui" > .env  # substitueix pel teu token real (huggingface.co/settings/tokens)
+python notebooks/run_pipeline.py --sample-size 50 --threads 4 --seed 42 --max-scanned 5000  # prova rapida (~1 min)
+python notebooks/run_pipeline.py --sample-size 2000 --threads 4 --seed 42                    # execucio principal
+# Resultats a data/eligibility_report_*.csv, data/versions_*.csv, data/change_classification_*.csv
+```
+
 ## Quickstart
 
 ```bash

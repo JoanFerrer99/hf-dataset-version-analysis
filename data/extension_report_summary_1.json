@@ -1,0 +1,27 @@
+{
+  "timestamp": "2026-09-24T16:49:50.285791",
+  "source_csv": "/home/joanferrer/Documentos/UNIVERSITAT/TFG/hf-dataset-version-analysis/data/eligibility_report_2000_6.csv",
+  "n_eligible": 14,
+  "n_dataset_level_failures": 0,
+  "total_files": 1882,
+  "total_tabular_files": 305,
+  "pct_tabular": 16.21,
+  "total_substantive_files": 1817,
+  "pct_substantive": 96.55,
+  "tabular_files_per_dataset": {
+    "ykorkmaz/aloha_open_bottle_failure": 3,
+    "davidgoss/so100_test": 7,
+    "jackvial/koch_test": 3,
+    "hotosm/fAIr-guru-td-buildings": 1,
+    "yunosuken/sentiment-train": 3,
+    "xhaka3456/Pick_Place": 140,
+    "HanyueShen/YunXiaoHe-RISA-Avalon-Eval": 4,
+    "nvidia/earth2studio-assets": 0,
+    "aaron-ser/so101-cardboard-box-pickup-dataset": 35,
+    "lipsop/so101-block-in-bin-100ep": 100,
+    "andrewatef/p-small": 3,
+    "AfonsoLob/xarm_smolvla": 3,
+    "Angry-Lasagna/redcube_bluebox": 3,
+    "nkandpa2/mediawiki-dolma": 0
+  }
+}
