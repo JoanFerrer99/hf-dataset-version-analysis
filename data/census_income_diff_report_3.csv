@@ -1,0 +1,8 @@
+version,codes_detected,paper_row_total,C210,C221,C222,C223,C311,C312,C321,C322,C410,C421,C422,C510,C520,C530
+D1,2,3,False,False,False,True,False,False,False,False,True,False,False,False,False,False
+D2,2,3,False,False,False,True,False,False,False,False,True,False,False,False,False,False
+D3,7,7,True,True,True,True,True,False,False,True,False,False,True,False,False,False
+D4,7,7,True,True,True,True,True,False,False,True,False,False,True,False,False,False
+D5,3,4,False,True,False,True,False,False,False,False,True,False,False,False,False,False
+D6,6,4,False,True,True,False,False,True,False,True,False,False,True,False,False,True
+D7,6,5,False,True,True,False,True,False,False,True,False,True,False,False,False,True

@@ -120,18 +120,49 @@ def _dtypes_compatible(dtype_a, dtype_b) -> bool:
     return pd.api.types.is_numeric_dtype(dtype_a) == pd.api.types.is_numeric_dtype(dtype_b)
 
 
+def _normalize_column_name(name: str) -> str:
+    """
+    Nom de columna normalitzat per a la detecció de renom (Decisió T-16):
+    minúscules, sense `-`/`_`/`.`/espai. NOMÉS diferències de separador
+    -- `"capital-gain"` i `"capital_gain"` normalitzen igual, però
+    `"education-num"` i `"educational-num"` NO (calen 2 caràcters de
+    diferència real, no només de separador) -- deliberadament NO es fa
+    servir similitud de text aproximada (p.e. distància de Levenshtein),
+    per evitar aparellar columnes NOMÉS semblants textualment però no
+    relacionades.
+    """
+    normalized = str(name).lower()
+    for sep in ("-", "_", ".", " "):
+        normalized = normalized.replace(sep, "")
+    return normalized
+
+
 def diff_columns(before: pd.DataFrame, after: pd.DataFrame) -> dict:
     """
     Compara el conjunt i l'ordre de columnes de dues instantànies.
 
-    Detecció de renom (C223): NO hi ha cap tècnica purament estructural
-    que distingeixi un renom d'un remove+add sense heurística -- aquí
-    s'aplica una d'explícita i documentada: una columna eliminada i una
-    afegida es tracten com a renom NOMÉS si ocupen la MATEIXA posició
-    ordinal a `before`/`after` i tenen dtype de la mateixa família
-    (numèric amb numèric, no-numèric amb no-numèric). Qualsevol altre cas
-    de columna eliminada+afegida es reporta per separat (`added`/
-    `removed`), no com a renom -- limitació coneguda, no un error.
+    Detecció de renom (C223, Decisió T-16): NO hi ha cap tècnica
+    purament estructural que distingeixi un renom d'un remove+add sense
+    heurística -- aquí s'aplica una d'explícita i documentada: una
+    columna eliminada i una afegida es tracten com a renom NOMÉS si el
+    seu NOM NORMALITZAT (`_normalize_column_name`, insensible a `-`/`_`/
+    `.`/espai) coincideix EXACTAMENT i tenen dtype de la mateixa família.
+
+    NO es fa servir la posició ordinal (heurística anterior, substituïda
+    a la Decisió T-16): afegir o eliminar una columna ABANS d'una
+    columna renombrada desplaça la posició de TOTES les columnes
+    següents, fent que una comparació per posició aparelli columnes NO
+    relacionades amb el mateix dtype -- confirmat empíricament sobre
+    Census Income (`docs/census_income_validation_report.md`): l'engine
+    anterior aparellava `fnlwgt`->`capital_loss` i `education-num`->
+    `final_weight` a D3 NOMÉS perquè compartien posició per casualitat
+    després que altres columnes es reordenessin, no perquè hi hagués cap
+    relació real entre elles.
+
+    Qualsevol altre cas de columna eliminada+afegida (nom normalitzat
+    diferent, p.e. `"sex"`->`"is_male"`, `"income"`->`"Y"`) es reporta
+    per separat (`added`/`removed`), no com a renom -- limitació coneguda
+    i irreductible sense informació semàntica externa, no un error.
 
     :param before: instantània anterior.
     :param after: instantània posterior.
@@ -139,7 +170,7 @@ def diff_columns(before: pd.DataFrame, after: pd.DataFrame) -> dict:
         descartar-ne les detectades com a renom), `renamed`
         (`list[tuple[str, str]]`, `(nom_abans, nom_després)`) i
         `order_changed` (`bool`, sobre les columnes que es mantenen a
-        totes dues, ignorant les afegides/eliminades).
+        totes dues, ignorant les afegides/eliminades/renombrades).
     """
     cols_before = list(before.columns)
     cols_after = list(after.columns)
@@ -148,13 +179,20 @@ def diff_columns(before: pd.DataFrame, after: pd.DataFrame) -> dict:
     added = [c for c in cols_after if c not in set_before]
     removed = [c for c in cols_before if c not in set_after]
 
+    added_by_normalized: dict[str, list[str]] = {}
+    for col in added:
+        added_by_normalized.setdefault(_normalize_column_name(col), []).append(col)
+
     renamed: list[tuple[str, str]] = []
-    for i, col in enumerate(cols_before):
-        if col not in removed or i >= len(cols_after):
-            continue
-        candidate = cols_after[i]
-        if candidate in added and _dtypes_compatible(before[col].dtype, after[candidate].dtype):
-            renamed.append((col, candidate))
+    matched_added: set[str] = set()
+    for col in removed:
+        for candidate in added_by_normalized.get(_normalize_column_name(col), []):
+            if candidate in matched_added:
+                continue
+            if _dtypes_compatible(before[col].dtype, after[candidate].dtype):
+                renamed.append((col, candidate))
+                matched_added.add(candidate)
+                break
 
     renamed_before = {r[0] for r in renamed}
     renamed_after = {r[1] for r in renamed}

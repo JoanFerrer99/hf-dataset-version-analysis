@@ -1010,12 +1010,295 @@ Estat: ✅ Fet
   població real -- resultat legítim (cap reordenació pura al seu
   historial de commits real), no un indici que la tècnica no funcioni
   (vegeu els 7 casos verificats manualment més amunt). Output nou:
-  `data/change_classification_2.csv`.
+  `data/change_classification_3.csv`.
 
   RESULTAT: `tests/test_change_diff.py` guanya `TestDiffRowOrder` (7 tests)
   + 1 test a `TestComputeAllDiffs`; els tests que assumien `diffs["C410"]
   is None` s'han actualitzat. 176 tests en total (comptats junt amb T-13),
   `ruff check` net.
+
+
+DECISIÓ T-15: notebooks/validate_census_income.py -- re-validació de Census Income com a script aïllat, permanent
+Data: setembre 2026
+Responsable: Joan
+Estat: ✅ Fet
+
+  MOTIU (petició directa de Joan: "podries revalidar el census income en
+  un altre script apart sense afectar el pipeline actual d'una altra
+  manera?"): la validació original (US-304, `docs/census_income_
+  validation_report.md`) es va fer ABANS d'implementar C410 (T-14) -- no
+  hi ha cap registre de si el motor detecta reordenacions de files sobre
+  el ground truth Census Income. Calia tancar aquest buit SENSE revifar
+  codi d'adquisició dins de `change_diff.py` (contradiria T-11: aquest
+  tipus de codi puntual no ha de viure com a codi actiu del pipeline).
+
+  TROBALLA EN RECUPERAR EL CODI D'ADQUISICIÓ: el codi original
+  (`CENSUS_INCOME_SOURCES`, `download_uci_adult_baseline`, `download_
+  census_income_version`) NOMÉS va arribar a existir, comitejat, al
+  commit `bd37bf9` (el "desat d'editor obsolet" identificat i corregit
+  en aquesta mateixa sessió, vegeu la nota de disseny sobre la regressió
+  detectada abans de T-13) -- la resta de vegades que va existir va ser
+  només en l'arbre de treball local, mai comitejat. Els ajudants de
+  classificació (`build_classification_table`, `summarize_agreement`,
+  `run_census_income_classification`) esmentats a T-11 NO es van arribar
+  a comitejar MAI mai -- no recuperables de l'historial de git.
+
+  DISSENY -- nou fitxer `notebooks/validate_census_income.py`, AÏLLAT del
+  pipeline principal (no l'importa `eligibility_scan.py`/`version_
+  extractor.py`/`run_pipeline.py`, ni ell els importa a ells -- l'única
+  reutilització és `version_extractor.get_next_run_id`, una funció pura
+  de numeració de fitxers, sense cap efecte sobre el pipeline):
+  1. `download_uci_adult_baseline`/`download_census_income_version`/
+     `CENSUS_INCOME_SOURCES` recuperats de `bd37bf9`, adaptats per usar
+     `errors.DEFAULT_RETRY_CONFIG` (consolidat a T-12, no existia quan es
+     va escriure l'original).
+  2. En lloc de reconstruir `build_classification_table`/`summarize_
+     agreement` (mai comitejats, doncs no recuperables), l'orquestració
+     nova crida DIRECTAMENT el motor VIU (`change_diff.compute_all_diffs`/
+     `classify_diffs`, incloent C410) -- disseny més net que ressuscitar
+     bastida antiga, i garanteix que la re-validació usa exactament el
+     mateix motor que la població real.
+  3. Outputs NUMERATS (`census_income_diff_report_<run_id>.csv`/
+     `census_income_classification_<run_id>.csv`, via `version_extractor.
+     get_next_run_id`) -- MAI sobreescriuen els originals congelats
+     (`data/census_income_diff_report.csv`/`data/census_income_
+     classification.csv`, que segueixen sent el registre pre-C410).
+
+  RESULTAT REAL (`data/census_income_diff_report_1.csv`/`data/
+  census_income_classification_1.csv`, 32 etiquetes): **C410 detecta
+  reordenació de files a D1, D2 i D5** (3 de 7) -- contrast interessant
+  amb la població real, on C410 va aparèixer 0 cops (T-14): D1/D2/D5 són
+  repujades independents d'un dataset públic conegut, exactament el
+  context on una reordenació (`shuffle` a l'exportació, ordre d'escriptura
+  diferent) és habitual -- confirma que la tècnica funciona correctament
+  fora del cas sintètic amb què es va verificar originalment (T-14).
+  `codes_detected` puja d'1 a 2 (D1/D2) i de 2 a 3 (D5); D3/D4/D6/D7 no
+  canvien (C410=False).
+
+  RESULTAT: script nou, `ruff check` net, cap canvi a cap fitxer del
+  pipeline principal. Registre complet a `docs/census_income_validation_
+  report.md`, secció "Re-validació posterior amb C410".
+
+
+DECISIÓ T-16: heurística de renom (C223) canvia de posició ordinal a nom normalitzat -- bug real confirmat i corregit
+Data: setembre 2026
+Responsable: Joan
+Estat: ✅ Fet
+
+  MOTIU (pregunta directa de Joan, comparant amb el veredicte del paper:
+  "we detect codes of 221/222 and 530 than sometimes are wrong. Is it
+  for some known problem? can we solve it?"): en lloc de respondre en
+  abstracte, es va inspeccionar directament la sortida de `diff_columns`
+  sobre D3/D4/D6/D7 (`notebooks/validate_census_income.py`, ja disponible
+  des de T-15). Confirmat: **bug real** a l'heurística de renom anterior
+  (posició ordinal + dtype).
+
+  DIAGNÒSTIC: D3 té les columnes completament reordenades respecte D0.
+  L'heurística antiga aparellava `cols_before[i]` amb `cols_after[i]` --
+  amb tot reordenat, aquest aparellament esdevé COINCIDÈNCIA, no senyal.
+  Resultat real observat: `renamed = [(fnlwgt, capital_loss), (education-
+  num, final_weight), (capital-loss, is_male)]` -- CAP d'aquests 3
+  parells té relació semàntica real; són aparellaments purament
+  accidentals de posició+dtype. Pitjor encara: NO calia reordenació
+  completa perquè el bug aparegués -- a D6/D7 (`fnlwgt`/`education`
+  simplement ELIMINADES, sense reordenar la resta), la columna eliminada
+  desplaça la posició de TOTES les columnes següents, trencant
+  l'alineació per a renoms genuïns més endavant a la seqüència
+  (`education-num`->`educational-num` a D6, `income`->`Y` a D7, cap
+  detectat per l'heurística antiga tot i ser renoms plausibles).
+
+  CORRECCIÓ: nova funció `_normalize_column_name` (minúscules, sense
+  `-`/`_`/`.`/espai). `diff_columns` ara aparella una columna eliminada
+  amb una afegida com a renom si el NOM NORMALITZAT coincideix EXACTAMENT
+  (no per posició) i el dtype és de la mateixa família. Deliberadament
+  NO es fa servir similitud de text aproximada (Levenshtein) -- només
+  diferències de separador -- per no arriscar aparellar columnes NOMÉS
+  semblants textualment però no relacionades (p.e. NO aparellar
+  `"education-num"` amb `"educational-num"`, que difereixen en 2
+  caràcters reals, no només de separador).
+
+  RESULTAT REAL sobre Census Income (`data/census_income_diff_report_3.
+  csv`/`census_income_classification_3.csv`, re-executat amb la
+  correcció): D3 ara detecta correctament 4 renoms reals (`marital-
+  status`->`marital_status`, `capital-gain`->`capital_gain`, `capital-
+  loss`->`capital_loss`, `native-country`->`native_country`) que abans
+  es perdien (mal classificats com a add/remove separats), SENSE cap
+  aparellament incorrecte. **`codes_detected` NO canvia** (D3/D4 segueixen
+  a 7/7, D6/D7 a 6) -- el bug afectava QUINES columnes concretes
+  s'atribuïen a renom vs. add/remove, no el booleà agregat per codi (amb
+  prou columnes afegides/eliminades ja fora del cas, C221/C222/C223 ja
+  eren `True` de totes maneres). El valor de la correcció és la
+  CORRECCIÓ MECÀNICA (arribar al resultat correcte pel motiu correcte),
+  no un canvi de xifres visibles al resum.
+
+  SOBRE C530 (l'altra part de la pregunta de Joan): verificat manualment
+  que els canvis de distribució detectats a D6/D7 són REALS (p.e.
+  quartils d'edat 28/37/48 -> 31/40/49 a D6, canvi de balanç de classe
+  d'`income` de 26 punts percentuals) -- NO és un bug de la tècnica.
+  El que NO es pot confirmar és si coincideix amb la cel·la exacta que
+  marca el paper -- mateixa limitació d'integritat del ground truth
+  (T-08) que la resta de codis, no una cosa nova ni solucionable sense
+  accedir a una font del paper amb estructura de taula preservada.
+
+  RESULTAT: `tests/test_change_diff.py::TestDiffColumns` actualitzat (2
+  tests antics reescrits, 3 de nous incloent una regressió explícita del
+  bug real trobat) + `TestNormalizeColumnName` (2 tests). 180 tests en
+  total, `ruff check` net. `docs/taiga/taxonomy.md` (C223) i
+  `docs/census_income_validation_report.md` actualitzats.
+
+  NOTA (sessió posterior): aquest canvi a `notebooks/change_diff.py` es
+  va perdre d'un commit intermedi (`a35a4f7`, que va capturar els tests
+  i outputs però no el codi) i es va haver de restaurar de nou
+  (`fix: heuristica de renom de columnes...`). Un cop restaurat, es va
+  tornar a executar `validate_census_income.py` per verificar
+  explícitament la reproduïbilitat -- resultat idèntic byte a byte a
+  `data/census_income_diff_report_3.csv`/`_classification_3.csv`, sense
+  cap desviació.
+
+
+DECISIÓ T-17: la unitat de "canvi" a la Fase 2 passa a ser la sessió per als datasets de Criteri B
+Data: setembre 2026
+Responsable: Joan
+Estat: ✅ Fet
+
+  MOTIU (petició directa de Joan): fins ara, `classify_dataset(classify_
+  changes=True)` diferenciava CADA commit substantiu contra el seu propi
+  pare de git, sense cap noció de "sessió" -- però l'elegibilitat via
+  Criteri B (i `version_extractor.py`) ja fa servir el concepte de sessió
+  (`cluster_commit_times`, buit > `MIN_SUBSTANTIVE_GAP_HOURS`) com a
+  unitat de "versió". Resultat: un dataset amb 3 commits substantius
+  dins de LA MATEIXA sessió de treball generava 2 diffs interns
+  (commit1-commit2, commit2-commit3) que no representaven cap "canvi de
+  versió" real, només soroll intra-sessió.
+
+  CANVI: per als datasets Criteri B (`eligibility_reason` comença per
+  "Criteri B"), la Fase 2 ara NOMÉS diferencia entre LÍMITS DE SESSIÓ
+  (el commit més recent de cada sessió contra el de la sessió anterior),
+  reutilitzant el mateix agrupament que decideix l'elegibilitat -- els
+  commits DINS de la mateixa sessió ja no generen cap diff propi. Els
+  datasets Criteri A (tags) NO canvien -- segueixen diferenciant cada
+  commit substantiu contra el seu pare, exactament com abans.
+
+  DISSENY: `group_substantive_commits_into_sessions` (nova, pura, mateix
+  criteri que `cluster_commit_times` però preservant l'associació
+  commit-changed_paths) + `classify_session_boundary_tabular_changes`
+  (nova, crida `classify_commit_tabular_changes` un cop per límit de
+  sessió, amb la UNIÓ dels `changed_paths` de tots els commits de la
+  sessió posterior). `classify_dataset` ja no diferencia INLINE durant
+  l'escaneig -- ara acumula `(índex, commit, changed_paths)` de cada
+  commit substantiu i, un cop acabat l'escaneig i coneguda la raó
+  d'elegibilitat, tria l'estratègia (sessió o commit a commit).
+
+  RESULTAT REAL (re-execució sobre els 14 elegibles de `eligibility_
+  report_2000_6.csv`, `data/change_classification_3.csv`): 14/14
+  classificats, 0 fallats, **110 etiquetes (abans 121)**. Els 10 datasets
+  Criteri A queden EXACTAMENT igual (89 etiquetes, confirmat byte a
+  byte). Dels 4 Criteri B: `davidgoss/so100_test` 4 parells de commits
+  -> 2 límits de sessió (15->11 etiquetes); `andrewatef/p-small` 11
+  parells -> 3 límits (17->8); `nvidia/earth2studio-assets` sense canvis
+  (0->0, una sola sessió); `jackvial/koch_test` **0->2 etiquetes** --
+  abans no generava cap diff (el seu commit substantiu no tenia un pare
+  substantiu dins la finestra), ara sí que troba un límit de sessió real
+  a comparar -- el canvi no només elimina soroll, també recupera senyal
+  que abans es perdia.
+
+  RESULTAT: `tests/test_eligibility_scan.py` guanya `TestGroupSubstantive
+  CommitsIntoSessions` (4 tests), `TestClassifySessionBoundaryTabular
+  Changes` (3 tests), `TestClassifyDatasetCriteriBUsesSessionBoundaries`
+  (1 test, confirma sobre `classify_dataset` complet que NOMÉS el límit
+  de sessió es diferencia, mai els parells intra-sessió). 189 tests en
+  total, `ruff check` net.
+
+
+DECISIÓ T-18: comparativa codi per codi real contra Census Income -- Taula 1 del paper transcrita a mà
+Data: setembre 2026
+Responsable: Joan
+Estat: ✅ Fet
+
+  MOTIU: `docs/census_income_alignment_study.md` (mateixa sessió)
+  recomanava, com a única via real cap a una comparació exacta,
+  transcriure a mà la Taula 1 del paper des de la imatge original --
+  l'extracció automàtica del PDF mai va conservar l'alineació de
+  columnes. Joan l'ha transcrita directament per a D1-D7.
+
+  DADES: els totals per fila de la transcripció coincideixen EXACTAMENT
+  amb els ja documentats a T-08 -- confirma consistència abans de fer-hi
+  cap comparació. Comparat contra `data/census_income_diff_report_3.csv`
+  (motor actual, C410+renom corregits), EXCLÒS C100 (mai comptat pel
+  nostre motor):
+
+    Total: TP=20, FN=6, FP=13 -- Precisió=60.6%, Recall=76.9%, F1=67.8%.
+    D1/D2/D5: coincidència EXACTA (0 FN, 0 FP).
+    D3/D4/D6/D7: coincidència parcial (detall complet al document).
+
+  Verificat PROGRAMÀTICAMENT (Python), no a mà -- el primer intent manual
+  va confondre les columnes C422/C510 en llegir el CSV (error real,
+  detectat en re-verificar), confirmant per què aquest tipus de càlcul
+  no s'ha de confiar a l'aritmètica manual per a un document permanent.
+
+  TROBALLES NOVES (patrons sistemàtics, mai vistos abans perquè calia
+  ground truth cel·la a cel·la per detectar-los):
+  - **C312 (valors categòrics) mai es detecta correctament** (0 TP, 3
+    FN) -- el paper el marca 3 cops, el motor cap.
+  - **C221/C322 es sobre-detecten sistemàticament** (precisió 20% i 0%)
+    -- el motor hi troba senyal que el paper no confirma.
+  - **C210/C421/C422 detectats perfectament** (5/5 TP, 0 errors).
+  - **C223 mai un fals positiu, però perd D6/D7** -- exactament els
+    renoms semàntics que l'heurística per nom normalitzat (T-16) no pot
+    atrapar per disseny, confirmant amb dades reals una limitació ja
+    coneguda.
+
+  RESULTAT: cap canvi de codi -- `docs/census_income_validation_report.
+  md` (nova secció "Comparativa codi per codi"), `docs/census_income_
+  alignment_study.md` (actualitzat, l'opció recomanada ja s'ha fet),
+  `docs/decisions_tfg.txt` (aquesta entrada + pendent històric marcat
+  `[x]`). C312 i C221/C322 queden com a pistes pendents d'investigar,
+  no corregides en aquesta sessió.
+
+
+DECISIÓ T-19: PAPER_GROUND_TRUTH i la comparativa codi per codi passen a ser codi reutilitzable
+Data: setembre 2026
+Responsable: Joan
+Estat: ✅ Fet
+
+  MOTIU (petició directa de Joan): la comparativa de T-18 es va calcular
+  amb un script d'una línia de comandes (`python3 << 'EOF' ... EOF`),
+  no guardat enlloc -- Joan va demanar que fos un `.py` executable cada
+  cop que calgués, que regenerés la taula comparativa automàticament, no
+  un càlcul ad-hoc a repetir a mà cada vegada que canviï el motor.
+
+  CANVI a `notebooks/validate_census_income.py`:
+  1. `PAPER_GROUND_TRUTH: dict[str, frozenset[str]]` -- substitueix
+     `PAPER_ROW_TOTALS` (consolidat, una sola font de veritat; el total
+     per fila ara és `len(PAPER_GROUND_TRUTH[v])`). Conté els 15 codis
+     COMPLETS (inclòs C100) transcrits a mà per Joan per a D1-D7.
+  2. `compare_detectability_with_paper(detectability_df)` -- funció
+     PURA, retorna TP/FN/FP per versió (exclòs C100 del costat del
+     paper, ja que el nostre motor mai el compta).
+  3. `summarize_agreement_by_code(detectability_df)` -- mateixa
+     comparació agregada per CODI, per detectar patrons sistemàtics.
+  4. `compute_agreement_metrics(comparison_df)` -- Precisió/Recall/F1,
+     0.0 en lloc de `ZeroDivisionError` si el denominador és 0.
+  5. `__main__` ara escriu SEMPRE (cada execució, sense cap flag nou)
+     `data/census_income_paper_comparison_<run_id>.csv` i `data/
+     census_income_paper_comparison_by_code_<run_id>.csv`, a més dels
+     dos CSV que ja escrivia -- i imprimeix Precisió/Recall/F1 per consola.
+
+  VERIFICAT: les 3 funcions noves reprodueixen EXACTAMENT els números
+  de T-18 (TP=20, FN=6, FP=13, Precisió=0.606, Recall=0.769, F1=0.678)
+  a partir del `detectability_df` real -- confirmat executant `validate_
+  census_income.py` de nou: `census_income_diff_report_3.csv` idèntic
+  byte a byte al `_2.csv` anterior (motor sense canvis), i els CSV de
+  comparativa nous coincideixen amb el càlcul manual de T-18. `_2.csv`
+  esborrat (superseït per `_3.csv`, que ara inclou tots els outputs
+  d'una mateixa execució coherent) -- totes les referències als fitxers
+  de T-14/T-15/T-16/T-18 actualitzades de `_2` a `_3`.
+
+  RESULTAT: `tests/test_validate_census_income.py` (nou, 11 tests --
+  `TestCompareDetectabilityWithPaper`, `TestSummarizeAgreementByCode`,
+  `TestComputeAgreementMetrics` amb un test de regressió que reprodueix
+  els números reals de T-18, `TestPaperGroundTruthConsistency`). 200
+  tests en total, `ruff check` net.
 
 
 DECISIÓ T-15: pandas per a la classificació de canvis -- per què, i per què és l'opció correcta al cost actual
@@ -1401,10 +1684,14 @@ PRÒXIMES DECISIONS PENDENTS
     (`data/change_classification_1.csv`). 2 bugs reals corregits durant
     l'execució (`unhashable type: 'dict'` en columnes d'àudio/imatge;
     cost desproporcionat de datasets "chunked", vegeu T-10).
-[ ] Si es vol el "% d'acord codi per codi" exacte contra Census Income
-    (no només el total agregat), algú (Joan) ha de transcriure a mà la
-    Taula 1 del paper mirant la imatge original — l'extracció del PDF no
-    conserva quines cel·les concretes tenen "✔".
+[x] "% d'acord codi per codi" exacte contra Census Income — RESOLT (T-18):
+    Joan ha transcrit a mà la Taula 1 del paper (imatge original) per a
+    D1-D7. Comparativa real: Precisió 60.6%, Recall 76.9%, F1 67.8%.
+    Detall complet a `docs/census_income_validation_report.md`, secció
+    "Comparativa codi per codi". Pendent nou (no aquest): investigar per
+    què C312 mai es detecta correctament i per què C221/C322 es
+    sobre-detecten — vegeu `docs/census_income_alignment_study.md`,
+    "Pas pendent (actualitzat)".
 [ ] Confirmació humana final (Joan + director) de la classificació TP/REVIEW
     de US-108 — l'automatització és una heurística, no una validació
     manual tancada
