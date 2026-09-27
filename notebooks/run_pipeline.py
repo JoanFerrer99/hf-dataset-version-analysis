@@ -26,14 +26,17 @@ manual entremig.
   python run_pipeline.py --input-csv ../data/eligibility_report_2000_5.csv           # salta Fase 0-1, reutilitza un CSV existent
   python run_pipeline.py --sample-size 2000 --skip-classification                    # només Fase 0-1/1b
 
-Output:
-  data/eligibility_report_<N>_<run_id>.csv, data/funnel_summary_<N>_<run_id>.json (Fase 0-1)
-  data/versions_<run_id>.csv, data/versions_summary_<run_id>.json (Fase 1b)
-  data/change_classification_<run_id>.csv (Fase 2)
+Output: TOTS els fitxers d'una mateixa execució van a una carpeta pròpia,
+`data/run_<id>/` (numerada automàticament, mai sobreescriu una execució
+anterior):
+  eligibility_report_<N>_<run_id>.csv, funnel_summary_<N>_<run_id>.json (Fase 0-1)
+  versions_<run_id>.csv (Fase 1b -- només CSV, sense JSON)
+  change_classification_<run_id>.csv (Fase 2)
+  failures.csv (si hi ha hagut cap fallada parcial, qualsevol fase)
+Un resum final per consola llista tots els fitxers generats, agrupats per fase.
 """
 
 import argparse
-import json
 import logging
 import os
 import random
@@ -46,6 +49,41 @@ import eligibility_scan as es
 import version_extractor as ve
 
 log = logging.getLogger(__name__)
+
+# Directori arrel ESTABLE, calculat independentment d'es.OUTPUT_DIR/ve.
+# OUTPUT_DIR -- aquests dos es reassignen a cada crida de run_full_pipeline
+# cap a la carpeta run_<id> triada, així que fer-los servir com a base per
+# calcular la PROPERA carpeta produiria un niament recursiu (run_1/run_1/
+# run_1/...) si run_full_pipeline s'invoca més d'un cop en el mateix procés
+# (p. ex. des d'un notebook/REPL) sense passar per un `python run_pipeline.
+# py` nou cada vegada.
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
+
+
+def next_pipeline_run_dir(data_dir: str) -> str:
+    """
+    Determina la carpeta de la propera execució completa del pipeline
+    (`data/run_<id>/`), inspeccionant les carpetes `run_<N>` ja existents
+    a `data_dir` -- mateix patró que `eligibility_scan.get_next_run_id`/
+    `version_extractor.get_next_run_id`, però a nivell de carpeta (TOTS
+    els outputs d'una mateixa execució hi van junts) en lloc de fitxer.
+
+    :param data_dir: directori arrel de dades ESTABLE (`DATA_DIR`, mai
+        `es.OUTPUT_DIR`/`ve.OUTPUT_DIR` -- aquests es reassignen a la
+        carpeta `run_<id>` triada i fer-los servir com a base produiria
+        niament recursiu en crides repetides dins del mateix procés).
+    :return: ruta ABSOLUTA de la carpeta nova (encara NO creada -- el
+        cridant hi fa `os.makedirs`).
+    """
+    max_id = 0
+    if os.path.isdir(data_dir):
+        for name in os.listdir(data_dir):
+            if name.startswith("run_") and os.path.isdir(os.path.join(data_dir, name)):
+                try:
+                    max_id = max(max_id, int(name[len("run_"):]))
+                except ValueError:
+                    pass
+    return os.path.join(data_dir, f"run_{max_id + 1}")
 
 
 def run_full_pipeline(
@@ -79,23 +117,38 @@ def run_full_pipeline(
     :param skip_classification: si `True`, omet la Fase 2.
     :param skip_size: es passa a `version_extractor.run_extraction`
         (`compute_size=not skip_size`).
-    :return: `dict` amb `eligibility_csv`, `eligible_total`, i
-        `versions_csv` (ruta, o `None` si la Fase 1b s'ha saltat o no hi
-        havia cap elegible). La ruta del CSV de la Fase 2 no es retorna
-        (`run_classification` no la retorna -- ja la imprimeix ella
-        mateixa, vegeu la seva pròpia sortida per consola).
+    :return: `dict` amb `run_dir` (carpeta d'aquesta execució), `eligibility_
+        csv`, `eligible_total`, `versions_csv` i `change_classification_csv`
+        (rutes, o `None` si la fase corresponent s'ha saltat o no hi havia
+        cap elegible), i `generated_files` (`dict[str, list[str]]`, rutes
+        agrupades per fase -- font del resum final per consola).
     """
+    run_dir = next_pipeline_run_dir(DATA_DIR)
+    os.makedirs(run_dir, exist_ok=True)
+    es.OUTPUT_DIR = ve.OUTPUT_DIR = run_dir
+    es.FAILURES_LOG_PATH = ve.FAILURES_LOG_PATH = os.path.join(run_dir, "failures.csv")
+    log.info(f"Carpeta d'aquesta execució: {run_dir}")
+
+    generated_files: dict[str, list[str]] = {"Fase 0-1 (mostreig+elegibilitat)": [], "Fase 1b (versions)": [],
+                                              "Fase 2 (classificació de canvis)": []}
+    outputs = {
+        "run_dir": run_dir, "eligibility_csv": None, "eligible_total": 0,
+        "versions_csv": None, "change_classification_csv": None, "generated_files": generated_files,
+    }
+
     if input_csv:
         log.info(f"Fase 0-1 saltada -- reutilitzant {input_csv}")
         eligibility_csv = input_csv
         eligible_total = int(pd.read_csv(eligibility_csv)["eligible"].sum())
     else:
-        eligibility_csv, _json_path, summary = es.run_sampling(
+        eligibility_csv, funnel_summary_json, summary = es.run_sampling(
             sample_size=sample_size, max_scanned=max_scanned, num_threads=num_threads, tags_only=tags_only,
         )
         eligible_total = summary["eligible_total"]
+        generated_files["Fase 0-1 (mostreig+elegibilitat)"] += [eligibility_csv, funnel_summary_json]
 
-    outputs = {"eligibility_csv": eligibility_csv, "eligible_total": eligible_total, "versions_csv": None}
+    outputs["eligibility_csv"] = eligibility_csv
+    outputs["eligible_total"] = eligible_total
 
     if eligible_total == 0:
         log.info("Cap dataset elegible -- s'omet Fase 1b (extracció de versions) i Fase 2 (classificació de canvis).")
@@ -107,19 +160,20 @@ def run_full_pipeline(
         log.info(f"FASE 1b: Extraient versions dels {eligible_total} datasets elegibles...")
         run_id = ve.get_next_run_id(ve.OUTPUT_DIR)
         versions_csv = os.path.join(ve.OUTPUT_DIR, f"versions_{run_id}.csv")
-        version_summary = ve.run_extraction(
-            eligibility_csv, versions_csv, es.HF_TOKEN, ve.RETRY_CONFIG, compute_size=not skip_size,
-        )
-        summary_path = os.path.join(ve.OUTPUT_DIR, f"versions_summary_{run_id}.json")
-        with open(summary_path, "w", encoding="utf-8") as f:
-            json.dump(version_summary, f, indent=2, ensure_ascii=False)
+        ve.run_extraction(eligibility_csv, versions_csv, es.HF_TOKEN, ve.RETRY_CONFIG, compute_size=not skip_size)
         outputs["versions_csv"] = versions_csv
+        generated_files["Fase 1b (versions)"].append(versions_csv)
 
     if skip_classification:
         log.info("FASE 2 saltada (--skip-classification).")
     else:
         log.info(f"FASE 2: Classificant canvis dels {eligible_total} datasets elegibles...")
-        es.run_classification(eligibility_csv)
+        change_classification_csv = es.run_classification(eligibility_csv)
+        outputs["change_classification_csv"] = change_classification_csv
+        generated_files["Fase 2 (classificació de canvis)"].append(change_classification_csv)
+
+    if os.path.exists(es.FAILURES_LOG_PATH):
+        generated_files["Fallades (totes les fases)"] = [es.FAILURES_LOG_PATH]
 
     return outputs
 
@@ -229,6 +283,14 @@ if __name__ == "__main__":
     print(f"\n{'=' * 65}")
     print("  RESUM PIPELINE COMPLET")
     print(f"{'=' * 65}")
-    for k, v in result.items():
-        print(f"  {k:<20} {v}")
-    print(f"{'=' * 65}\n")
+    print(f"  Carpeta d'aquesta execució: {result['run_dir']}")
+    print(f"  Datasets elegibles:         {result['eligible_total']}")
+    print(f"{'=' * 65}")
+    print("  Fitxers generats, per fase:")
+    for phase, paths in result["generated_files"].items():
+        if not paths:
+            continue
+        print(f"\n  {phase}")
+        for path in paths:
+            print(f"    - {os.path.basename(path)}")
+    print(f"\n{'=' * 65}\n")

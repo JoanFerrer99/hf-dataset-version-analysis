@@ -37,12 +37,11 @@ mòdul reflecteix aquesta limitació.
   python version_extractor.py --skip-size  # sense list_repo_tree (més ràpid)
 
 Output:
-  data/versions_<run_id>.csv, data/versions_summary_<run_id>.json
+  data/versions_<run_id>.csv
   data/failures.csv (fallades de dataset sencer, source="version_extraction")
 """
 
 import argparse
-import json
 import logging
 import os
 import sys
@@ -672,16 +671,11 @@ if __name__ == "__main__":
     print(f"Extraient versions per als datasets elegibles de {args.input}...")
     summary = run_extraction(args.input, output_csv, hf_token, retry_config, compute_size=not args.skip_size)
 
-    summary_path = os.path.join(OUTPUT_DIR, f"versions_summary_{run_id}.json")
-    with open(summary_path, "w", encoding="utf-8") as f:
-        json.dump(summary, f, indent=2, ensure_ascii=False)
-
     print(f"\n{'=' * 65}")
     print("  RESUM EXTRACCIÓ DE VERSIONS")
     print(f"{'=' * 65}")
     for k, v in summary.items():
         print(f"  {k:<30} {v}")
     print(f"{'=' * 65}")
-    print(f"\n  CSV:  {output_csv}")
-    print(f"  JSON: {summary_path}")
+    print(f"\n  CSV: {output_csv}")
     print(f"  Fallades (detall): {FAILURES_LOG_PATH}\n")
