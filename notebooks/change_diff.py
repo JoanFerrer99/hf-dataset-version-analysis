@@ -40,6 +40,11 @@ import errors
 
 log = logging.getLogger(__name__)
 
+# "Trenca l'execució d'un pipeline que llegeix per nom/posició/tipus",
+# NO "afecta la qualitat del model" -- vegeu classify_diffs() més avall i
+# docs/taiga/taxonomy.md ("is_breaking: heurística d'execució, no de
+# qualitat") per la distinció completa i per què la resta de codis
+# (afegir/eliminar fila, canvis de valors/distribució) són False.
 BREAKING_CODES = frozenset({"C210", "C222", "C223", "C311", "C321", "C410"})
 
 TABULAR_CODES = (
