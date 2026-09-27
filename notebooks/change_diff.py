@@ -47,6 +47,26 @@ TABULAR_CODES = (
     "C410", "C421", "C422", "C510", "C520", "C530",
 )
 
+# Descripcions curtes dels 14 codis tabulars (`docs/taiga/taxonomy.md`),
+# per a llegibilitat immediata (p.e. la columna `description` de `data/
+# change_classification_*.csv`) -- C100 no hi és, mai el genera aquest motor.
+CODE_DESCRIPTIONS: dict[str, str] = {
+    "C210": "Ordre de columnes",
+    "C221": "Afegir columna",
+    "C222": "Eliminar columna",
+    "C223": "Renombrar columna",
+    "C311": "Tipus de columna categòrica",
+    "C312": "Valors d'una columna categòrica",
+    "C321": "Tipus de columna numèrica",
+    "C322": "Valors d'una columna numèrica",
+    "C410": "Ordre de files",
+    "C421": "Afegir fila",
+    "C422": "Eliminar fila",
+    "C510": "Missings",
+    "C520": "Correlacions",
+    "C530": "Distribució de les dades",
+}
+
 TABULAR_EXTENSIONS = (".parquet", ".csv", ".tsv")
 
 

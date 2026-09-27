@@ -1120,7 +1120,7 @@ def _next_classification_run_id(output_dir: str) -> int:
     return max_id + 1
 
 
-def run_classification(input_csv: str) -> None:
+def run_classification(input_csv: str) -> str:
     """
     Classifica els canvis de cada dataset elegible d'un `eligibility_report_*.csv`
     ja generat, reutilitzant `classify_dataset(dataset_id, classify_changes=True)` --
@@ -1130,9 +1130,11 @@ def run_classification(input_csv: str) -> None:
 
     :param input_csv: CSV de datasets elegibles (`eligibility_report_
         *.csv`, amb columnes `dataset_id`/`eligible`).
-    :return: None. Efectes: escriu `data/change_classification_<run_id>.
-        csv` (columnes `dataset_id, version_from, version_to, code,
-        is_breaking`) i imprimeix un resum per consola.
+    :return: ruta del CSV escrit (`data/change_classification_<run_id>.
+        csv`, columnes `dataset_id, version_from, version_to, code,
+        description, is_breaking` -- `description` és `change_diff.
+        CODE_DESCRIPTIONS[code]`, per llegibilitat immediata). També
+        imprimeix un resum per consola.
     """
     df = pd.read_csv(input_csv)
     eligible = df[df["eligible"] == True]  # noqa: E712
@@ -1153,6 +1155,7 @@ def run_classification(input_csv: str) -> None:
     run_id = _next_classification_run_id(OUTPUT_DIR)
     output_csv = os.path.join(OUTPUT_DIR, f"change_classification_{run_id}.csv")
     out_df = pd.DataFrame(all_labels, columns=["dataset_id", "version_from", "version_to", "code", "is_breaking"])
+    out_df.insert(4, "description", out_df["code"].map(change_diff.CODE_DESCRIPTIONS))
     out_df.to_csv(output_csv, index=False, encoding="utf-8")
 
     print(f"\n{'=' * 65}")
@@ -1163,6 +1166,8 @@ def run_classification(input_csv: str) -> None:
     print(f"  Etiquetes de canvi generades {len(all_labels)}")
     print(f"{'=' * 65}")
     print(f"\n  CSV: {output_csv}\n")
+
+    return output_csv
 
 
 # ---------------------------------------------------------------------------
