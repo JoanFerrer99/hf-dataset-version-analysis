@@ -335,8 +335,7 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
 
         commits_scanned = 0
         num_commits_substantive = 0
-        earliest_substantive_time: datetime | None = None
-        latest_substantive_time: datetime | None = None
+        substantive_times: list[datetime] = []
         substantive_commits: list[tuple[int, object, list[str]]] = []
 
         if len(tags) >= 2 or (not tags_only and len(branches) >= 2):
@@ -353,10 +352,7 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
                         num_commits_substantive += 1
                         commit_time = getattr(commit, "created_at", None)
                         if commit_time is not None:
-                            if earliest_substantive_time is None or commit_time < earliest_substantive_time:
-                                earliest_substantive_time = commit_time
-                            if latest_substantive_time is None or commit_time > latest_substantive_time:
-                                latest_substantive_time = commit_time
+                            substantive_times.append(commit_time)
                         if classify_changes and changed_paths:
                             substantive_commits.append((i, commit, changed_paths))
 
@@ -365,7 +361,7 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
                             result["eligible"] = True
                             result["eligibility_reason"] = "Criteri A: tags>=2 amb commits substantius"
                         elif not tags_only and len(branches) >= 2 and has_time_dispersed_substantive_commits(
-                            [earliest_substantive_time, latest_substantive_time]
+                            substantive_times
                         ):
                             result["eligible"] = True
                             result["eligibility_reason"] = (
@@ -689,38 +685,40 @@ def group_substantive_commits_into_sessions(
     substantive_commits: list[tuple[int, object, list[str]]],
 ) -> list[list[tuple[int, object, list[str]]]]:
     """
-    Agrupa commits substantius en sessions de treball -- mateix criteri
-    que `cluster_commit_times` (un cop ordenats cronològicament, una
-    nova sessió comença quan dos commits consecutius estan separats per
-    més de `MIN_SUBSTANTIVE_GAP_HOURS`), però preservant l'associació
-    `(índex, commit, changed_paths)` que `cluster_commit_times` no porta
-    (aquella funció NOMÉS treballa amb `datetime` solts -- reutilitzada
-    igual per a l'elegibilitat, `has_time_dispersed_substantive_commits`,
-    i per a `version_extractor.build_sessions_from_commits`).
+    Agrupa commits substantius en sessions de treball, REUTILITZANT
+    `cluster_commit_times` -- el MATEIX criteri i codi que decideix
+    l'elegibilitat via Criteri B (`has_time_dispersed_substantive_
+    commits`) i que fa servir `version_extractor.build_sessions_from_
+    commits` per a la Fase 1b. Abans, aquesta funció reimplementava el
+    mateix bucle de comparació de buits en lloc de delegar-hi -- un únic
+    concepte de "sessió" a tot el pipeline, no tres implementacions
+    paral·leles que podrien divergir.
 
     :param substantive_commits: `(índex a la llista completa de commits
-        de `classify_dataset`, commit, changed_paths)`, en ordre
-        NEWEST-FIRST (tal com els retorna `list_repo_commits` i els va
-        trobant `classify_dataset`). Els commits sense `created_at`
-        s'ignoren (no poden entrar a cap sessió temporal) -- mateix
-        comportament que `cluster_commit_times` amb els `None`.
+        de `classify_dataset`, commit, changed_paths)`, en qualsevol
+        ordre. Els commits sense `created_at` s'ignoren (no poden entrar
+        a cap sessió temporal) -- mateix comportament que `cluster_
+        commit_times` amb els `None`.
     :return: llista de sessions (cada sessió, una llista de triples,
-        també NEWEST-FIRST dins la sessió), ordenades NEWEST-FIRST (la
-        sessió `[0]` és la MÉS RECENT) -- llista buida si cap commit té
-        `created_at`.
+        SENSE ordre garantit dins seu -- vegeu `classify_session_
+        boundary_tabular_changes`, que calcula el commit representant
+        explícitament amb `max(..., key=created_at)`, no per posició),
+        ordenades NEWEST-FIRST (la sessió `[0]` és la MÉS RECENT) --
+        llista buida si cap commit té `created_at`.
     """
     dated = [t for t in substantive_commits if getattr(t[1], "created_at", None) is not None]
     if not dated:
         return []
 
-    sessions: list[list[tuple[int, object, list[str]]]] = [[dated[0]]]
-    for triple in dated[1:]:
-        prev_time = sessions[-1][-1][1].created_at
-        if (prev_time - triple[1].created_at) > timedelta(hours=MIN_SUBSTANTIVE_GAP_HOURS):
-            sessions.append([triple])
-        else:
-            sessions[-1].append(triple)
-    return sessions
+    by_time: dict[datetime, list[tuple[int, object, list[str]]]] = {}
+    for triple in dated:
+        by_time.setdefault(triple[1].created_at, []).append(triple)
+
+    time_clusters = cluster_commit_times([triple[1].created_at for triple in dated])
+    return [
+        [triple for t in time_cluster for triple in by_time[t]]
+        for time_cluster in reversed(time_clusters)
+    ]
 
 
 def classify_session_boundary_tabular_changes(
@@ -761,8 +759,8 @@ def classify_session_boundary_tabular_changes(
 
     labels: list[dict] = []
     for newer_session, older_session in zip(sessions, sessions[1:]):
-        version_to_commit = newer_session[0][1]
-        version_from_commit = older_session[0][1]
+        version_to_commit = max(newer_session, key=lambda triple: triple[1].created_at)[1]
+        version_from_commit = max(older_session, key=lambda triple: triple[1].created_at)[1]
         changed_paths = sorted({path for _, _, paths in newer_session for path in paths})
         labels.extend(
             classify_commit_tabular_changes(
@@ -779,24 +777,30 @@ def has_time_dispersed_substantive_commits(
     """
     Determina si una llista de dates de commits substantius (segons
     `is_substantive_commit`) representa actualitzacions prou separades en
-    el temps per considerar-se "versions" diferenciades, en lloc d'una
-    única sessió de pujada/creació.
+    el temps per considerar-se "versions" diferenciades (>= 2 SESSIONS
+    reals), en lloc d'una única sessió de pujada/creació.
+
+    Reutilitza `cluster_commit_times` -- el MATEIX criteri i codi que
+    defineix les sessions a `group_substantive_commits_into_sessions`
+    (Fase 2) i a `version_extractor.build_sessions_from_commits` (Fase
+    1b): un únic concepte de "sessió" a tot el pipeline. Abans, aquesta
+    funció NOMÉS comprovava l'interval entre la data més antiga i la més
+    recent -- una sessió DENSA de molts commits separats per <gap_hours
+    cadascun però repartits en un interval ampli (p.e. 20 commits cada 5h,
+    100h d'interval total amb un llindar de 6h) hauria passat com a
+    "dispersa" tot i ser UNA sola sessió real. Corregit: ara exigeix >= 2
+    sessions, no només un interval ampli.
 
     :param commit_times: dates (`datetime`) dels commits ja considerats
         substantius, en qualsevol ordre. Els elements `None` (l'API no
         sempre proporciona `created_at`) s'ignoren.
-    :param min_gap_hours: separació mínima, en hores, exigida entre el
-        commit substantiu més antic i el més recent de la llista.
-    :return: `True` si hi ha almenys 2 dates vàlides I la diferència entre
-        la més antiga i la més recent és >= `min_gap_hours`; `False` en
-        cas contrari (incloent-hi el cas de menys de 2 dates vàlides).
+    :param min_gap_hours: separació mínima, en hores, exigida entre dos
+        commits substantius CONSECUTIUS perquè es considerin sessions
+        diferents (`cluster_commit_times`, paràmetre `gap_hours`).
+    :return: `True` si agrupar `commit_times` en sessions en dona >= 2;
+        `False` en cas contrari (incloent-hi menys de 2 dates vàlides).
     """
-    valid_times = [t for t in commit_times if t is not None]
-    if len(valid_times) < 2:
-        return False
-
-    span = max(valid_times) - min(valid_times)
-    return span >= timedelta(hours=min_gap_hours)
+    return len(cluster_commit_times(commit_times, gap_hours=min_gap_hours)) >= 2
 
 
 def cluster_commit_times(
