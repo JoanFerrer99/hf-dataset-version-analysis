@@ -21,7 +21,7 @@ commit_tabular_changes`, que sí opera commit a commit, però NOMÉS sobre
 els fitxers ja tabulars).
 
 Ús:
-  python extension_report.py --input ../data/eligibility_report_2000_5.csv
+  python extension_report.py --input ../data/eligibility_report_<sample_id>_<run_id>.csv
 
 Output:
   data/extension_report_<run_id>.csv (una fila per extensió, agregada
