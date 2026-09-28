@@ -213,15 +213,61 @@ Per codi (només els codis que apareixen almenys un cop en algun costat):
    (sense descartar): el paper podria comptar canvis de categoria que
    el nostre disseny classifica com a C530 (distribució) en lloc de C312.
 2. **C221/C322 es sobre-detectaven sistemàticament** (precisió 20% i 0%
-   respectivament) -- **C322 RESOLT parcialment, Decisió T-21**:
-   `diff_numeric_values` no tenia llindar de sensibilitat (`rtol=atol=
-   1e-9`, pràcticament igualtat bit a bit) mentre la resta de funcions
-   `diff_*` d'aquest fitxer ja en feien servir un (`threshold=0.05`).
-   Homogeneïtzat -- C322 passa de FP=4 a FP=2 (Precisió global 60.6% ->
-   64.5%, F1 67.8% -> 70.2%, Recall sense canvis). **C221 segueix
-   pendent** -- causa diferent i doble (part ve de renoms semàntics no
-   aparellats per C223, part són columnes genuïnes que el paper
-   possiblement no va anotar en una revisió manual incompleta).
+   respectivament) -- **C322 RESOLT parcialment, Decisió T-21**, vegeu la
+   secció següent. **C221 segueix pendent** -- causa diferent i doble
+   (part ve de renoms semàntics no aparellats per C223, part són
+   columnes genuïnes que el paper possiblement no va anotar en una
+   revisió manual incompleta).
+
+## Re-validació posterior amb llindar homogeneïtzat (Decisió T-21)
+
+La taula i el "Per codi" de dalt (secció anterior) són l'estat PRE-T-21
+-- es mantenen tal qual perquè són el registre històric contra el qual
+T-21 es compara (`data/census_income_diff_report_3.csv`). Aquesta secció
+és el resultat REAL després d'homogeneïtzar el llindar de `diff_numeric_
+values` (`rtol=atol=1e-9` -> `threshold=0.05`, igual que `diff_
+correlation`/`diff_distribution`) -- mateix patró que la secció "Re-
+validació posterior amb C410" més amunt.
+
+**Resultat real** (`data/census_income_diff_report_5.csv` / `_classification_
+5.csv` / `_paper_comparison_5.csv` / `_paper_comparison_by_code_5.csv`,
+generats per `validate_census_income.py` reexecutat sencer, sense cap
+altre canvi que el llindar):
+
+| Versió | Paper - C100 | El nostre motor | TP | FN | FP |
+|---|---|---|---|---|---|
+| D1 | 2 | 2 | 2 | 0 | 0 |
+| D2 | 2 | 2 | 2 | 0 | 0 |
+| D3 | 6 | 6 | 4 | 2 | 2 |
+| D4 | 6 | 6 | 5 | 1 | 1 |
+| D5 | 3 | 3 | 3 | 0 | 0 |
+| D6 | 3 | 6 | 2 | 1 | 4 |
+| D7 | 4 | 6 | 2 | 2 | 4 |
+| **Total** | **26** | | **20** | **6** | **11** |
+
+**Precisió = 64.5% (20/31), Cobertura (recall) = 76.9% (20/26), F1 = 70.2%**
+-- Precisió puja des del 60.6% pre-T-21 (Recall es manté exactament igual,
+C322 no tenia cap TP a perdre).
+
+Per codi (només els codis que canvien respecte a la taula pre-T-21):
+
+| Codi | TP (abans->ara) | FN (abans->ara) | FP (abans->ara) |
+|---|---|---|---|
+| C322 | 0 -> 0 | 0 -> 0 | **4 -> 2** |
+
+**Cap altre codi canvia** (C210/C221/C222/C223/C311/C312/C410/C421/C422/C530
+idèntics a la taula pre-T-21) -- confirma que el canvi és aïllat a
+`diff_numeric_values`, sense efectes secundaris a la resta del motor.
+
+Detall del canvi a C322 (per dataset, `fp_codes` abans -> ara):
+- **D3**: `C221,C222,C322` -> `C221,C222` (C322 desapareix -- era soroll
+  de coma flotant per sota del llindar nou)
+- **D4**: `C221,C322` -> `C221` (mateix motiu)
+- **D6**: `C221,C222,C312,C322` -> sense canvis (diferència real per
+  sobre del 5%, coherent amb l'ambigüitat de fitxer ja documentada a
+  D6)
+- **D7**: `C221,C311,C322,C530` -> sense canvis (diferència real per
+  sobre del 5%)
 
 ## Estat i reproduïbilitat
 
@@ -241,5 +287,5 @@ Registres permanents d'aquest exercici:
 2. `data/census_income_diff_report.csv` / `data/census_income_classification.csv` (registre original, pre-C410, 30 etiquetes).
 3. `data/census_income_diff_report_3.csv` / `data/census_income_classification_3.csv` (re-validació amb C410 (T-15) i l'heurística de renom corregida (T-16), 32 etiquetes -- `_1`/`_2` es van generar i descartar al llarg d'aquesta mateixa sessió, sense diferència als `codes_detected`).
 4. `data/census_income_paper_comparison_3.csv` / `data/census_income_paper_comparison_by_code_3.csv` (comparativa codi per codi contra `PAPER_GROUND_TRUTH`, T-18 -- generats automàticament per `validate_census_income.py`, no calculats a mà).
-5. `data/census_income_diff_report_5.csv` / `_classification_5.csv` / `_paper_comparison_5.csv` / `_paper_comparison_by_code_5.csv` (re-validació amb el llindar de `diff_numeric_values` homogeneïtzat, Decisió T-21 -- `_4.csv` era idèntic a `_3.csv`, descartat com `_1`/`_2`; C322 FP 4->2, Precisió 60.6%->64.5%).
+5. `data/census_income_diff_report_5.csv` / `_classification_5.csv` / `_paper_comparison_5.csv` / `_paper_comparison_by_code_5.csv` (re-validació amb el llindar de `diff_numeric_values` homogeneïtzat, Decisió T-21 -- `_4.csv` era idèntic a `_3.csv`, descartat com `_1`/`_2`; C322 FP 4->2, Precisió 60.6%->64.5%). `_6.csv` és una reproducció independent de Joan, idèntica byte a byte a `_5.csv` -- confirma que el resultat no depèn de l'entorn on s'executi.
 6. `notebooks/validate_census_income.py` (codi viu, reutilitzable -- l'adquisició D0-D7 ja no cal recuperar-la de l'historial de git; cada execució regenera TOTS els CSV d'aquesta llista, punts 3-5).
