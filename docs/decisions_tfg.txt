@@ -1275,6 +1275,62 @@ Estat: Tancada (documentació, cap canvi de codi)
   creuada des del docstring de `download_tabular_file_at_revision`.
 
 
+DECISIÓ T-21: llindar de diff_numeric_values homogeneïtzat amb la resta del motor (C322, sempre fals positiu)
+
+Data: setembre 2026
+Responsable: Joan
+Estat: Fet
+
+  MOTIU (feedback del director, reunió, re-anàlisi de precisió/recall
+  per codi): la comparativa codi per codi contra el ground truth de
+  Census Income (T-18/T-19) mostrava C322 amb 0% de precisió (TP=0,
+  FN=0, FP=4) -- el paper mai el marca, el motor sempre en dona senyal
+  quan hi ha columnes numèriques comunes.
+
+  CAUSA ARREL: `diff_numeric_values` (`change_diff.py`) comparava
+  `[mean, std, min, max]` amb `np.allclose(rtol=1e-9, atol=1e-9)` --
+  pràcticament igualtat bit a bit. Era l'ÚNICA funció `diff_*` d'aquest
+  fitxer sense marge significatiu: `diff_correlation`/`diff_distribution`
+  (T-14/US-305) ja feien servir `threshold=0.05`. Qualsevol soroll de
+  coma flotant (reexportació parquet<->csv, diferent versió de pandas/
+  numpy) queda per sobre d'`1e-9` i disparava un canvi fals.
+
+  CANVI: `diff_numeric_values` accepta ara `threshold: float = 0.05`
+  (mateix nom/valor per defecte que les funcions germanes) i el fa
+  servir per a `rtol`/`atol` alhora, calcat del patró ja existent a
+  `diff_distribution`. `compute_all_diffs` no ha canviat -- continua
+  cridant `diff_numeric_values(before, after)` sense passar el llindar
+  explícitament.
+
+  VERIFICAT amb el propi harness de validació (`notebooks/validate_
+  census_income.py`, re-executat sencer): C322 passa de FP=4 a FP=2 --
+  els dos casos de D3/D4 (soroll de coma flotant per sota del llindar
+  antic) desapareixen del tot; D6/D7 mantenen un FP real (D6 és el cas
+  ja conegut d'ambigüitat de fitxer, `docs/census_income_validation_
+  report.md`). Precisió global puja de 60.6% a 64.5%, F1 de 67.8% a
+  70.2%, Recall es manté a 76.9% (C322 no tenia cap TP a perdre). CAP
+  altre codi canvia de TP/FN/FP respecte a T-18/T-19 -- el canvi és
+  aïllat a `diff_numeric_values`.
+
+  RESULTAT: `tests/test_change_diff.py::TestDiffNumericValues` -- 2
+  tests nous (`test_small_floating_point_noise_is_not_flagged`, test de
+  regressió directe del bug; `test_change_beyond_the_threshold_is_still_
+  detected`). 224 tests en total, `ruff check` net. Nou registre de
+  re-validació: `data/census_income_diff_report_5.csv` / `_classification_
+  5.csv` / `_paper_comparison_5.csv` / `_paper_comparison_by_code_5.csv`.
+
+  FORA D'ABAST (documentat, no corregit aquí): C221 (sobre-detecció,
+  causa diferent i doble -- part ve de renoms semàntics no aparellats
+  per C223, part són columnes genuïnes que el paper no marca), C312
+  (mai detectat correctament -- indici trobat en aquesta re-anàlisi que
+  `diff_categorical_values` i la resta de funcions `diff_*` ignoren el
+  mapa de renoms de `diff_columns`, fent invisible qualsevol columna
+  renombrada), C223 (FN en renoms semàntics, límit conegut de T-16) i
+  C410 (1 FN quan la reordenació coincideix amb altres canvis al mateix
+  parell de versions, límit conegut de T-14). Queden com a pistes
+  documentades a la conversa, no com a properes decisions obertes.
+
+
 ================================================================================
 BLOC 4 — DECISIONS D'ABAST
 ================================================================================

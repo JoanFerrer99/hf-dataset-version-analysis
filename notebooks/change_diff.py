@@ -40,12 +40,37 @@ import errors
 
 log = logging.getLogger(__name__)
 
+# "Trenca l'execució d'un pipeline que llegeix per nom/posició/tipus",
+# NO "afecta la qualitat del model" -- vegeu classify_diffs() més avall i
+# docs/taiga/taxonomy.md ("is_breaking: heurística d'execució, no de
+# qualitat") per la distinció completa i per què la resta de codis
+# (afegir/eliminar fila, canvis de valors/distribució) són False.
 BREAKING_CODES = frozenset({"C210", "C222", "C223", "C311", "C321", "C410"})
 
 TABULAR_CODES = (
     "C210", "C221", "C222", "C223", "C311", "C312", "C321", "C322",
     "C410", "C421", "C422", "C510", "C520", "C530",
 )
+
+# Descripcions curtes dels 14 codis tabulars (`docs/taiga/taxonomy.md`),
+# per a llegibilitat immediata (p.e. la columna `description` de `data/
+# change_classification_*.csv`) -- C100 no hi és, mai el genera aquest motor.
+CODE_DESCRIPTIONS: dict[str, str] = {
+    "C210": "Ordre de columnes",
+    "C221": "Afegir columna",
+    "C222": "Eliminar columna",
+    "C223": "Renombrar columna",
+    "C311": "Tipus de columna categòrica",
+    "C312": "Valors d'una columna categòrica",
+    "C321": "Tipus de columna numèrica",
+    "C322": "Valors d'una columna numèrica",
+    "C410": "Ordre de files",
+    "C421": "Afegir fila",
+    "C422": "Eliminar fila",
+    "C510": "Missings",
+    "C520": "Correlacions",
+    "C530": "Distribució de les dades",
+}
 
 TABULAR_EXTENSIONS = (".parquet", ".csv", ".tsv")
 
@@ -280,12 +305,24 @@ def diff_categorical_values(before: pd.DataFrame, after: pd.DataFrame) -> dict:
     return changes
 
 
-def diff_numeric_values(before: pd.DataFrame, after: pd.DataFrame) -> dict:
+def diff_numeric_values(before: pd.DataFrame, after: pd.DataFrame, threshold: float = 0.05) -> dict:
     """
     Compara estadístics bàsics (mitjana, desviació, mínim, màxim) de cada
     columna numèrica present a totes dues instantànies -- detecta canvis
     d'escala/rang (p.e. normalització), no substitueix `diff_distribution`.
 
+    Abans (Decisió T-21) el llindar era pràcticament igualtat bit a bit
+    (`rtol=atol=1e-9`) -- l'única funció `diff_*` d'aquest fitxer sense
+    marge significatiu, mentre `diff_correlation`/`diff_distribution` ja
+    feien servir `threshold=0.05`. Qualsevol soroll de coma flotant
+    (reexportació parquet<->csv, diferent versió de pandas/numpy) queda
+    per sobre d'`1e-9` i disparava un canvi fals -- C322 tenia 0%
+    precisió contra el ground truth de Census Income (`docs/census_
+    income_validation_report.md`). Ara fa servir el mateix `threshold`
+    que les funcions germanes.
+
+    :param threshold: canvi relatiu (i absolut) mínim, a qualsevol dels 4
+        estadístics, perquè es consideri un canvi real.
     :return: `dict[str, dict]` una entrada per columna amb algun estadístic
         canviat, amb els 4 estadístics `before`/`after`.
     """
@@ -297,7 +334,7 @@ def diff_numeric_values(before: pd.DataFrame, after: pd.DataFrame) -> dict:
         stats_before = before[col].agg(["mean", "std", "min", "max"])
         stats_after = after[col].agg(["mean", "std", "min", "max"])
         if not np.allclose(stats_before.to_numpy(dtype=float), stats_after.to_numpy(dtype=float),
-                            rtol=1e-9, atol=1e-9, equal_nan=True):
+                            rtol=threshold, atol=threshold, equal_nan=True):
             changes[col] = {
                 "mean_before": float(stats_before["mean"]), "mean_after": float(stats_after["mean"]),
                 "min_before": float(stats_before["min"]), "min_after": float(stats_after["min"]),
