@@ -1,10 +1,4 @@
-# Taxonomia de canvis de dataset — v2 (formal, codificada)
-
-> Font: paper del director de TFG (secció 4 "Taxonomy of dataset changes"
-> + secció 5 "Example of a dataset changes", amb Census Income com a
-> ground truth). Aquesta versió **substitueix** el mapa mental informal
-> que teníem inicialment (Metadata / Columns Set / Column Type / Rows Set
-> / Data Characteristics sense codis).
+# Taxonomia de canvis de dataset
 
 ## Els 15 codis oficials
 
@@ -47,32 +41,10 @@ l'execució o no), separada de si el canvi afecta el resultat del
 model -- coherent amb la "Regla de disseny important" de dalt (la
 taxonomia classifica el *dataset*, no l'ús que se'n fa).
 
-## Canvis respecte a la versió anterior (informal)
-
-| Abans | Ara |
-|---|---|
-| Columns Set → Arity (categoria pròpia) | ❌ Eliminada com a categoria classificable — ara es tracta com "impacte" (secció 4.1), no com a tipus de canvi |
-| Column Type → Categorical → **Order** | ❌ Eliminada explícitament: "aquesta informació no està disponible al propi dataset, sinó externament" |
-| Rows Set → Row → **Change ID** | ❌ Eliminada com a categoria pròpia |
-| Rows Set → Cardinality (categoria pròpia) | ❌ Eliminada com a categoria classificable — mateix tractament que Arity |
-| Data Characteristics → Target → Concept drift / Balance | ❌ **No són codis nous.** Són interpretacions de C520/C530 quan la columna afectada és el target del pipeline. La taxonomia classifica el *dataset*, no l'ús que se'n fa |
-
-## Regla de disseny important
-
-> "Notice that all these perspectives are related to the dataset, and not
-> to the use we make of it (e.g., considering a column either the target
-> to be predicted or a feature relevant to do that does not depend on the
-> dataset)."
-
-Conseqüència pràctica: el classificador **no ha de saber** quina columna
-és el target. Etiqueta C520/C530 igual per a qualsevol columna; la
-interpretació com a "concept drift" es fa a posteriori, fora del
-classificador.
 
 ## Detectabilitat: 3 nivells (revisat, US-303 AC1)
 
-**La taula binària original (schema-level vs content-level) simplificava
-massa.** Només C100 és realment "metadada pura" (crida a l'API REST,
+Només C100 és realment "metadada pura" (crida a l'API REST,
 `DatasetInfo`/dataset card, zero accés al fitxer). C210, C221, C222,
 C223, C311, C321 necessiten com a mínim una **lectura parcial** del
 fitxer (capçalera CSV, o el footer d'un Parquet via lectura per rangs
@@ -104,17 +76,6 @@ pesat amb 29GB/versió, només té 20 commits). La guarda de >500 commits
 segueix sent una bona pràctica general (encara no implementada a
 `eligibility_scan.py`), però no redueix aquest problema concret.
 
-**Estratègia recomanada** (mínim possible, aplicada per codi/columna, no
-per exclusió de dataset): Nivell 1/2 sempre, per a tots els parells de
-versions (cost gairebé nul). Nivell 3 només per als codis que ho
-exigeixen, llegit de forma selectiva **per columna** (projecció de
-columnes Parquet) en lloc del fitxer sencer — la major part dels 151GB
-són columnes binàries (àudio/vídeo/tensors) que no fan falta per calcular
-recompte de files, missings o distribució d'una columna concreta. Mesura
-empírica del cost real amb projecció de columnes: pendent (US-305).
-
-**Aquesta és la decisió a portar al director**: 15 codis complets (amb
-lectura selectiva per columna) o subconjunt de Nivell 1+2 únicament.
 
 ## Ground truth de validació — Census Income (D1–D9, D1-D7 dins d'abast)
 
@@ -153,26 +114,14 @@ categories apareixen en algun dels 9 datasets); D9 és el més divers
 rename) són gairebé universals; canvis numèrics (C321/C322) són els
 menys freqüents (el dataset base és majoritàriament categòric).
 
-**Ús previst (US-304, redefinida)**: NO calcular encara cap "% d'acord"
-(això pressuposaria un classificador de codis, que és feina de US-305).
-US-304 valida que el nostre MOTOR DE DIFFING pot observar mecànicament
-un senyal allà on el paper marca un canvi, sobre D1–D7 (contra D0). El
-% d'acord codi per codi es calcula més endavant, a US-305, un cop
-existeixi el classificador. Registre complet i permanent d'aquesta
-validació: `docs/census_income_validation_report.md`.
-
 ## Limitacions conegudes del motor de diffing
 
 `notebooks/change_diff.py` implementa 14 dels 15 codis (tots excepte
 C100). D'aquests 14, tots són detectats amb tècniques exactes o
 heurístiques explícitament documentades -- cap és una "caixa negra".
 
-**Únic codi realment fora d'abast:**
-- **C100** (metadada): és inspecció de dataset card/README, no una
-  comparació tabular -- fora de l'abast per disseny, mai un objectiu
-  d'aquest motor (`change_diff.py:17-19`).
-
 **Implementat, amb abast declarat (no és el mateix que "no detectable"):**
+
 - **C410** (ordre de files, Decisió T-14): tècnica de hash de contingut
   per fila (multiset), NOMÉS sobre columnes hashables -- detecta
   reordenació PURA (mateix contingut exacte, ordre diferent) amb certesa;
@@ -183,6 +132,7 @@ heurístiques explícitament documentades -- cap és una "caixa negra".
   un canvi d'ordre pot afectar pipelines d'ML que accedeixen a les dades
   per posició, potencialment requerint adaptació als components d'ingesta
   o preprocessament.
+
 - **C223** (renom de columna, Decisió T-16): heurística explícita -- una
   columna eliminada i una afegida es tracten com a renom NOMÉS si el seu
   NOM NORMALITZAT (minúscules, sense `-`/`_`/`.`/espai) coincideix
@@ -199,10 +149,12 @@ heurístiques explícitament documentades -- cap és una "caixa negra".
   abans havia desplaçat totes les posicions següents), sense cap relació
   real entre elles -- vegeu `docs/census_income_validation_report.md`,
   "Re-validació posterior amb C410 i renoms (T-16)".
+
 - **C421/C422** (afegir/eliminar fila): sense un identificador d'instància
   estable, NO es pot atribuir un canvi de recompte a "files afegides" vs
   "files eliminades" amb certesa -- només al signe del delta
   (`change_diff.py:265-275`, `diff_row_count`).
+  
 - **Cap `MAX_TABULAR_FILES_PER_COMMIT = 5`** (`eligibility_scan.py:615`):
   per a commits que toquen més de 5 fitxers tabulars, només se'n
   classifiquen 5 -- mostra representativa, no exhaustiva (confirmat en

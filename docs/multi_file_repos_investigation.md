@@ -74,7 +74,7 @@ d'ablació, una taula de puntuacions) -- un repositori de benchmark que
 n'agrupa diversos resultats relacionats però conceptualment separats.
 **Candidat real per a "diversos datasets al mateix repositori".**
 
-## Troballa addicional (no buscada, trobada per casualitat)
+## Troballa addicional
 
 `MANIFEST_SHA256.csv` a `HanyueShen/YunXiaoHe-RISA-Avalon-Eval` és un
 **manifest de sumes de verificació** (llista hashos de fitxers per

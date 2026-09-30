@@ -238,14 +238,6 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
                almenys `MIN_SUBSTANTIVE_GAP_HOURS` hores. MAI s'avalua en
                mode `tags_only=True` (vegeu més avall).
 
-    Un commit es considera substantiu si TOCA REALMENT algun fitxer de
-    dades (no purament de metadades/documentació): `determine_commit_
-    substantive` inspecciona els fitxers reals afegits/modificats/
-    eliminats per cada commit via un clonatge "bare" local
-    (`bare_clone`/`get_changed_files`/`is_substantive_path`), i
-    només recorre a l'heurística de títol (`is_substantive_commit`) si el
-    clonatge o `git show` fallen per aquest dataset/commit (git no
-    instal·lat, timeout, xarxa...).
 
     :param dataset_id: identificador del dataset a classificar, format
         `owner/name` (p.e. `"allenai/c4"`).
@@ -293,19 +285,15 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
           comptats fins al moment de decidir l'elegibilitat (o fins a 50
           commits revisats si no s'ha trobat prou evidència).
         - eligible (bool): `True` si compleix el Criteri A o el B.
-        - eligibility_reason (str): text explicant per quin criteri
-          (o per què no) s'ha decidit l'elegibilitat.
+        - eligibility_reason (str): text explicant per quin criteri elegibile.
         - status (str): "classified" (èxit, elegible o no),
           "access_restricted" (403) o "error" (qualsevol altra
-          fallada definitiva). SEMPRE present, també en cas d'èxit: si cap
-          fila d'un lot tingués aquesta clau absent, `pd.DataFrame(rows)`
-          no tindria la columna "status" i `write_results` fallaria amb
-          `KeyError` en fer-hi `df["status"] == ...`.
+          fallada definitiva).
         - error_category (str): valor de `errors.ErrorCategory` si hi
           ha hagut una fallada; `""` en cas d'èxit.
         - error (str): missatge d'excepció truncat a 120 caràcters
           (el missatge complet es registra a `data/failures.csv` via
-          `errors.append_failure_row`); `""` en cas d'èxit.
+          `errors.append_failure_row`); `""`SEMPRE present, també en cas d'èxit.
         - change_labels (list[dict]): `[]` si `classify_changes=False`.
           Si `True`, una entrada per codi de taxonomia detectat (format
           `change_diff.ChangeLabel` via `dataclasses.asdict`).
@@ -645,18 +633,6 @@ def classify_commit_tabular_changes(
     tensors) ja compten per a l'elegibilitat via `is_substantive_path`,
     però no tenen "columnes"/"files" a classificar.
 
-    Cap de `MAX_TABULAR_FILES_PER_COMMIT` fitxers tabulars per commit
-    (primers `changed_paths`, en l'ordre que arriben de `git show`):
-    alguns datasets reals (p.e. formats "chunked" amb desenes de
-    fragments Parquet per commit, com `edinburghcstr/ami`) tocarien
-    desenes de fitxers en un sol commit -- classificar-los tots seria
-    desproporcionat (cada parell de descàrregues té un cost real, i
-    fragments del mateix commit solen representar el mateix tipus de
-    canvi repetit, p.e. "nou fragment de files" N cops). Limitació
-    coneguda: en un commit amb més fitxers tabulars que el cap, alguns
-    canvis (p.e. un canvi de tipus només en un fragment concret) podrien
-    no detectar-se -- mostra representativa, no exhaustiva.
-
     :param dataset_id: identificador del dataset.
     :param changed_paths: camins canviats en aquest commit (de
         `determine_commit_substantive_with_paths`).
@@ -689,10 +665,7 @@ def group_substantive_commits_into_sessions(
     `cluster_commit_times` -- el MATEIX criteri i codi que decideix
     l'elegibilitat via Criteri B (`has_time_dispersed_substantive_
     commits`) i que fa servir `version_extractor.build_sessions_from_
-    commits` per a la Fase 1b. Abans, aquesta funció reimplementava el
-    mateix bucle de comparació de buits en lloc de delegar-hi -- un únic
-    concepte de "sessió" a tot el pipeline, no tres implementacions
-    paral·leles que podrien divergir.
+    commits` per a la Fase 1b.
 
     :param substantive_commits: `(índex a la llista completa de commits
         de `classify_dataset`, commit, changed_paths)`, en qualsevol
@@ -729,18 +702,10 @@ def classify_session_boundary_tabular_changes(
     Classifica els canvis d'un dataset Criteri B (sessions) entre LÍMITS
     DE SESSIÓ, no entre cada parell de commits consecutius: reutilitza
     el mateix agrupament que decideix l'elegibilitat
-    (`group_substantive_commits_into_sessions`), perquè el "canvi" es
-    compti amb la mateixa unitat que la "versió" -- els commits DINS de
-    la mateixa sessió no generen cap diff propi.
 
     Per cada parell de sessions consecutives, es compara el commit MÉS
     RECENT de la sessió posterior contra el commit MÉS RECENT de la
-    sessió anterior -- els `changed_paths` a comparar són la UNIÓ de tots
-    els fitxers canviats en QUALSEVOL commit de la sessió posterior (tots
-    els commits substantius entre els dos límits de sessió pertanyen, per
-    construcció, a la sessió posterior). La sessió MÉS ANTIGA mai genera
-    cap etiqueta (no hi ha cap sessió anterior amb qui comparar-la) --
-    mateixa simetria "N versions -> N-1 diffs" que ja s'aplica als tags.
+    sessió anterior
 
     :param dataset_id: identificador del dataset.
     :param substantive_commits: mateix format que `group_substantive_
@@ -783,13 +748,7 @@ def has_time_dispersed_substantive_commits(
     Reutilitza `cluster_commit_times` -- el MATEIX criteri i codi que
     defineix les sessions a `group_substantive_commits_into_sessions`
     (Fase 2) i a `version_extractor.build_sessions_from_commits` (Fase
-    1b): un únic concepte de "sessió" a tot el pipeline. Abans, aquesta
-    funció NOMÉS comprovava l'interval entre la data més antiga i la més
-    recent -- una sessió DENSA de molts commits separats per <gap_hours
-    cadascun però repartits en un interval ampli (p.e. 20 commits cada 5h,
-    100h d'interval total amb un llindar de 6h) hauria passat com a
-    "dispersa" tot i ser UNA sola sessió real. Corregit: ara exigeix >= 2
-    sessions, no només un interval ampli.
+    1b): un únic concepte de "sessió" a tot el pipeline.
 
     :param commit_times: dates (`datetime`) dels commits ja considerats
         substantius, en qualsevol ordre. Els elements `None` (l'API no
