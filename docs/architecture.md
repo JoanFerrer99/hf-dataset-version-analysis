@@ -18,11 +18,151 @@ scan.py           extractor.py      (motor + classificador)  (a decidir:
 errors.py                                                    DuckDB/Postgres)
 ```
 
+## Arquitectura d'execució: què s'executa i com
+
+
+### Mòduls i punts d'entrada
+
+| Fitxer | Paper | Executable? | Depèn de |
+|---|---|---|---|
+| `run_pipeline.py` | **Orquestrador**: encadena Fase 0 → 1 → 2 en una sola execució | Sí (punt d'entrada principal) | `eligibility_scan`, `version_extractor`, `errors` |
+| `change_diff.py` | Motor de diffing (funcions pures) + classificador de codis | No (llibreria) | `errors` |
+| `errors.py` | Reintent, classificació d'errors, registre de fallades | No (llibreria) | — |
+| `extension_report.py` | Cens d'extensions dels elegibles |
+| `validate_census_income.py` | Validació del motor contra el ground truth del paper |
+
+
+### Què executa `run_pipeline.py`
+
+```
+run_pipeline.py  (__main__)
+│  parse_args() · random.seed(--seed) · --retry-* → es/ve.RETRY_CONFIG
+└─ run_full_pipeline()
+   │  next_pipeline_run_dir(DATA_DIR) → crea data/run_<id>/
+   │  redirigeix es.OUTPUT_DIR, ve.OUTPUT_DIR, *FAILURES_LOG_PATH → run_<id>/
+   │
+   ├─ FASE 0  es.run_sampling()            (s'omet amb --input-csv)
+   │   ├─ iter_all_dataset_ids()           generador sobre ~1M datasets (API)
+   │   ├─ reservoir_sample_dataset_ids()   mostra uniforme de --sample-size ids
+   │   ├─ ThreadPoolExecutor(--threads) × classify_dataset_safe()
+   │   │    └─ classify_dataset(id)        ELEGIBILITAT (classify_changes=False)
+   │   │        ├─ list_repo_refs          → nº tags, nº branches
+   │   │        ├─ list_repo_commits       (només si tags≥2 o branches≥2)
+   │   │        ├─ bare_clone()            git clone --bare --filter=blob:none
+   │   │        └─ per commit (màx. 50):
+   │   │             determine_commit_substantive_with_paths()
+   │   │               ├─ get_changed_files()   git show --name-status (local)
+   │   │               └─ is_substantive_path() per fitxer
+   │   │             Criteri A / Criteri B → return en quan és elegible
+   │   └─ write_results()                  eligibility_report_*.csv + funnel_summary_*.json
+   │
+   ├─ (si 0 elegibles → s'atura aquí)
+   │
+   ├─ FASE 1  ve.run_extraction()          (s'omet amb --skip-version-extraction)
+   │   └─ per elegible (seqüencial): extract_versions_for_dataset()
+   │        ├─ Criteri A → _extract_tag_versions()      1 versió per tag
+   │        ├─ Criteri B → _extract_session_versions()  1 versió per sessió
+   │        │               └─ build_sessions_from_commits() → cluster_commit_times()
+   │        ├─ order_versions_by_date()
+   │        └─ fetch_tree_size_bytes()  per versió   (s'omet amb --skip-size)
+   │
+   └─ FASE 2  es.run_classification()      (s'omet amb --skip-classification)
+       └─ per elegible (seqüencial): classify_dataset(id, classify_changes=True)
+            ├─ (mateix recorregut de commits que a Fase 0, però sense return anticipat)
+            ├─ Criteri A → per commit substantiu: classify_commit_tabular_changes(pare, commit)
+            ├─ Criteri B → classify_session_boundary_tabular_changes()
+            │                └─ group_substantive_commits_into_sessions() → cluster_commit_times()
+            │                   per parell de sessions consecutives → classify_commit_tabular_changes()
+            └─ classify_commit_tabular_changes()
+                 per fitxer tabular canviat (màx. 5):
+                   download_tabular_file_at_revision() × 2   (abans / després)
+                   classify_file_change()
+                     └─ compute_all_diffs() → classify_diffs() → ChangeLabel
+```
+
+### Conceptes que defineix el codi (i on)
+
+| Concepte | Definició operativa | On es defineix |
+|---|---|---|
+| **Fitxer substantiu** | Fitxer de dades reals, no metadada: decidit per prefix de ruta (`meta/` → mai) i després per extensió | `eligibility_scan.is_substantive_path` |
+| **Commit substantiu** | Commit que toca ≥1 fitxer substantiu (llegit amb `git show` sobre el clon bare); si el clon falla, heurística sobre el títol | `determine_commit_substantive_with_paths` (fallback `is_substantive_commit`) |
+| **Sessió de treball** | Commits substantius ordenats per data; una sessió nova comença quan dos consecutius estan separats per **més de 6h** | `eligibility_scan.cluster_commit_times` -- **única implementació**, la fan servir Fase 0, 1 i 2 |
+| **Dataset elegible** | Criteri A: ≥2 tags i ≥2 commits substantius. Criteri B: ≥2 branches i ≥2 sessions | `classify_dataset` + `has_time_dispersed_substantive_commits` |
+| **Versió** | Criteri A: cada tag. Criteri B: cada sessió (representada pel seu commit més recent) | `version_extractor.extract_versions_for_dataset` |
+| **Unitat de canvi** (Fase 2) | Criteri A: commit substantiu vs el seu pare. Criteri B: commit més recent d'una sessió vs el de la sessió anterior | `classify_dataset` (bifurcació per `eligibility_reason`) |
+
+### Fitxers que es generen
+
+Una execució de `run_pipeline.py` escriu tot dins de **`data/run_<id>/`**
+(`<id>` incremental, mai sobreescriu). Dins de la carpeta, cada fase
+numera els seus fitxers pel seu compte (en una carpeta nova sempre surt
+`_1`):
+
+| Fitxer | Fase | Contingut |
+|---|---|---|
+| `eligibility_report_<N>_<k>.csv` | 0 | Una fila per dataset de la mostra: `dataset_id, num_tags, num_branches, num_commits_substantive, eligible, eligibility_reason, status, error_category, error` |
+| `funnel_summary_<N>_<k>.json` | 0 | Resum de l'embut: població escanejada, elegibles per criteri, accés restringit, errors, `eligible_proportion` (sense 403 ni errors al denominador) |
+| `versions_<k>.csv` | 1 | Una fila per versió: `dataset_id, version_label, version_order, version_source (tag/commit_session), commit_sha, commit_date, authors, approx_size_bytes, session_commit_count, status` |
+| `change_classification_<k>.csv` | 2 | Una fila per codi detectat en UN fitxer tabular d'una unitat de canvi: `dataset_id, version_from, version_to, code, description, is_breaking`. No hi ha columna amb la ruta del fitxer, així que si canvien diversos fitxers entre les mateixes dues versions, el mateix codi apareix repetit sense poder distingir de quin fitxer ve |
+| `failures.csv` | totes | Només si hi ha fallades: `timestamp, source, dataset_id, error_category, error_message, retries_attempted` |
+
+(`N` = `--sample-size`. Amb `--input-csv` la Fase 0 no s'executa: el CSV
+d'entrada es llegeix d'on sigui i NO es copia a la carpeta de l'execució.)
+
+Els scripts aïllats escriuen directament a `data/`, fora de cap carpeta
+`run_<id>`: `extension_report_<k>.csv`/`extension_report_summary_<k>.json`
+i `census_income_*_<k>.csv`.
+
+### Cost i complexitat de les peces crítiques
+
+El cost dominant del pipeline no és el càlcul local sinó **les crides a
+l'API de HF i els bytes descarregats**. Per això la major part de les
+decisions limiten QUANTES crides es fan, no com de ràpid és el codi.
+
+**Fase 0 -- per a tota la població i la mostra:**
+- `iter_all_dataset_ids` + `reservoir_sample_dataset_ids`: un recorregut
+  de tota la població (~1M ids, paginat per l'API), temps O(N) i memòria
+  O(k) -- el reservori només guarda els `k = --sample-size` ids, mai la
+  població.
+- `classify_dataset` (sense classificació), per dataset:
+  1 crida `list_repo_refs`. Si té `tags<2` i `branches<2`, s'acaba aquí
+  (cas majoritari, ~1 crida per dataset). Si no: 1 `list_repo_commits` +
+  1 `git clone --bare --filter=blob:none` (només historial, cap byte de
+  dades) + fins a 50 `git show` **locals** (sense xarxa). Retorna tan bon
+  punt el dataset és elegible.
+
+**Fase 1 -- només elegibles:**
+- Criteri A: 1 `list_repo_refs` + 1 `list_repo_commits` per tag (data i
+  autors) + 1 `list_repo_tree` per tag (mida).
+- Criteri B: 1 `list_repo_commits` + 1 clon bare + fins a 50 `git show`
+  locals + 1 `list_repo_tree` per sessió.
+- `cluster_commit_times`: ordenació + un recorregut, O(n log n) amb n ≤ 50.
+
+**Fase 2 -- només elegibles, l'única que descarrega contingut:**
+- El recorregut de commits de `classify_dataset`, però sense retorn
+  anticipat (fins a 50 commits).
+- Per cada unitat de canvi: fins a `MAX_TABULAR_FILES_PER_COMMIT = 5`
+  fitxers tabulars × 2 descàrregues completes (`hf_hub_download`, queden a
+  la cache local de HF). Cota per dataset: ~(unitats de canvi) × 10
+  descàrregues. Aquí és on apareix el cost real en bytes (vegeu els
+  151 GB calculats a la Decisió d'abast US-303).
+- `compute_all_diffs` sobre un fitxer de `r` files i `c` columnes, amb
+  els dos `DataFrame` sencers a memòria: la majoria de funcions són
+  O(r·c) (valors únics, estadístics, nuls); `diff_row_order` hi afegeix
+  una ordenació O(r log r) dels hashes; `diff_distribution`, quantils per
+  columna (O(r log r) cadascuna); `diff_correlation`, O(r·c²) sobre les
+  columnes numèriques. Totes són operacions vectoritzades de pandas, sense
+  bucles fila a fila.
+
+**Límits que fan el cost previsible:** `MAX_COMMITS = 50` (commits
+revisats per dataset), `MAX_TABULAR_FILES_PER_COMMIT = 5` (fitxers
+comparats per unitat de canvi), timeouts de `git` (30s el clon, 10s cada
+`git show`).
+
+
 ## Fase 0 — Mostreig i elegibilitat (`eligibility_scan.py`, `errors.py`)
 
-La fase inicial del pipeline, on es realitza un estudi amb repositoris aleatoris de HF (no per popularitat) de una
-mida sampling indicada (normalment 2000 s'ha trobat que és una mida significativa) per trobar repositoris elegibles.
-Aquesta elegibilitat 
+La fase inicial del pipeline, on es realitza un estudi amb repositoris aleatoris de HF (no per popularitat) de una mida sampling indicada (2000 s'ha trobat que és una mida significativa) per trobar repositoris elegibles.
 
 ### Flux
 
@@ -54,45 +194,6 @@ Aquesta elegibilitat
    (dues mètriques diferenciades: `eligible_proportion` i
    `eligible_proportion_of_attempts`, vegeu decisió D-de-disseny més avall).
 
-
-Sobre la mostra original de 13 elegibles (n=1000), la validació manual (`docs/us108_validation_report.md`, versió històrica) va trobar una precisió de 5/13 ≈ 38.5%, amb 8/13 falsos positius. Això va motivar a dues millores:
-
-1. **Dispersió temporal mínima al Criteri B** (`MIN_SUBSTANTIVE_GAP_HOURS`,
-   actualment 6h, entre el commit substantiu més antic i el més recent).
-2. **Detecció real de fitxers per commit (US-302)**, en lloc de
-   l'heurística de títol: clonatge "bare" + filtratge de blobs
-   (`bare_clone`/`get_changed_files`/`determine_commit_substantive`),
-   amb fallback a l'heurística de títol si el clonatge falla.
-
-
-### Detecció de fitxers substantius: de denylist pura a allowlist+prefix (agost 2026)
-
-**Problema detectat**: `is_substantive_path()` (US-302) determinava si un
-fitxer era substantiu amb una única llista negra de noms exactes
-(`NON_SUBSTANTIVE_FILES`): tot el que NO hi era explícitament es
-considerava substantiu per defecte ("fail-open total"). Aquest disseny és
-estructuralment incapaç de ser complet -- un denylist enumera exclusions
-d'un espai obert (qualsevol nom de fitxer possible), així que sempre hi
-ha convencions noves que se n'escapen (`CARD.md`, `pyproject.toml`,
-`changelog.json`, etc.).
-
-**Calibratge empíric** (4 datasets reals clonats i inspeccionats:
-`AG42/lerobot_dataset_try1`, `villekuosmanen/close_shoebox`,
-`unitreerobotics/G1_Dex3_ObjectPlacement_Dataset`,
-`AndreaBozzo/ceres-open-data-index`): es va explorar fer servir la MIDA
-del fitxer com a desempat per a extensions ambigües (`.json`/`.txt`),
-llegint la mida real via el punter LFS (el "blob" que git guarda per a un
-fitxer LFS és només ~130 bytes de text amb un camp `size:`, així que
-llegir-lo no trenca la garantia de "mai descarregar dades reals" de
-`bare_clone`). **Resultat descartat**: la mida NO separa bé metadada de
-dades reals -- fitxers de metadades poden ser MÉS GRANS que fitxers de
-dades genuïns del mateix dataset (`meta/episodes_stats.jsonl` de
-villekuosmanen pesa 393KB, més que la majoria dels
-`data/chunk-*/episode_*.parquet` del mateix dataset; `meta/episodes/
-chunk-000/file-000.parquet` d'unitreerobotics pesa 482KB, també metadada
-tot i l'extensió `.parquet`). El senyal que SÍ va separar-ho de forma
-consistent en els 4 datasets: el **prefix de la ruta** (`meta/` conté
-sempre metadada, `data/`/`videos/` sempre contingut real).
 
 **Disseny final** (`NON_SUBSTANTIVE_PATH_PREFIXES`,
 `NON_SUBSTANTIVE_EXTENSIONS`, `SUBSTANTIVE_DATA_EXTENSIONS`,
@@ -409,64 +510,24 @@ doncs, per COLUMNA de dades (contingut real només per als elegibles), no
 un flag manual que calgui recordar activar cada cop -- vegeu la Fase 2 de
 l'orquestrador tot seguit.
 
-**Encadenat per `notebooks/run_pipeline.py` (Decisió T-13)**: aquest
-orquestrador (no `eligibility_scan.py` mateix -- separació de
-responsabilitats, vegeu T-13) crida, amb el MATEIX CSV: Fase 0-1
-(`eligibility_scan.run_sampling`) -> Fase 1b (`version_extractor.
-run_extraction`) -> Fase 2 (`eligibility_scan.run_classification`, llevat
-de `--skip-classification`). `run_classification` itera NOMÉS els
-elegibles d'aquest CSV (`df["eligible"] == True`, mai la resta de la
-mostra) amb `classify_dataset(..., classify_changes=True)` i escriu
-`data/change_classification_<run_id>.csv` (`dataset_id, version_from,
-version_to, code, is_breaking`). Com que està filtrat a `eligible ==
-True` abans de baixar cap contingut, encadenar-ho sempre no reintrodueix
-el cost poblacional -- creix amb el nombre d'elegibles (~0.6% de la
-mostra), no amb `sample_size`. `eligibility_scan.py --classify-eligible
-<csv>` segueix disponible per reclassificar un CSV d'un run previ sense
-tornar a mostrejar (mode standalone, ignora `--sample-size` i la resta de
-flags de mostreig).
+### El motor de diffing (`change_diff.py`)
 
-`is_breaking` és una heurística **pròpia d'aquest estudi** (el paper no
-en defineix cap de formal): `C210`, `C222`, `C223`, `C311`, `C321`, `C410`
-("trenca" un pipeline que llegeix per nom/posició/tipus/ordre sense
-adaptar-se) són `True`; la resta `False`.
+`compute_all_diffs(before, after)` rep dos `DataFrame` ja carregats i
+crida 9 funcions pures independents; cadascuna retorna fets estructurals,
+i `compute_all_diffs` els tradueix a un booleà per codi.
+`classify_diffs` converteix cada booleà `True` en un `ChangeLabel`.
 
-### Resultats reals — classificació sobre la població elegible
-
-Execució real (`python eligibility_scan.py --classify-eligible
-data/eligibility_report_2000_6.csv`, `data/change_classification_3.csv`
--- amb la correcció de renom per nom normalitzat i la
-unitat de canvi per sessió per als datasets Criteri B  ja
-actives): **14/14 datasets classificats, 0 fallats, 110 etiquetes de
-canvi.**
-
-Els 14 codis tabulars (tot excepte C100, fora d'abast per disseny --
-vegeu "Limitacions conegudes" a `docs/taiga/taxonomy.md`), agrupats per
-si van aparèixer en aquesta mostra real:
-
-**Han aparegut:**
-
-| Codi | Descripció | Recompte |
+| Funció | Codis | Com detecta el canvi |
 |---|---|---|
-| C421 | Afegir fila | 65 |
-| C422 | Eliminar fila | 23 |
-| C322 | Valors d'una columna numèrica | 9 |
-| C530 | Distribució de les dades | 8 |
-| C312 | Valors d'una columna categòrica | 4 |
-| C221 | Afegir columna | 1 |
-
-**Implementats però 0 ocurrències en aquesta mostra:** C210 (ordre de
-columnes), C222 (eliminar columna), C223 (renom de columna), C311 (tipus
-de columna categòrica), C321 (tipus numèric), C410 (ordre de files --
-implementat a la Decisió T-14, 0 ocurrències reals és un resultat
-legítim, no un indici que la tècnica no funcioni; vegeu els 7 casos
-sintètics verificats a `tests/test_change_diff.py::TestDiffRowOrder`, i
-la re-validació amb C410=True a 3 de 7 versions de Census Income,
-`docs/census_income_validation_report.md`), C510 (missingness), C520
-(correlació).
-
-**Fora d'abast:** C100 (metadada -- inspecció de dataset card/README, no
-una comparació tabular).
+| `diff_columns` | C210, C221, C222, C223 | Diferència de conjunts de noms. Renom = columna eliminada + afegida amb el mateix nom normalitzat (minúscules, sense `-_. `) i dtype de la mateixa família. Ordre = seqüència de columnes comunes |
+| `diff_column_types` | C311, C321 | `str(dtype)` diferent per a una columna comuna; categòric/numèric segons el dtype d'abans |
+| `diff_categorical_values` | C312 | Conjunt de valors únics diferent (categories noves o desaparegudes), columnes no numèriques |
+| `diff_numeric_values` | C322 | `mean/std/min/max` fora d'una tolerància relativa del 5% |
+| `diff_row_count` | C421, C422 | Signe de la diferència en nombre de files |
+| `diff_row_order` | C410 | Hash per fila (`hash_pandas_object`): mateix multiset de hashes però en un altre ordre = reordenació pura |
+| `diff_missingness` | C510 | Proporció de nuls per columna diferent |
+| `diff_correlation` | C520 | Matriu de Pearson de les columnes numèriques, diferència màxima > 0.05 |
+| `diff_distribution` | C530 | Quartils (numèriques, tolerància 5%) o freqüència relativa per categoria (desplaçament > 0.05) |
 
 
 ## Fase 3 — Data warehouse i anàlisi (pendent)
