@@ -1,32 +1,14 @@
 """
-Motor de diffing i classificació de canvis estructurals/de contingut
-entre dues revisions d'un dataset (US-305, `docs/taiga/taxonomy.md`).
+Motor de diffing i classificador de canvis entre dues revisions d'un
+fitxer tabular (taxonomia: `docs/taiga/taxonomy.md`).
 
-Dues capes en un mateix mòdul (fusionades des de l'antic `change_
-classifier.py`, setembre 2026 -- eren dos fitxers separats sense cap
-altre cridant que `eligibility_scan.py`, i la capa d'etiquetatge ja
-llegia directament l'estructura interna d'aquest mòdul, així que la
-"separació de responsabilitats" no aportava res un cop trimat el codi
-mort):
-  - **Diffing** (`diff_*`/`compute_all_diffs`): funcions pures, prenen
-    dos `pandas.DataFrame` i retornen fets estructurals, sense saber res
-    de codis C1XX-C5XX ni de com s'han adquirit els `DataFrame`.
-  - **Classificació** (`classify_diffs`/`classify_file_change`): tradueix
-    els fets estructurals a etiquetes `ChangeLabel` (codi + `is_breaking`).
+  - Diffing (`diff_*`, `compute_all_diffs`): funcions pures que reben dos
+    `DataFrame` i retornen fets estructurals.
+  - Classificació (`classify_diffs`, `classify_file_change`): tradueix
+    aquests fets a etiquetes `ChangeLabel` (codi + `is_breaking`).
 
-Aquest mòdul NO tracta C100 (metadada) -- és fora de l'abast d'una
-comparació tabular, i el projecte ha decidit no classificar-lo (vegeu
-`docs/decisions_tfg.txt`).
-
-Cridat per `eligibility_scan.classify_dataset` (`classify_changes=True`),
-l'únic cridant real d'aquest mòdul.
-
-Nota històrica: el motor es va validar contra el ground truth Census
-Income del paper del director (US-304) abans d'integrar-se a la
-població real -- aquella validació (adquisició D0-D7, comparació amb la
-Taula 1 del paper) va ser un exercici puntual, ja fet i documentat a
-`docs/architecture.md`/`docs/decisions_tfg.txt` (T-07/T-08/T-09), i no es
-manté com a codi viu aquí.
+Cobreix els 14 codis tabulars; C100 (metadada) queda fora d'abast.
+L'únic cridant és `eligibility_scan.classify_dataset`.
 """
 
 import logging
@@ -40,11 +22,8 @@ import errors
 
 log = logging.getLogger(__name__)
 
-# "Trenca l'execució d'un pipeline que llegeix per nom/posició/tipus",
-# NO "afecta la qualitat del model" -- vegeu classify_diffs() més avall i
-# docs/taiga/taxonomy.md ("is_breaking: heurística d'execució, no de
-# qualitat") per la distinció completa i per què la resta de codis
-# (afegir/eliminar fila, canvis de valors/distribució) són False.
+# Codis que trenquen l'EXECUCIÓ d'un pipeline que llegeix per nom/posició/
+# tipus/ordre; no mesura l'impacte en la qualitat del model.
 BREAKING_CODES = frozenset({"C210", "C222", "C223", "C311", "C321", "C410"})
 
 TABULAR_CODES = (
@@ -52,9 +31,6 @@ TABULAR_CODES = (
     "C410", "C421", "C422", "C510", "C520", "C530",
 )
 
-# Descripcions curtes dels 14 codis tabulars (`docs/taiga/taxonomy.md`),
-# per a llegibilitat immediata (p.e. la columna `description` de `data/
-# change_classification_*.csv`) -- C100 no hi és, mai el genera aquest motor.
 CODE_DESCRIPTIONS: dict[str, str] = {
     "C210": "Ordre de columnes",
     "C221": "Afegir columna",
@@ -78,10 +54,7 @@ TABULAR_EXTENSIONS = (".parquet", ".csv", ".tsv")
 def is_tabular_path(path: str) -> bool:
     """
     :param path: ruta relativa dins del repositori.
-    :return: `True` si l'extensió és a `TABULAR_EXTENSIONS` -- NOMÉS
-        aquests formats es diferencien a nivell de contingut (columnes,
-        files, valors); la resta (àudio/vídeo/tensors) no té concepte de
-        "columna" i queda fora de l'abast d'aquest motor.
+    :return: `True` si és `.parquet`/`.csv`/`.tsv`, l'únic tipus que es compara.
     """
     return path.lower().endswith(TABULAR_EXTENSIONS)
 
@@ -90,33 +63,16 @@ def download_tabular_file_at_revision(
     repo_id: str, path: str, revision: str, hf_token: str | None, retry_config: dict,
 ) -> pd.DataFrame | None:
     """
-    Baixa i carrega UN fitxer tabular concret d'un dataset a una revisió
-    (SHA de commit) concreta. És la funció d'adquisició que fa servir
-    `eligibility_scan.classify_dataset` (població real, intra-repositori)
-    per obtenir el "abans"/"després" a comparar.
+    Descarrega un fitxer tabular a una revisió concreta i el carrega
+    sencer amb pandas.
 
-    Carrega el fitxer SENCER amb `pandas` (`read_parquet`/`read_csv`), no
-    projecció per columnes -- vegeu `docs/decisions_tfg.txt`, Decisió
-    T-15 ("per què pandas, i per què és l'opció correcta al cost
-    actual") per a la justificació completa i la primera optimització
-    pendent si la població elegible creix.
-
-    :param repo_id: identificador del dataset (`owner/name`).
-    :param path: ruta relativa del fitxer dins del repositori.
-    :param revision: SHA del commit a llegir.
+    :param repo_id: dataset (`owner/name`).
+    :param path: ruta del fitxer dins del repositori.
+    :param revision: SHA del commit.
     :param hf_token: token HF.
-    :param retry_config: mateix format que `errors.DEFAULT_RETRY_CONFIG`
-        -- es rep com a paràmetre explícit (aquest mòdul no té CLI pròpia
-        ni un `RETRY_CONFIG` propi) perquè el cridant (`eligibility_
-        scan.py`) hi pugui propagar els seus propis `--retry-*`.
-    :return: `DataFrame`, o `None` si el fitxer no existeix en aquesta
-        revisió (afegit/eliminat entre les dues que es comparen, 404 --
-        no reintentat per `errors.with_retry`, és una condició
-        permanent) o si la descàrrega/lectura falla per qualsevol altre
-        motiu després d'esgotar els reintents (429/transitori) -- es
-        registra amb `log.debug`, no es repropaga: el cridant ho tracta
-        com "sense contingut per diferenciar" (vegeu `classify_file_
-        change`), no com un error fatal per a tot el dataset.
+    :param retry_config: configuració de reintent del cridant.
+    :return: el `DataFrame`, o `None` si el fitxer no existeix en aquesta
+        revisió o no es pot descarregar/llegir (no es propaga l'error).
     """
     try:
         local_path = errors.with_retry(
@@ -136,7 +92,7 @@ def download_tabular_file_at_revision(
 
 
 # ---------------------------------------------------------------------------
-# Motor de diffing -- funcions pures, mai rutes/HTTP dins d'aquestes
+# Motor de diffing -- funcions pures
 # ---------------------------------------------------------------------------
 
 
@@ -147,14 +103,8 @@ def _dtypes_compatible(dtype_a, dtype_b) -> bool:
 
 def _normalize_column_name(name: str) -> str:
     """
-    Nom de columna normalitzat per a la detecció de renom (Decisió T-16):
-    minúscules, sense `-`/`_`/`.`/espai. NOMÉS diferències de separador
-    -- `"capital-gain"` i `"capital_gain"` normalitzen igual, però
-    `"education-num"` i `"educational-num"` NO (calen 2 caràcters de
-    diferència real, no només de separador) -- deliberadament NO es fa
-    servir similitud de text aproximada (p.e. distància de Levenshtein),
-    per evitar aparellar columnes NOMÉS semblants textualment però no
-    relacionades.
+    Minúscules i sense `-`/`_`/`.`/espai. Només absorbeix diferències de
+    separador (`capital-gain` == `capital_gain`), sense similitud de text.
     """
     normalized = str(name).lower()
     for sep in ("-", "_", ".", " "):
@@ -164,38 +114,15 @@ def _normalize_column_name(name: str) -> str:
 
 def diff_columns(before: pd.DataFrame, after: pd.DataFrame) -> dict:
     """
-    Compara el conjunt i l'ordre de columnes de dues instantànies.
+    Compara el conjunt i l'ordre de columnes (C210, C221, C222, C223).
 
-    Detecció de renom (C223, Decisió T-16): NO hi ha cap tècnica
-    purament estructural que distingeixi un renom d'un remove+add sense
-    heurística -- aquí s'aplica una d'explícita i documentada: una
-    columna eliminada i una afegida es tracten com a renom NOMÉS si el
-    seu NOM NORMALITZAT (`_normalize_column_name`, insensible a `-`/`_`/
-    `.`/espai) coincideix EXACTAMENT i tenen dtype de la mateixa família.
+    Una columna eliminada i una afegida compten com a renom només si tenen
+    el mateix nom normalitzat i dtype de la mateixa família. Els renoms
+    semàntics (`sex` -> `is_male`) surten com a eliminada + afegida.
 
-    NO es fa servir la posició ordinal (heurística anterior, substituïda
-    a la Decisió T-16): afegir o eliminar una columna ABANS d'una
-    columna renombrada desplaça la posició de TOTES les columnes
-    següents, fent que una comparació per posició aparelli columnes NO
-    relacionades amb el mateix dtype -- confirmat empíricament sobre
-    Census Income (`docs/census_income_validation_report.md`): l'engine
-    anterior aparellava `fnlwgt`->`capital_loss` i `education-num`->
-    `final_weight` a D3 NOMÉS perquè compartien posició per casualitat
-    després que altres columnes es reordenessin, no perquè hi hagués cap
-    relació real entre elles.
-
-    Qualsevol altre cas de columna eliminada+afegida (nom normalitzat
-    diferent, p.e. `"sex"`->`"is_male"`, `"income"`->`"Y"`) es reporta
-    per separat (`added`/`removed`), no com a renom -- limitació coneguda
-    i irreductible sense informació semàntica externa, no un error.
-
-    :param before: instantània anterior.
-    :param after: instantània posterior.
-    :return: `dict` amb `added`/`removed` (`list[str]`, després de
-        descartar-ne les detectades com a renom), `renamed`
-        (`list[tuple[str, str]]`, `(nom_abans, nom_després)`) i
-        `order_changed` (`bool`, sobre les columnes que es mantenen a
-        totes dues, ignorant les afegides/eliminades/renombrades).
+    :return: `added`, `removed` (sense els renoms), `renamed` (llista de
+        `(nom_abans, nom_després)`) i `order_changed` (ordre de les
+        columnes que es mantenen).
     """
     cols_before = list(before.columns)
     cols_after = list(after.columns)
@@ -233,11 +160,10 @@ def diff_columns(before: pd.DataFrame, after: pd.DataFrame) -> dict:
 
 def diff_column_types(before: pd.DataFrame, after: pd.DataFrame) -> dict:
     """
-    Compara el dtype de cada columna present a totes dues instantànies.
+    Dtype canviat a les columnes comunes (C311, C321).
 
-    :return: `dict[str, dict]` una entrada per columna amb dtype canviat,
-        amb `before`/`after` (`str(dtype)`) i `kind` (`"categorical"` o
-        `"numerical"`, segons el dtype ABANS).
+    :return: per columna canviada: `before`, `after` (`str(dtype)`) i
+        `kind` (`"categorical"`/`"numerical"`, segons el dtype d'abans).
     """
     common = [c for c in before.columns if c in after.columns]
     changes = {}
@@ -251,22 +177,9 @@ def diff_column_types(before: pd.DataFrame, after: pd.DataFrame) -> dict:
 
 def _is_hashable_series(series: pd.Series) -> bool:
     """
-    Comprova si els valors d'una columna són hashables -- necessari per
-    `.unique()`/`.value_counts()`. Columnes amb valors ESTRUCTURATS
-    (`dict`/`list`, típic de columnes d'àudio/imatge llegides amb
-    `pandas.read_parquet` sense la decodificació especial de la
-    llibreria `datasets` -- p.e. `{"bytes": ..., "path": ...}`) no ho
-    són. Es tracten com "opaques": excloses de la comparació de
-    categories/distribució (`diff_categorical_values`/`diff_
-    distribution`), però no de missingness/dtype/recompte de files, que
-    no necessiten hashabilitat.
-
-    :param series: columna a comprovar (es mira només el primer valor no
-        nul, per eficiència -- assumeix tipus homogeni dins la columna,
-        garantit per `pandas`/Arrow).
-    :return: `True` si és buida (sense valors no nuls) o si el primer
-        valor no nul és hashable; `False` si `hash()` hi llença
-        `TypeError`.
+    `True` si els valors de la columna són hashables (necessari per a
+    `.unique()`/`.value_counts()`). Les columnes d'àudio/imatge arriben com
+    a `dict` i no ho són. Només mira el primer valor no nul.
     """
     sample = series.dropna()
     if sample.empty:
@@ -280,13 +193,10 @@ def _is_hashable_series(series: pd.Series) -> bool:
 
 def diff_categorical_values(before: pd.DataFrame, after: pd.DataFrame) -> dict:
     """
-    Compara el conjunt de categories (valors únics) de cada columna NO
-    numèrica present a totes dues instantànies.
+    Categories noves o desaparegudes a les columnes no numèriques comunes
+    (C312). Salta les columnes no hashables.
 
-    :return: `dict[str, dict]` una entrada per columna amb categories
-        afegides/eliminades, amb `added`/`removed` (`list[str]`, ordenats).
-        Les columnes amb valors no hashables (`_is_hashable_series`) es
-        salten -- registrat amb `log.debug`, no es tracten com un error.
+    :return: per columna canviada: `added`, `removed` (ordenades).
     """
     common = [c for c in before.columns if c in after.columns]
     changes = {}
@@ -307,24 +217,11 @@ def diff_categorical_values(before: pd.DataFrame, after: pd.DataFrame) -> dict:
 
 def diff_numeric_values(before: pd.DataFrame, after: pd.DataFrame, threshold: float = 0.05) -> dict:
     """
-    Compara estadístics bàsics (mitjana, desviació, mínim, màxim) de cada
-    columna numèrica present a totes dues instantànies -- detecta canvis
-    d'escala/rang (p.e. normalització), no substitueix `diff_distribution`.
+    Canvi de `mean`/`std`/`min`/`max` a les columnes numèriques comunes
+    (C322), amb tolerància relativa i absoluta `threshold`.
 
-    Abans (Decisió T-21) el llindar era pràcticament igualtat bit a bit
-    (`rtol=atol=1e-9`) -- l'única funció `diff_*` d'aquest fitxer sense
-    marge significatiu, mentre `diff_correlation`/`diff_distribution` ja
-    feien servir `threshold=0.05`. Qualsevol soroll de coma flotant
-    (reexportació parquet<->csv, diferent versió de pandas/numpy) queda
-    per sobre d'`1e-9` i disparava un canvi fals -- C322 tenia 0%
-    precisió contra el ground truth de Census Income (`docs/census_
-    income_validation_report.md`). Ara fa servir el mateix `threshold`
-    que les funcions germanes.
-
-    :param threshold: canvi relatiu (i absolut) mínim, a qualsevol dels 4
-        estadístics, perquè es consideri un canvi real.
-    :return: `dict[str, dict]` una entrada per columna amb algun estadístic
-        canviat, amb els 4 estadístics `before`/`after`.
+    :param threshold: tolerància; per sota es considera soroll de coma flotant.
+    :return: per columna canviada: mitjana, mínim i màxim abans/després.
     """
     common = [c for c in before.columns if c in after.columns]
     changes = {}
@@ -345,12 +242,10 @@ def diff_numeric_values(before: pd.DataFrame, after: pd.DataFrame, threshold: fl
 
 def diff_row_count(before: pd.DataFrame, after: pd.DataFrame) -> dict:
     """
-    Compara el nombre de files. Sense un identificador d'instància estable,
-    NO es pot atribuir un canvi de recompte a "files afegides" vs "files
-    eliminades" amb certesa -- només al signe del delta -- limitació
-    coneguda, documentada aquí i no amagada.
+    Nombre de files (C421 si creix, C422 si decreix). Sense un ID de fila
+    estable només se'n pot saber el signe del canvi, no quines files.
 
-    :return: `dict` amb `before`/`after` (`int`), `delta` (`after - before`).
+    :return: `before`, `after`, `delta`.
     """
     n_before, n_after = len(before), len(after)
     return {"before": n_before, "after": n_after, "delta": n_after - n_before}
@@ -358,41 +253,14 @@ def diff_row_count(before: pd.DataFrame, after: pd.DataFrame) -> dict:
 
 def diff_row_order(before: pd.DataFrame, after: pd.DataFrame) -> dict:
     """
-    Detecta si les files s'han reordenat entre dues instantànies amb el
-    MATEIX contingut exacte (mateix nombre de files, mateix multiset de
-    valors) -- un canvi que pot passar desapercebut a la resta de
-    `diff_*` (cap valor/columna/estadístic canvia) però que pot afectar
-    pipelines d'ML que accedeixen a les dades per posició (p.e.
-    `dataset[i]`), potencialment requerint adaptació als components
-    d'ingesta o preprocessament.
+    Reordenació pura de files (C410): mateix multiset de hashes per fila
+    (`hash_pandas_object` sobre les columnes hashables comunes) però en un
+    altre ordre.
 
-    Tècnica: hash de contingut per fila (`pandas.util.hash_pandas_object`),
-    calculat NOMÉS sobre el subconjunt de columnes hashables (columnes amb
-    valors `dict`/`list` -- típic d'àudio/imatge, vegeu `_is_hashable_
-    series` -- se salten, igual que a `diff_categorical_values`/`diff_
-    distribution`). Si el MULTISET de hashes coincideix a totes dues
-    bandes però la seqüència original difereix, és una reordenació PURA
-    detectada amb certesa -- una comparació exacta, no una heurística.
-    L'adquisició (`download_tabular_file_at_revision`, `pandas.
-    read_parquet`/`read_csv` sense cap `sort`/`reindex` implícit) ja
-    preserva l'ordre original del fitxer; el que calia resoldre no era
-    l'adquisició, sinó distingir "reordenat" de "contingut diferent"
-    sense un ID d'instància estable -- exactament el que fa aquesta
-    comparació de multiset.
+    Només detecta reordenació PURA: si a més hi ha qualsevol altre canvi de
+    contingut, o el nombre de files difereix, retorna `False`.
 
-    :param before: instantània anterior.
-    :param after: instantània posterior.
-    :return: `dict` amb `reordered` (`bool`). Sempre `False` si el nombre
-        de files difereix (ja cobert per `diff_row_count`/C421-C422 --
-        barrejar-ho amb reordenació seria ambigu) o si totes les columnes
-        comunes són no hashables (no hi ha res sobre què calcular el hash).
-        LIMITACIÓ CONEGUDA (documentada, no amagada): només detecta
-        reordenació PURA -- si també hi ha addicions/eliminacions/
-        modificacions de contingut al mateix parell de versions, o si la
-        reordenació només afecta columnes NO hashables (p.e. bytes
-        d'àudio) mentre les columnes hashables es mantenen en la mateixa
-        posició, `reordered` és `False` encara que hi hagi hagut un canvi
-        d'ordre real.
+    :return: `reordered` (`bool`).
     """
     if len(before) != len(after):
         return {"reordered": False}
@@ -412,11 +280,9 @@ def diff_row_order(before: pd.DataFrame, after: pd.DataFrame) -> dict:
 
 def diff_missingness(before: pd.DataFrame, after: pd.DataFrame) -> dict:
     """
-    Compara la proporció de valors absents de cada columna present a
-    totes dues instantànies.
+    Proporció de nuls canviada a les columnes comunes (C510).
 
-    :return: `dict[str, dict]` una entrada per columna amb la proporció
-        canviada, amb `before`/`after` (`float`, [0, 1]).
+    :return: per columna canviada: `before`, `after` (proporció [0, 1]).
     """
     common = [c for c in before.columns if c in after.columns]
     changes = {}
@@ -430,18 +296,12 @@ def diff_missingness(before: pd.DataFrame, after: pd.DataFrame) -> dict:
 
 def diff_correlation(before: pd.DataFrame, after: pd.DataFrame, threshold: float = 0.05) -> dict:
     """
-    Compara la matriu de correlació de les columnes numèriques presents a
-    totes dues instantànies (Pearson, `DataFrame.corr()`).
+    Canvi a la matriu de correlació de Pearson de les columnes numèriques
+    comunes (C520).
 
-    :param threshold: diferència absoluta mínima, entre qualsevol parell
-        de columnes, perquè es consideri un canvi de correlació.
-    :return: `dict` amb `changed` (`bool`) i `max_abs_diff` (`float`,
-        `0.0` si hi ha menys de 2 columnes numèriques comunes, o si la
-        correlació és indefinida a totes dues bandes -- p.e. una sola
-        fila, o columnes de variància zero -- `DataFrame.corr()` hi
-        retorna NaN a tota la matriu; es tracta com "sense canvi
-        detectable" en lloc de deixar que `np.nanmax` llenci un
-        `RuntimeWarning` per una slice tota NaN).
+    :param threshold: diferència absoluta mínima entre algun parell de columnes.
+    :return: `changed` i `max_abs_diff` (`0.0` si hi ha menys de 2 columnes
+        numèriques o la correlació no està definida).
     """
     common_numeric = [
         c for c in before.columns
@@ -461,17 +321,12 @@ def diff_correlation(before: pd.DataFrame, after: pd.DataFrame, threshold: float
 
 def diff_distribution(before: pd.DataFrame, after: pd.DataFrame, threshold: float = 0.05) -> dict:
     """
-    Compara la distribució de cada columna present a totes dues
-    instantànies -- quartils (Q1/mediana/Q3) per a columnes numèriques,
-    freqüència relativa per categoria per a columnes no numèriques. NO fa
-    servir cap test estadístic (p.e. Kolmogorov-Smirnov, `scipy`) per no
-    introduir una dependència nova només per a aquesta comprovació
-    heurística.
+    Canvi de distribució a les columnes comunes (C530): quartils per a les
+    numèriques, freqüència relativa per categoria per a la resta.
 
-    :param threshold: canvi relatiu mínim (numèriques) o absolut mínim
-        (categòriques) perquè es consideri un canvi de distribució.
-    :return: `dict[str, dict]` una entrada per columna amb distribució
-        canviada.
+    :param threshold: tolerància relativa (numèriques) o desplaçament
+        absolut de freqüència (categòriques).
+    :return: per columna canviada, els quartils o el desplaçament màxim.
     """
     common = [c for c in before.columns if c in after.columns]
     changes = {}
@@ -497,12 +352,11 @@ def diff_distribution(before: pd.DataFrame, after: pd.DataFrame, threshold: floa
 
 def compute_all_diffs(before: pd.DataFrame, after: pd.DataFrame) -> dict:
     """
-    Combina totes les funcions `diff_*` i tradueix els fets estructurals a
-    un senyal per codi de la taxonomia (14 codis tabulars -- C100 queda
-    fora, és inspecció de dataset card/README, no una comparació tabular).
+    Executa totes les funcions `diff_*` i en tradueix el resultat a un
+    booleà per codi.
 
-    :return: `dict` amb una clau per codi (`"C210"`, ..., `"C530"`) i valor
-        `bool`, més `"_details"` amb la sortida completa de cada `diff_*`.
+    :return: una clau per codi (`"C210"`...`"C530"`) amb valor `bool`, més
+        `"_details"` amb la sortida completa de cada `diff_*`.
     """
     columns = diff_columns(before, after)
     types = diff_column_types(before, after)
@@ -541,23 +395,20 @@ def compute_all_diffs(before: pd.DataFrame, after: pd.DataFrame) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Classificació -- tradueix els fets estructurals de compute_all_diffs a
-# etiquetes de codi (C210-C530). Regla de disseny de la taxonomia
-# (obligatòria): NO usa informació de quina columna és el target del
-# pipeline -- cap funció d'aquest bloc en rep cap paràmetre.
+# Classificació. Regla de la taxonomia: mai es fa servir quina columna és
+# el target del pipeline.
 # ---------------------------------------------------------------------------
 
 
 @dataclass
 class ChangeLabel:
     """
-    Una etiqueta de canvi: un codi de taxonomia detectat entre dues
-    instantànies d'UN dataset.
+    Un codi de la taxonomia detectat entre dues revisions d'un dataset.
 
-    :ivar dataset_id: identificador del dataset.
-    :ivar version_from: etiqueta de la versió anterior (SHA de commit).
-    :ivar version_to: etiqueta de la versió posterior (SHA de commit).
-    :ivar code: codi de la taxonomia (`"C210"`...`"C530"`).
+    :ivar dataset_id: dataset.
+    :ivar version_from: SHA de la revisió anterior.
+    :ivar version_to: SHA de la revisió posterior.
+    :ivar code: codi (`"C210"`...`"C530"`).
     :ivar is_breaking: `True` si el codi és a `BREAKING_CODES`.
     """
 
@@ -570,26 +421,10 @@ class ChangeLabel:
 
 def classify_diffs(diffs: dict, dataset_id: str, version_from: str, version_to: str) -> list[ChangeLabel]:
     """
-    Tradueix els fets estructurals de `compute_all_diffs` a etiquetes de
-    codi (C210-C530). NO recalcula res -- només llegeix els booleans ja
-    calculats i hi afegeix `is_breaking`.
+    Converteix cada codi amb senyal de `compute_all_diffs` en un `ChangeLabel`.
 
-    `is_breaking` és una heurística PRÒPIA d'aquest estudi (el paper no
-    en defineix cap de formal) -- "breaking" = un canvi que probablement
-    trenca un pipeline que llegeix el dataset per nom/posició/tipus sense
-    adaptar-se: C210 (ordre de columnes), C222 (eliminar columna), C223
-    (renom), C311/C321 (canvi de tipus), C410 (ordre de files -- pot
-    afectar pipelines que hi accedeixen per posició). La resta (afegir
-    columna/fila, canvis de valors/distribució/correlació/missings) es
-    marquen `is_breaking=False` -- poden afectar la qualitat del model,
-    però no fan fallar un pipeline que simplement llegeix el dataset.
-
-    :param diffs: sortida de `compute_all_diffs(before, after)`.
-    :param dataset_id: identificador del dataset.
-    :param version_from: SHA del commit anterior.
-    :param version_to: SHA del commit posterior.
-    :return: llista de `ChangeLabel`, una per codi amb senyal detectat
-        (`diffs[code]` truthy).
+    :param diffs: sortida de `compute_all_diffs`.
+    :return: un `ChangeLabel` per codi detectat.
     """
     return [
         ChangeLabel(dataset_id, version_from, version_to, code, is_breaking=code in BREAKING_CODES)
@@ -606,24 +441,12 @@ def classify_file_change(
     version_to: str,
 ) -> list[ChangeLabel]:
     """
-    Classifica el canvi d'UN fitxer tabular concret entre dues revisions
-    -- usada per `eligibility_scan.classify_dataset` (`classify_changes=
-    True`) per a cada fitxer tabular (`is_tabular_path`) que canvia en
-    un commit substantiu.
+    Classifica el canvi d'un fitxer tabular entre dues revisions.
 
-    :param dataset_id: identificador del dataset.
-    :param before_df: contingut del fitxer a la revisió anterior, o
-        `None` si el fitxer no hi existia (acabat d'afegir).
-    :param after_df: contingut a la revisió posterior, o `None` si el
-        fitxer ha estat eliminat.
-    :param version_from: SHA del commit anterior.
-    :param version_to: SHA del commit posterior.
-    :return: si `before_df`/`after_df` són tots dos `None`, `[]`. Si
-        NOMÉS un dels dos és `None` (fitxer afegit o eliminat sencer),
-        UNA etiqueta aproximada (`C421` si afegit, `C422` si eliminat) --
-        sense verificar-ho a nivell de fila (no hi ha ID d'instància
-        estable entre fitxers/chunks, limitació ja documentada a
-        `diff_row_count`). Si tots dos existeixen, el resultat de
+    :param before_df: contingut abans, o `None` si el fitxer no existia.
+    :param after_df: contingut després, o `None` si s'ha eliminat.
+    :return: `[]` si tots dos són `None`; `C421` si el fitxer és nou;
+        `C422` si s'ha eliminat; si no, el resultat de
         `classify_diffs(compute_all_diffs(...))`.
     """
     if before_df is None and after_df is None:

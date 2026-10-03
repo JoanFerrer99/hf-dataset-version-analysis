@@ -359,8 +359,54 @@ Estat: ✅ Implementat i validat empíricament
   execucions reals. Els errors 403 (accés restringit/gated) es tracten
   per separat: NO es reintenten (condició permanent, no transitòria) i
   s'exclouen tant del numerador com del denominador de la proporció
-  d'elegibles. Detall complet a `notebooks/errors.py` (docstring de
-  disseny inclosa al mateix mòdul).
+  d'elegibles.
+
+  DETALL -- HTTP 429 (rate limiting). Sense reintent, una execució real
+  de 1000 datasets va donar un 59.1% d'errors (591/1000), gairebé tots
+  429: `huggingface_hub` no reintenta sol i HF imposa un límit de
+  peticions per segon sense compte de pagament. Alternatives:
+    1. Cap reintent -- inutilitzable (~59% de la mostra perduda).
+    2. Espera fixa -- no s'adapta a la severitat del throttling: curta
+       allarga el "martelleig", llarga malgasta temps.
+    3. Backoff exponencial sense jitter (10s->20s->...->120s) -- amb
+       `--threads` > 1, com el límit és compartit per IP/token, tots els
+       threads xoquen i DESPERTEN alhora ("thundering herd") i tornen a
+       disparar el 429.
+    4. Backoff exponencial + jitter uniforme [0,1)s (implementada) --
+       esglaona els reintents de cada thread; és el patró recomanat per
+       AWS/Google Cloud i l'únic que va reduir els 429 a ~0 en execucions
+       reals. Configurable sense tocar codi (`--retry-max-attempts`,
+       `--retry-base-wait`, `--retry-max-wait`), necessari perquè el
+       llindar real de HF no és públic ni constant.
+  Complementàriament: `--threads 4` per defecte (no 8) i `expand=
+  ["disabled"]` a `list_datasets` per reduir el payload.
+
+  DETALL -- HTTP 403 (accés restringit). Vol dir que el dataset és
+  gated/privat: NO és transitori, reintentar no ho resol mai.
+  Hipòtesi descartada -- rol del token (read vs write): el fil del fòrum
+  de HF que ho suggereix tracta un 403 a `POST /api/repos/create`
+  (escriptura); aquest projecte només llegeix. A més, les 626 files
+  `access_restricted` de `data/failures.csv` contenen totes el mateix
+  missatge ("Cannot access gated repo ... you are not in the authorized
+  list"), cap sobre permisos del token: l'accés gated és un consentiment
+  per compte i per dataset, i un token "write" xocaria igual. Sol·licitar
+  accés manualment dataset a dataset no té sentit en un mostreig
+  aleatori. Conclusió: el token "Read" és suficient.
+  Alternatives per tractar-lo:
+    1. Reintentar-lo -- malgasta minuts de backoff en una condició
+       permanent.
+    2. Descartar-lo en silenci -- encongeix el denominador sense deixar
+       rastre; la proporció d'inaccessibles és un fet real de la població.
+    3. Comptar-lo com a "no elegible" -- confon "no s'ha pogut
+       determinar" amb "no compleix", esbiaixant `eligible_proportion`.
+    4. Categoria pròpia `ACCESS_RESTRICTED` sense reintent, fora del
+       numerador i del denominador però reportada explícitament
+       (`status`, `compute_funnel_stats`, `failures.csv`) -- implementada.
+       Amenaça a la validesa: s'assumeix que els inaccessibles tenen una
+       elegibilitat similar als avaluats.
+  El 404 (dataset esborrat/renombrat després de llistar-lo) es tracta
+  igual (sense reintent, categoria `NOT_FOUND`), però compta dins del
+  bucket genèric "errors" perquè és molt menys freqüent.
 
 
 DECISIÓ T-03: Estructura de fitxers del projecte
