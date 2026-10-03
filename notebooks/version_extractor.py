@@ -1,48 +1,25 @@
 """
-Extracció de versions per als datasets elegibles (Fase 1).
+Fase 1: seqüència de versions dels datasets elegibles, amb data, autors i
+mida aproximada.
 
-Per cada dataset marcat elegible per `eligibility_scan.classify_dataset`
-(`data/eligibility_report_<N>_<run_id>.csv`), extreu la seqüència completa i
-ordenada de "versions" amb les seves metadades (data, autors, mida
-aproximada). El concepte de "versió" depèn de quin criteri va decidir
-l'elegibilitat d'aquell dataset -- es reutilitza directament la columna
-`eligibility_reason` ja calculada, no es recalcula el criteri aquí:
+La "versió" depèn del criteri que va fer elegible el dataset (columna
+`eligibility_reason` del CSV, no es recalcula):
+  - Criteri A: cada tag és una versió.
+  - Criteri B: cada sessió de commits substantius és una versió
+    (`eligibility_scan.cluster_commit_times`).
 
-  - **Criteri A** (tags explícits): cada TAG és una versió.
-    `commit_sha` ve directament de `GitRefInfo.target_commit` (l'API el
-    dona sense cap crida addicional); data/autors via UNA crida
-    `list_repo_commits(revision=tag_name)` per tag.
-  - **Criteri B** (sense tags, elegible per dispersió temporal de commits):
-    ~65-70% dels datasets elegibles cauen aquí (verificat sobre
-    `eligibility_report_2000_5.csv`: 8/11 amb `num_tags=0`). Una
-    implementació literal de "llistar tags" deixaria buida la majoria de
-    la població elegible, així que cada SESSIÓ de treball (commits
-    substantius agrupats per buit temporal, `eligibility_scan.
-    cluster_commit_times` -- LA MATEIXA lògica ja validada a US-108, no
-    una reimplementació) es tracta com una versió inferida.
-
-Totes dues fonts conflueixen al mateix `VersionRow`, amb `version_source`
-explícit ("tag" | "commit_session") perquè el nivell de confiança de cada
-fila quedi clar: un tag és un senyal deliberat del mantenidor; una sessió
-és una heurística inferida (mateixes cauteles que el Criteri B a
-`docs/us108_validation_report.md`).
-
-Nota important sobre l'API: `huggingface_hub` no distingeix autor de
-committer com el git natiu -- `GitCommitInfo.authors` és l'únic camp
-disponible (`list[str]` de noms d'usuari). El camp `authors` d'aquest
-mòdul reflecteix aquesta limitació.
+L'API no distingeix autor de committer: `authors` és l'únic camp disponible.
 
 Ús:
   python version_extractor.py --input ../data/eligibility_report_2000_5.csv
   python version_extractor.py --skip-size  # sense list_repo_tree (més ràpid)
 
 Output:
-  data/versions_<run_id>.csv, data/versions_summary_<run_id>.json
-  data/failures.csv (fallades de dataset sencer, source="version_extraction")
+  data/versions_<run_id>.csv
+  data/failures.csv (source="version_extraction")
 """
 
 import argparse
-import json
 import logging
 import os
 import sys
@@ -64,7 +41,7 @@ OUTPUT_DIR = os.path.join(SCRIPT_DIR, "..", "data")
 DEFAULT_INPUT = os.path.join(OUTPUT_DIR, "eligibility_report_2000_5.csv")
 FAILURES_LOG_PATH = os.path.join(OUTPUT_DIR, "failures.csv")
 
-MAX_COMMITS = 50  # mateix límit que classify_dataset()/gather_evidence_for_dataset(), per coherència
+MAX_COMMITS = 50  # mateix límit que classify_dataset
 
 RETRY_CONFIG: dict = dict(errors.DEFAULT_RETRY_CONFIG)
 
@@ -72,32 +49,18 @@ RETRY_CONFIG: dict = dict(errors.DEFAULT_RETRY_CONFIG)
 @dataclass
 class VersionRow:
     """
-    Una versió (tag o sessió de commits) d'un dataset elegible.
+    Una versió d'un dataset elegible (una fila de `versions_<run_id>.csv`).
 
-    :ivar dataset_id: identificador del dataset (`owner/name`).
-    :ivar version_label: nom del tag, o `f"session-{n}"` (1 = més antiga)
-        per a versions inferides per sessió de commits.
-    :ivar version_order: posició cronològica dins d'aquest dataset (1 = més
-        antiga), assignada per `order_versions_by_date` -- MAI per ordre
-        alfabètic del nom del tag.
-    :ivar version_source: `"tag"` (Criteri A) o `"commit_session"`
-        (Criteri B) -- indica el nivell de confiança de la fila.
-    :ivar commit_sha: SHA del commit representatiu d'aquesta versió (el que
-        apunta el tag, o el commit més recent de la sessió).
-    :ivar commit_date: data ISO 8601 del commit representatiu, o `None` si
-        l'API no la proporciona per aquest commit.
-    :ivar authors: noms d'usuari (`GitCommitInfo.authors`) units per coma,
-        sense duplicats; `""` si buit o si la crida ha fallat. L'API no
-        distingeix autor de committer -- és l'únic camp disponible.
-    :ivar approx_size_bytes: suma de `RepoFile.size` (ja resolta per a LFS,
-        mai el punter) de tot l'arbre en aquesta revisió. `None` si
-        `--skip-size` o si `list_repo_tree` ha fallat per aquesta versió.
-    :ivar session_commit_count: nombre de commits agregats en aquesta
-        sessió (només rellevant per a `version_source="commit_session"`;
-        sempre `1` per a `"tag"`).
-    :ivar status: `"ok"`, `"ok_no_size"` (`--skip-size`), `"commit_error"`
-        (la metadada del tag ha fallat -- només possible per a `"tag"`) o
-        `"size_error"` (`list_repo_tree` ha fallat per aquesta versió).
+    :ivar dataset_id: dataset.
+    :ivar version_label: nom del tag, o `session-<n>` (1 = més antiga).
+    :ivar version_order: posició cronològica (1 = més antiga).
+    :ivar version_source: `"tag"` o `"commit_session"`.
+    :ivar commit_sha: commit del tag, o el més recent de la sessió.
+    :ivar commit_date: data ISO 8601, o `None`.
+    :ivar authors: noms d'usuari units per coma, sense duplicats.
+    :ivar approx_size_bytes: mida total de l'arbre en aquesta revisió, o `None`.
+    :ivar session_commit_count: commits de la sessió (1 per a un tag).
+    :ivar status: `ok`, `ok_no_size`, `commit_error` o `size_error`.
     """
 
     dataset_id: str
@@ -119,16 +82,8 @@ class VersionRow:
 
 def order_versions_by_date(versions: list[dict]) -> list[dict]:
     """
-    Assigna `version_order` cronològic (1 = més antiga) a una llista de
-    diccionaris de versió d'UN mateix dataset, mutant-los in-place i
-    retornant-los ja ordenats.
-
-    :param versions: diccionaris amb almenys la clau `commit_date` (`str`
-        ISO 8601, o `None`).
-    :return: la mateixa llista de diccionaris, ordenada cronològicament;
-        les entrades amb `commit_date=None` s'ordenen al final (mai es
-        descarten) i entre elles preserven l'ordre original (`sort` és
-        estable).
+    Ordena les versions d'un dataset per `commit_date` i n'assigna
+    `version_order` (1 = més antiga). Les que no tenen data van al final.
     """
     ordered = sorted(versions, key=lambda v: (v.get("commit_date") is None, v.get("commit_date") or ""))
     for i, v in enumerate(ordered, start=1):
@@ -137,26 +92,12 @@ def order_versions_by_date(versions: list[dict]) -> list[dict]:
 
 
 def sum_tree_size(entries: Iterable) -> int:
-    """
-    Suma la mida (`.size`) de totes les entrades d'un arbre de repositori
-    (`list_repo_tree`), ignorant les que no en tenen (`RepoFolder`).
-
-    :param entries: iterable de `RepoFile`/`RepoFolder` (o qualsevol objecte
-        amb atribut opcional `.size`).
-    :return: suma total en bytes (`0` si `entries` és buit).
-    """
+    """Suma `.size` de les entrades de `list_repo_tree` (les carpetes no en tenen)."""
     return sum(getattr(e, "size", 0) or 0 for e in entries)
 
 
 def format_authors(authors: list[str] | None) -> str:
-    """
-    Uneix una llista de noms d'usuari en una cadena separada per comes,
-    eliminant duplicats i preservant l'ordre d'aparició.
-
-    :param authors: `GitCommitInfo.authors`, o `None`/llista buida.
-    :return: `""` si `authors` és `None` o buit; en cas contrari, els noms
-        únics units per `","`.
-    """
+    """Uneix els autors per comes, sense duplicats i en ordre d'aparició."""
     if not authors:
         return ""
     seen: list[str] = []
@@ -168,26 +109,13 @@ def format_authors(authors: list[str] | None) -> str:
 
 def build_sessions_from_commits(commits: list, clone_dir: str | None) -> list[dict]:
     """
-    Agrupa una llista de commits en sessions de treball substantives,
-    reutilitzant `eligibility_scan.determine_commit_substantive` (mateixa
-    lògica que decideix l'elegibilitat via Criteri B) i `eligibility_scan.
-    cluster_commit_times` (mateix llindar `MIN_SUBSTANTIVE_GAP_HOURS`).
+    Agrupa els commits substantius en sessions (`cluster_commit_times`).
 
-    Els commits substantius sense `created_at` s'ignoren (no poden entrar a
-    cap sessió temporal), igual que ja fa `cluster_commit_times` amb els
-    `None` -- comportament consistent amb la resta del pipeline.
-
-    :param commits: commits tal com els retorna `list_repo_commits` (amb
-        `.title`/`.commit_id`/`.created_at`/`.authors`).
-    :param clone_dir: directori d'un clonatge "bare" ja fet (`bare_clone`),
-        o `None` si el clonatge ha fallat (es recorre a l'heurística de
-        títol per a tots els commits, vegeu `determine_commit_substantive`).
-    :return: llista de diccionaris, un per sessió detectada, en ordre
-        cronològic (`commit_sha`/`commit_date` són els del commit MÉS
-        RECENT de la sessió -- l'estat final d'aquesta versió; `authors` és
-        la unió sense duplicats de tots els commits de la sessió;
-        `session_commit_count`). Llista buida si cap commit és substantiu o
-        cap en té data.
+    :param commits: commits de `list_repo_commits`.
+    :param clone_dir: clon bare, o `None` (heurística de títol).
+    :return: una entrada per sessió, en ordre cronològic: `commit_sha` i
+        `commit_date` del commit més recent, `authors` (unió) i
+        `session_commit_count`.
     """
     dated_substantive = [
         c for c in commits
@@ -221,24 +149,14 @@ def build_sessions_from_commits(commits: list, clone_dir: str | None) -> list[di
 
 
 # ---------------------------------------------------------------------------
-# Funcions amb crides a l'API (mockejables al namespace del mòdul)
+# Crides a l'API
 # ---------------------------------------------------------------------------
 
 
 def fetch_tags(dataset_id: str, hf_token: str | None, retry_config: dict) -> list:
     """
-    Llista tots els tags d'un dataset, amb reintent (`list_repo_refs` és
-    "eager": fa la crida HTTP immediatament, no cal cap tancament especial
-    a diferència de `fetch_tree_size_bytes`).
-
-    :param dataset_id: identificador del dataset (`owner/name`).
-    :param hf_token: token HF, passat explícitament a la crida.
-    :param retry_config: mateix format que `RETRY_CONFIG`.
-    :return: `refs.tags` (`list[GitRefInfo]`, cadascun amb `.name` i
-        `.target_commit`), o `[]` si el dataset no en té cap.
-    :raises Exception: repropaga qualsevol excepció de `list_repo_refs`
-        després d'exhaurir els reintents -- el cridant ho tracta com una
-        fallada de dataset sencer.
+    :return: tags del dataset (`GitRefInfo`, amb `.name` i `.target_commit`).
+    :raises Exception: si `list_repo_refs` falla després dels reintents.
     """
     refs = errors.with_retry(
         list_repo_refs, repo_id=dataset_id, repo_type="dataset", token=hf_token, **retry_config
@@ -248,23 +166,10 @@ def fetch_tags(dataset_id: str, hf_token: str | None, retry_config: dict) -> lis
 
 def fetch_commit_metadata(dataset_id: str, revision: str, hf_token: str | None, retry_config: dict):
     """
-    Obté el commit corresponent a una revisió concreta (tag o SHA), amb
-    data i autors. L'API no exposa una consulta "un sol commit"
-    independent: `list_repo_commits(revision=...)` retorna l'historial que
-    acaba en aquesta revisió (el primer element és el commit `revision`
-    mateix).
+    Commit d'una revisió (tag o SHA), amb data i autors. L'API no té
+    consulta d'un sol commit: és el primer de `list_repo_commits(revision=...)`.
 
-    :param dataset_id: identificador del dataset (`owner/name`).
-    :param revision: nom del tag (o SHA) a consultar.
-    :param hf_token: token HF, passat explícitament a la crida.
-    :param retry_config: mateix format que `RETRY_CONFIG`.
-    :return: el primer `GitCommitInfo` de la llista retornada, o `None` si
-        la llista és buida (no hauria de passar per a un tag vàlid, però es
-        tracta com a cas possible).
-    :raises Exception: repropaga qualsevol excepció de `list_repo_commits`
-        després d'exhaurir els reintents -- el cridant ho tracta com un
-        error parcial d'aquesta versió (`status="commit_error"`), no com
-        una fallada de tot el dataset.
+    :return: el `GitCommitInfo`, o `None` si la llista és buida.
     """
     commits = list(
         errors.with_retry(
@@ -277,33 +182,12 @@ def fetch_commit_metadata(dataset_id: str, revision: str, hf_token: str | None, 
 
 def fetch_tree_size_bytes(dataset_id: str, commit_sha: str, hf_token: str | None, retry_config: dict) -> int:
     """
-    Suma la mida real de tot l'arbre del repositori en una revisió
-    concreta, via `list_repo_tree(..., recursive=True)`.
+    Mida real (LFS resolt) de tot l'arbre del repositori en una revisió.
 
-    DISSENY -- `list_repo_tree` és un GENERADOR (`Iterable[RepoFile |
-    RepoFolder]` lazy: el seu propi docstring a `huggingface_hub` mostra
-    literalment `<generator object HfApi.list_repo_tree ...>` abans de
-    consumir-lo). Si es passés la funció tal qual a `errors.with_retry
-    (list_repo_tree, ...)`, `with_retry` només rebria l'objecte generador
-    (encara sense fer cap crida HTTP) i mai capturaria una excepció real --
-    aquesta sortiria més tard, en iterar-lo FORA del `try/except` de
-    `with_retry`, sense cap reintent. Per això es passa un tancament de
-    mida zero que el CONSUMEIX SENCER (`list(...)`) dins de la crida
-    reintentada.
+    `list_repo_tree` és un generador: es consumeix sencer DINS de
+    `with_retry` perquè els errors HTTP, que surten en iterar, es reintentin.
 
-    `expand=True` no es fa servir: només aporta `last_commit`/`security`
-    (i encareix la crida al servidor, paginant de 50 en 50 en lloc de
-    1000), cap dels dos necessari aquí -- `RepoFile.size` ja és la mida
-    real (resolta per a LFS, no el punter) sense `expand`.
-
-    :param dataset_id: identificador del dataset (`owner/name`).
-    :param commit_sha: revisió (SHA de commit) a inspeccionar.
-    :param hf_token: token HF, passat explícitament a la crida.
-    :param retry_config: mateix format que `RETRY_CONFIG`.
-    :return: suma total en bytes de `RepoFile.size` de tot l'arbre.
-    :raises Exception: repropaga qualsevol excepció després d'exhaurir els
-        reintents -- el cridant ho tracta com `status="size_error"` per a
-        aquesta versió concreta, no com una fallada de tot el dataset.
+    :return: bytes totals.
     """
     entries = errors.with_retry(
         lambda: list(
@@ -319,29 +203,9 @@ def fetch_tree_size_bytes(dataset_id: str, commit_sha: str, hf_token: str | None
 
 def fetch_tree_paths(dataset_id: str, hf_token: str | None, retry_config: dict) -> list[str]:
     """
-    Llista les rutes de tots els FITXERS (no carpetes) a la revisió MÉS
-    RECENT d'un repositori -- germana de `fetch_tree_size_bytes`, mateix
-    patró de tancament que consumeix el generador SENCER (`list(...)`)
-    dins de `errors.with_retry` (`list_repo_tree` és lazy, vegeu el
-    docstring de `fetch_tree_size_bytes` per al detall complet de per què
-    cal aquest embolcall).
-
-    Usada per `notebooks/extension_report.py` (cens de tipus d'extensió
-    de fitxer sobre els datasets elegibles, feedback del director) --
-    NOMÉS la revisió actual (HEAD), no cada versió històrica: és un cens
-    de l'estat ACTUAL del repositori, no dels fitxers realment tocats
-    pels commits substantius -- una aproximació deliberadament barata,
-    documentada com a tal (vegeu `extension_report.py`).
-
-    :param dataset_id: identificador del dataset (`owner/name`).
-    :param hf_token: token HF, passat explícitament a la crida.
-    :param retry_config: mateix format que `RETRY_CONFIG`.
-    :return: `list[str]` amb la ruta de cada fitxer (no s'inclouen
-        `RepoFolder`, que no tenen `.size` -- mateix filtre que `sum_
-        tree_size`, per duck-typing).
-    :raises Exception: repropaga qualsevol excepció després d'exhaurir
-        els reintents -- el cridant decideix com tractar-ho (p.e. saltar
-        aquest dataset al report).
+    Rutes de tots els fitxers (no carpetes) de la revisió actual. Mateix
+    patró de generador que `fetch_tree_size_bytes`. Usada per
+    `extension_report.py`.
     """
     entries = errors.with_retry(
         lambda: list(
@@ -353,24 +217,14 @@ def fetch_tree_paths(dataset_id: str, hf_token: str | None, retry_config: dict) 
 
 
 # ---------------------------------------------------------------------------
-# Orquestració per dataset
+# Extracció per dataset
 # ---------------------------------------------------------------------------
 
 
 def _extract_tag_versions(dataset_id: str, hf_token: str | None, retry_config: dict) -> list[dict]:
     """
-    Versions = tags (Criteri A). Cada tag dona una versió; si la metadada
-    (data/autors) d'un tag concret falla, la versió es conserva amb
-    `status="commit_error"` en lloc de descartar-se -- un error puntual no
-    hauria d'esborrar la resta de versions conegudes del dataset.
-
-    :param dataset_id: identificador del dataset (`owner/name`).
-    :param hf_token: token HF.(), per coherència
-
-    :param retry_config: mateix format que `RETRY_CONFIG`.
-    :return: llista de diccionaris de versió (sense `version_order` encara).
-    :raises Exception: propaga qualsevol fallada de `fetch_tags` (fallada
-        inicial, tot el dataset es tracta com a error).
+    Una versió per tag (Criteri A). Si falla la metadada d'un tag, la versió
+    es conserva amb `status="commit_error"`.
     """
     tags = fetch_tags(dataset_id, hf_token, retry_config)
 
@@ -401,23 +255,7 @@ def _extract_tag_versions(dataset_id: str, hf_token: str | None, retry_config: d
 
 
 def _extract_session_versions(dataset_id: str, hf_token: str | None, retry_config: dict) -> list[dict]:
-    """
-    Versions = sessions de treball (Criteri B), via `build_sessions_from_
-    commits` sobre fins a `MAX_COMMITS` commits (mateix límit que
-    `classify_dataset`/`gather_evidence_for_dataset`, per coherència amb el
-    que ja va decidir l'elegibilitat d'aquest dataset).
-
-    :param dataset_id: identificador del dataset (`owner/name`).
-    :param hf_token: token HF.
-    :param retry_config: mateix format que `RETRY_CONFIG`.
-    :return: llista de diccionaris de versió (sense `version_order` encara);
-        `[]` si no s'ha detectat cap sessió (no hauria de passar per a un
-        dataset elegible via Criteri B, ja que aquest va exigir >=2 commits
-        substantius dispersos -- indicaria una divergència respecte al run
-        d'elegibilitat original, p.e. el dataset ha canviat des d'aleshores).
-    :raises Exception: propaga qualsevol fallada de `list_repo_commits`
-        inicial (fallada inicial, tot el dataset es tracta com a error).
-    """
+    """Una versió per sessió de commits (Criteri B), sobre els últims `MAX_COMMITS` commits."""
     commits = list(
         errors.with_retry(
             list_repo_commits, repo_id=dataset_id, repo_type="dataset", token=hf_token, **retry_config,
@@ -449,30 +287,13 @@ def extract_versions_for_dataset(
     compute_size: bool = True,
 ) -> list[VersionRow]:
     """
-    Extreu totes les versions d'UN dataset elegible, bifurcant segons quin
-    criteri el va fer elegible (`eligibility_reason`, tal com consta a
-    `data/eligibility_report_*.csv` -- no es recalcula el criteri aquí).
+    Versions d'un dataset elegible: per tag si `eligibility_reason` comença
+    per "Criteri A", per sessió en qualsevol altre cas.
 
-    :param dataset_id: identificador del dataset (`owner/name`).
-    :param eligibility_reason: motiu d'elegibilitat original; `"Criteri A"`
-        -> versions per tag, qualsevol altre valor (`"Criteri B..."`) ->
-        versions per sessió de commits.
-    :param hf_token: token HF.
-    :param retry_config: mateix format que `RETRY_CONFIG`.
-    :param compute_size: si `True` (per defecte), calcula `approx_size_
-        bytes` per a cada versió via `fetch_tree_size_bytes` (una crida
-        `list_repo_tree` per versió). Si `False`, s'estalvien aquestes
-        crides i `status="ok_no_size"`.
-    :return: llista de `VersionRow` ordenada cronològicament
-        (`order_versions_by_date`); `[]` si el dataset no té cap versió
-        detectable (0 tags, o 0 sessions -- aquest segon cas seria una
-        divergència respecte al run d'elegibilitat original).
-    :raises Exception: propaga qualsevol fallada de la crida INICIAL
-        (`fetch_tags` o `list_repo_commits`) -- el cridant (`run_extraction`)
-        ho distingeix de "legítimament 0 versions" i ho registra com a
-        fallada de tot el dataset. Els errors PARCIALS (metadada d'un tag,
-        o mida d'una versió concreta) NO es propaguen: es reflecteixen en
-        `status` de la fila afectada, la resta de versions es conserven.
+    :param compute_size: calcula `approx_size_bytes` (1 crida per versió).
+    :return: `VersionRow` en ordre cronològic.
+    :raises Exception: només si falla la crida inicial (tags o commits);
+        els errors d'una versió concreta queden al seu `status`.
     """
     if eligibility_reason.startswith("Criteri A"):
         versions = _extract_tag_versions(dataset_id, hf_token, retry_config)
@@ -523,26 +344,12 @@ def run_extraction(
     compute_size: bool = True,
 ) -> dict:
     """
-    Llegeix els datasets elegibles de `input_csv` i n'extreu les versions
-    seqüencialment (sense `ThreadPoolExecutor`: la població elegible és
-    petita -- 11 datasets a `eligibility_report_2000_5.csv` -- cost
-    trivial fins i tot en sèrie, evita reobrir preguntes de concurrència de
-    `bare_clone` sense cap benefici real a aquesta escala). Una fallada de
-    dataset sencer es registra i NO atura la resta de l'execució.
+    Extreu les versions de tots els elegibles de `input_csv`, en sèrie, i
+    les escriu a `output_csv`. Una fallada de dataset es registra a
+    `failures.csv` i no atura la resta.
 
-    :param input_csv: ruta del CSV de datasets elegibles (`eligibility_
-        report_*.csv`, amb columnes `dataset_id`/`eligible`/
-        `eligibility_reason`).
-    :param output_csv: ruta on escriure el CSV de versions (una fila per
-        `VersionRow`).
-    :param hf_token: token HF.
-    :param retry_config: mateix format que `RETRY_CONFIG`.
-    :param compute_size: es passa tal qual a `extract_versions_for_dataset`.
-    :return: diccionari de resum: `timestamp`, `source_csv`, `n_eligible`,
-        `n_via_tags`, `n_via_sessions`, `n_dataset_level_failures`,
-        `n_rows_written`. També s'escriu a `output_csv` com a efecte
-        secundari (fallades parcials es reflecteixen a `data/failures.csv`
-        via `errors.append_failure_row`, `source="version_extraction"`).
+    :return: resum: `timestamp`, `source_csv`, `n_eligible`, `n_via_tags`,
+        `n_via_sessions`, `n_dataset_level_failures`, `n_rows_written`.
     """
     df = pd.read_csv(input_csv)
     eligible = df[df["eligible"] == True]  # noqa: E712
@@ -588,17 +395,7 @@ def run_extraction(
 
 
 def get_next_run_id(output_dir: str, prefix: str = "versions_") -> int:
-    """
-    Determina el següent número de run inspeccionant els `<prefix><run_id>
-    .csv` ja existents a `output_dir`, perquè cada execució generi sortides
-    numerades sense sobreescriure les anteriors (adaptació d'`eligibility_
-    scan.get_next_run_id`, que va lligat al patró `<sample_size>_<run_id>`
-    -- aquí no hi ha `sample_size`).
-
-    :param output_dir: directori on es guarden els resultats (`OUTPUT_DIR`).
-    :param prefix: prefix dels fitxers a considerar.
-    :return: el `run_id` més alt trobat + 1 (o `1` si no n'hi ha cap).
-    """
+    """Següent número de run a partir dels `<prefix><id>.csv` existents (1 si no n'hi ha)."""
     max_id = 0
     for filename in os.listdir(output_dir):
         if filename.startswith(prefix) and filename.endswith(".csv"):
@@ -611,13 +408,7 @@ def get_next_run_id(output_dir: str, prefix: str = "versions_") -> int:
 
 
 def parse_args() -> argparse.Namespace:
-    """
-    Defineix i parseja els arguments de la CLI. Sense arguments, mostra
-    l'ajuda i surt (mateix guard que `eligibility_scan.parse_args`).
-
-    :return: `argparse.Namespace` amb `input`, `output`, `skip_size`,
-        `retry_max_attempts`, `retry_base_wait`, `retry_max_wait`.
-    """
+    """Arguments de la CLI. Sense cap argument mostra l'ajuda i surt."""
     parser = argparse.ArgumentParser(
         description="US-201/US-202: extreu la seqüència de versions (tags o sessions de commits) dels datasets elegibles.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -672,16 +463,11 @@ if __name__ == "__main__":
     print(f"Extraient versions per als datasets elegibles de {args.input}...")
     summary = run_extraction(args.input, output_csv, hf_token, retry_config, compute_size=not args.skip_size)
 
-    summary_path = os.path.join(OUTPUT_DIR, f"versions_summary_{run_id}.json")
-    with open(summary_path, "w", encoding="utf-8") as f:
-        json.dump(summary, f, indent=2, ensure_ascii=False)
-
     print(f"\n{'=' * 65}")
     print("  RESUM EXTRACCIÓ DE VERSIONS")
     print(f"{'=' * 65}")
     for k, v in summary.items():
         print(f"  {k:<30} {v}")
     print(f"{'=' * 65}")
-    print(f"\n  CSV:  {output_csv}")
-    print(f"  JSON: {summary_path}")
+    print(f"\n  CSV: {output_csv}")
     print(f"  Fallades (detall): {FAILURES_LOG_PATH}\n")

@@ -1,39 +1,20 @@
 """
-Report d'extensions de fitxers als repositoris elegibles (feedback del
-director, reunió): un cens de quin percentatge dels fitxers dels
-datasets JA elegibles són tabulars (i per tant classificables amb la
-taxonomia de canvis, US-305) vs. binaris o d'un altre tipus -- PRÈVIA a
-qualsevol exclusió de fitxers binaris de l'estudi (vegeu `docs/
-decisions_tfg.txt`).
+Cens d'extensions dels fitxers dels datasets elegibles: quants fitxers hi
+ha per extensió, quin percentatge representen i quants elegibles tenen
+algun fitxer tabular (és a dir, sobre quants s'aplicarà la Fase 2).
 
-DISSENY -- cens SNAPSHOT, no historial de commits: per cada dataset
-elegible, `version_extractor.fetch_tree_paths` llista els fitxers de la
-revisió MÉS RECENT (HEAD), no els fitxers realment tocats pels commits
-substantius analitzats a la Fase 0-1. És una aproximació deliberadament
-barata (una sola crida `list_repo_tree` per dataset, sense clonar ni
-iterar l'historial) -- suficient per respondre "quin percentatge dels
-fitxers d'aquests repositoris és tabular", la pregunta concreta del
-director; NO pretén ser un recompte exacte de "fitxers tocats per
-commits substantius" (per això, vegeu `eligibility_scan.classify_
-commit_tabular_changes`, que sí opera commit a commit, però NOMÉS sobre
-els fitxers ja tabulars).
-
-`is_tabular`/`is_substantive` es calculen PER FITXER (ruta completa), no
-per extensió -- `is_substantive_path` depèn del PREFIX de la ruta a més
-de l'extensió (p.e. `meta/data.parquet` NO és substantiu tot i tenir
-extensió tabular), així que una mateixa extensió pot aparèixer en més
-d'una fila per dataset si alguns fitxers d'aquella extensió són
-substantius i altres no.
+Mira només la revisió actual de cada repositori (una crida
+`list_repo_tree`), no els fitxers tocats per cada commit: és una
+aproximació barata, no un recompte històric. Script aïllat, no el crida
+`run_pipeline.py`.
 
 Ús:
-  python extension_report.py --input ../data/eligibility_report_2000_5.csv
+  python extension_report.py --input ../data/eligibility_report_<sample_id>_<run_id>.csv
 
 Output:
-  data/extension_report_<run_id>.csv (dataset_id, extension, file_count, is_tabular, is_substantive)
-  data/extension_report_summary_<run_id>.json (totals/percentatges globals
-    + recompte de fitxers tabulars per dataset -- alimenta la investigació
-    de repositoris amb múltiples fitxers tabulars, feedback del director)
-  data/failures.csv (fallades de dataset sencer, source="extension_report")
+  data/extension_report_<run_id>.csv (extension, file_count, pct_of_total, is_tabular)
+  data/extension_report_summary_<run_id>.json
+  data/failures.csv (source="extension_report")
 """
 
 import argparse
@@ -49,7 +30,6 @@ from dotenv import load_dotenv
 import change_diff
 import errors
 import version_extractor as ve
-from eligibility_scan import is_substantive_path
 
 log = logging.getLogger(__name__)
 
@@ -58,17 +38,9 @@ RETRY_CONFIG: dict = dict(errors.DEFAULT_RETRY_CONFIG)
 
 def _file_extension(path: str) -> str:
     """
-    Extensió d'una ruta, en minúscules, amb un cas especial per a
-    extensions compostes conegudes (`.tar.gz`/`.tar`, igual que
-    `eligibility_scan.SUBSTANTIVE_DATA_EXTENSIONS` les tracta com una
-    unitat) -- `os.path.splitext` per si sol donaria `.gz` per a
-    `data.tar.gz`, cosmèticament confús encara que la classificació
-    tabular/substantiva (que opera sobre la ruta completa, no aquesta
-    etiqueta) sigui correcta de totes maneres.
+    Extensió en minúscules; `.tar.gz` es tracta com una sola extensió.
 
-    :param path: ruta relativa dins del repositori.
-    :return: extensió en minúscules (p.e. `".csv"`, `".tar.gz"`), o
-        `"(sense extensio)"` si no n'hi ha cap.
+    :return: p.e. `".csv"`, `".tar.gz"`, o `"(sense extensio)"`.
     """
     lower = path.lower()
     if lower.endswith(".tar.gz"):
@@ -79,30 +51,21 @@ def _file_extension(path: str) -> str:
 
 def build_extension_report(input_csv: str, hf_token: str | None, retry_config: dict) -> tuple[pd.DataFrame, dict]:
     """
-    Llegeix els datasets elegibles de `input_csv` i censa les extensions
-    dels fitxers de la seva revisió més recent.
+    Agrega per extensió els fitxers de tots els elegibles de `input_csv`.
 
-    :param input_csv: ruta del CSV de datasets elegibles (`eligibility_
-        report_*.csv`, amb columnes `dataset_id`/`eligible`).
-    :param hf_token: token HF.
-    :param retry_config: mateix format que `RETRY_CONFIG`.
-    :return: tupla `(report_df, summary)`. `report_df` té una fila per
-        `(dataset_id, extension, is_tabular, is_substantive)` amb
-        `file_count`. `summary` té `timestamp`, `source_csv`,
-        `n_eligible`, `n_dataset_level_failures`, `total_files`,
-        `total_tabular_files`, `pct_tabular`, `total_substantive_files`,
-        `pct_substantive`, i `tabular_files_per_dataset` (`dict[str,
-        int]`, alimenta la investigació de repositoris amb múltiples
-        fitxers tabulars).
+    :param input_csv: `eligibility_report_*.csv`.
+    :return: `(report_df, summary)`. `report_df`: una fila per extensió
+        (`extension`, `file_count`, `pct_of_total`, `is_tabular`), de més a
+        menys fitxers. `summary`: totals, `pct_tabular`,
+        `n_eligible_with_tabular_files` i `tabular_files_per_dataset`.
     """
     df = pd.read_csv(input_csv)
     eligible = df[df["eligible"] == True]  # noqa: E712
 
-    counts: dict[tuple[str, str, bool, bool], int] = {}
+    ext_counts: dict[str, int] = {}
     tabular_files_per_dataset: dict[str, int] = {}
     total_files = 0
     total_tabular = 0
-    total_substantive = 0
     n_failed = 0
 
     for _, row in eligible.iterrows():
@@ -123,23 +86,27 @@ def build_extension_report(input_csv: str, hf_token: str | None, retry_config: d
 
         tabular_files_per_dataset[dataset_id] = 0
         for path in paths:
-            is_tab = change_diff.is_tabular_path(path)
-            is_sub = is_substantive_path(path)
-            key = (dataset_id, _file_extension(path), is_tab, is_sub)
-            counts[key] = counts.get(key, 0) + 1
-
+            ext = _file_extension(path)
+            ext_counts[ext] = ext_counts.get(ext, 0) + 1
             total_files += 1
-            if is_tab:
+            if change_diff.is_tabular_path(path):
                 total_tabular += 1
                 tabular_files_per_dataset[dataset_id] += 1
-            if is_sub:
-                total_substantive += 1
 
-    rows = [
-        {"dataset_id": ds, "extension": ext, "file_count": n, "is_tabular": is_tab, "is_substantive": is_sub}
-        for (ds, ext, is_tab, is_sub), n in counts.items()
-    ]
-    report_df = pd.DataFrame(rows, columns=["dataset_id", "extension", "file_count", "is_tabular", "is_substantive"])
+    rows = sorted(
+        (
+            {
+                "extension": ext, "file_count": n,
+                "pct_of_total": round(100 * n / total_files, 2) if total_files else 0.0,
+                "is_tabular": ext in change_diff.TABULAR_EXTENSIONS,
+            }
+            for ext, n in ext_counts.items()
+        ),
+        key=lambda r: r["file_count"], reverse=True,
+    )
+    report_df = pd.DataFrame(rows, columns=["extension", "file_count", "pct_of_total", "is_tabular"])
+
+    n_eligible_with_tabular_files = sum(1 for n in tabular_files_per_dataset.values() if n > 0)
 
     summary = {
         "timestamp": datetime.now().isoformat(),
@@ -149,21 +116,14 @@ def build_extension_report(input_csv: str, hf_token: str | None, retry_config: d
         "total_files": total_files,
         "total_tabular_files": total_tabular,
         "pct_tabular": round(100 * total_tabular / total_files, 2) if total_files else 0.0,
-        "total_substantive_files": total_substantive,
-        "pct_substantive": round(100 * total_substantive / total_files, 2) if total_files else 0.0,
+        "n_eligible_with_tabular_files": n_eligible_with_tabular_files,
         "tabular_files_per_dataset": tabular_files_per_dataset,
     }
     return report_df, summary
 
 
 def parse_args() -> argparse.Namespace:
-    """
-    Defineix i parseja els arguments de la CLI. Sense arguments, mostra
-    l'ajuda i surt (mateix guard que `eligibility_scan.parse_args`).
-
-    :return: `argparse.Namespace` amb `input`, `retry_max_attempts`,
-        `retry_base_wait`, `retry_max_wait`.
-    """
+    """Arguments de la CLI. Sense cap argument mostra l'ajuda i surt."""
     parser = argparse.ArgumentParser(
         description="Cens d'extensions de fitxers dels datasets elegibles (feedback del director).",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,

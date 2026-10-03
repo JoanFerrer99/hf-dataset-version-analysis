@@ -1,24 +1,9 @@
 """
-Orquestrador del pipeline complet: encadena Fase 0-1 (`eligibility_scan.
-run_sampling` -- mostreig + classificació d'elegibilitat), Fase 1b
-(`version_extractor.run_extraction` -- seqüència de versions) i Fase 2
-(`eligibility_scan.run_classification` -- classificació de canvis dels
-elegibles) en una sola execució, reutilitzant el MATEIX CSV d'elegibilitat
-entre totes tres fases -- sense pas manual d'un run a l'altre.
-
-Substitueix el disseny previ (Fase 2 encadenada directament dins de
-`eligibility_scan.run_sampling`, vegeu `docs/decisions_tfg.txt` Decisió
-T-13): cada script manté una única responsabilitat (mostreig/
-elegibilitat, extracció de versions, classificació de canvis) i aquest
-mòdul és qui les compon -- `eligibility_scan.py`/`version_extractor.py`
-segueixen sent invocables per separat per a proves/depuració granulars.
-
-Cap fase de contingut real (Fase 1b/2) s'aplica mai a tota la mostra
-escanejada -- només al subconjunt ja filtrat com a elegible (`eligible ==
-True`), exactament igual que quan `eligibility_scan.py --classify-eligible`
-s'invocava manualment (vegeu `docs/architecture.md`, "Cost, per què és
-opt-in"): encadenar-ho no canvia QUÈ es processa, només elimina el pas
-manual entremig.
+Orquestrador del pipeline: Fase 0 (`eligibility_scan.run_sampling`),
+Fase 1 (`version_extractor.run_extraction`) i Fase 2
+(`eligibility_scan.run_classification`) en una sola execució, amb el
+mateix CSV d'elegibilitat per a les tres. Les Fases 1 i 2 només
+processen els datasets elegibles.
 
 Ús:
   python run_pipeline.py --sample-size 50 --threads 4 --seed 42 --max-scanned 5000  # prova ràpida
@@ -26,14 +11,15 @@ manual entremig.
   python run_pipeline.py --input-csv ../data/eligibility_report_2000_5.csv           # salta Fase 0-1, reutilitza un CSV existent
   python run_pipeline.py --sample-size 2000 --skip-classification                    # només Fase 0-1/1b
 
-Output:
-  data/eligibility_report_<N>_<run_id>.csv, data/funnel_summary_<N>_<run_id>.json (Fase 0-1)
-  data/versions_<run_id>.csv, data/versions_summary_<run_id>.json (Fase 1b)
-  data/change_classification_<run_id>.csv (Fase 2)
+Output: tot dins de `data/run_<id>/` (numerada, mai sobreescriu):
+  eligibility_report_<N>_<k>.csv, funnel_summary_<N>_<k>.json (Fase 0)
+  versions_<k>.csv (Fase 1)
+  change_classification_<k>.csv (Fase 2)
+  failures.csv (si hi ha fallades)
+Al final s'imprimeix la llista de fitxers generats per fase.
 """
 
 import argparse
-import json
 import logging
 import os
 import random
@@ -47,6 +33,26 @@ import version_extractor as ve
 
 log = logging.getLogger(__name__)
 
+# Arrel fixa: es/ve.OUTPUT_DIR es reassignen a la carpeta run_<id>, i
+# usar-los com a base niaria run_1/run_1/... en crides repetides al mateix procés.
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
+
+
+def next_pipeline_run_dir(data_dir: str) -> str:
+    """
+    :param data_dir: arrel de dades (`DATA_DIR`).
+    :return: ruta de `run_<id>` amb el següent id lliure (encara no creada).
+    """
+    max_id = 0
+    if os.path.isdir(data_dir):
+        for name in os.listdir(data_dir):
+            if name.startswith("run_") and os.path.isdir(os.path.join(data_dir, name)):
+                try:
+                    max_id = max(max_id, int(name[len("run_"):]))
+                except ValueError:
+                    pass
+    return os.path.join(data_dir, f"run_{max_id + 1}")
+
 
 def run_full_pipeline(
     sample_size: int,
@@ -59,43 +65,44 @@ def run_full_pipeline(
     skip_size: bool,
 ) -> dict:
     """
-    Executa el pipeline complet: Fase 0-1 (o la salta si `input_csv` es
-    dona), Fase 1b, Fase 2 -- en aquest ordre, totes dues últimes llegint
-    el MATEIX CSV d'elegibilitat de la Fase 0-1 (mai un CSV diferent).
+    Executa Fase 0 -> 1 -> 2 dins d'una carpeta `run_<id>` nova. Redirigeix
+    la sortida reassignant `es/ve.OUTPUT_DIR` i `FAILURES_LOG_PATH`.
 
-    :param sample_size: es passa a `eligibility_scan.run_sampling`
-        (ignorat si `input_csv` és donat).
-    :param max_scanned: es passa a `eligibility_scan.run_sampling`
-        (ignorat si `input_csv` és donat).
-    :param num_threads: es passa a `eligibility_scan.run_sampling`
-        (ignorat si `input_csv` és donat).
-    :param tags_only: es passa a `eligibility_scan.run_sampling`
-        (ignorat si `input_csv` és donat).
-    :param input_csv: si es dona, salta la Fase 0-1 i reutilitza aquest
-        CSV (`eligibility_report_*.csv`) per a la Fase 1b/2 -- anàleg a
-        `eligibility_scan.py --classify-eligible` però per a tot el
-        pipeline. ``None`` per fer un mostreig nou.
-    :param skip_version_extraction: si `True`, omet la Fase 1b.
-    :param skip_classification: si `True`, omet la Fase 2.
-    :param skip_size: es passa a `version_extractor.run_extraction`
-        (`compute_size=not skip_size`).
-    :return: `dict` amb `eligibility_csv`, `eligible_total`, i
-        `versions_csv` (ruta, o `None` si la Fase 1b s'ha saltat o no hi
-        havia cap elegible). La ruta del CSV de la Fase 2 no es retorna
-        (`run_classification` no la retorna -- ja la imprimeix ella
-        mateixa, vegeu la seva pròpia sortida per consola).
+    :param sample_size, max_scanned, num_threads, tags_only: per a la Fase 0.
+    :param input_csv: si es dona, salta la Fase 0 i usa aquest CSV.
+    :param skip_version_extraction: omet la Fase 1.
+    :param skip_classification: omet la Fase 2.
+    :param skip_size: no calcula la mida de cada versió a la Fase 1.
+    :return: `run_dir`, `eligibility_csv`, `eligible_total`, `versions_csv`,
+        `change_classification_csv` (`None` si la fase no s'ha executat) i
+        `generated_files` (rutes agrupades per fase).
     """
+    run_dir = next_pipeline_run_dir(DATA_DIR)
+    os.makedirs(run_dir, exist_ok=True)
+    es.OUTPUT_DIR = ve.OUTPUT_DIR = run_dir
+    es.FAILURES_LOG_PATH = ve.FAILURES_LOG_PATH = os.path.join(run_dir, "failures.csv")
+    log.info(f"Carpeta d'aquesta execució: {run_dir}")
+
+    generated_files: dict[str, list[str]] = {"Fase 0-1 (mostreig+elegibilitat)": [], "Fase 1b (versions)": [],
+                                              "Fase 2 (classificació de canvis)": []}
+    outputs = {
+        "run_dir": run_dir, "eligibility_csv": None, "eligible_total": 0,
+        "versions_csv": None, "change_classification_csv": None, "generated_files": generated_files,
+    }
+
     if input_csv:
         log.info(f"Fase 0-1 saltada -- reutilitzant {input_csv}")
         eligibility_csv = input_csv
         eligible_total = int(pd.read_csv(eligibility_csv)["eligible"].sum())
     else:
-        eligibility_csv, _json_path, summary = es.run_sampling(
+        eligibility_csv, funnel_summary_json, summary = es.run_sampling(
             sample_size=sample_size, max_scanned=max_scanned, num_threads=num_threads, tags_only=tags_only,
         )
         eligible_total = summary["eligible_total"]
+        generated_files["Fase 0-1 (mostreig+elegibilitat)"] += [eligibility_csv, funnel_summary_json]
 
-    outputs = {"eligibility_csv": eligibility_csv, "eligible_total": eligible_total, "versions_csv": None}
+    outputs["eligibility_csv"] = eligibility_csv
+    outputs["eligible_total"] = eligible_total
 
     if eligible_total == 0:
         log.info("Cap dataset elegible -- s'omet Fase 1b (extracció de versions) i Fase 2 (classificació de canvis).")
@@ -107,33 +114,26 @@ def run_full_pipeline(
         log.info(f"FASE 1b: Extraient versions dels {eligible_total} datasets elegibles...")
         run_id = ve.get_next_run_id(ve.OUTPUT_DIR)
         versions_csv = os.path.join(ve.OUTPUT_DIR, f"versions_{run_id}.csv")
-        version_summary = ve.run_extraction(
-            eligibility_csv, versions_csv, es.HF_TOKEN, ve.RETRY_CONFIG, compute_size=not skip_size,
-        )
-        summary_path = os.path.join(ve.OUTPUT_DIR, f"versions_summary_{run_id}.json")
-        with open(summary_path, "w", encoding="utf-8") as f:
-            json.dump(version_summary, f, indent=2, ensure_ascii=False)
+        ve.run_extraction(eligibility_csv, versions_csv, es.HF_TOKEN, ve.RETRY_CONFIG, compute_size=not skip_size)
         outputs["versions_csv"] = versions_csv
+        generated_files["Fase 1b (versions)"].append(versions_csv)
 
     if skip_classification:
         log.info("FASE 2 saltada (--skip-classification).")
     else:
         log.info(f"FASE 2: Classificant canvis dels {eligible_total} datasets elegibles...")
-        es.run_classification(eligibility_csv)
+        change_classification_csv = es.run_classification(eligibility_csv)
+        outputs["change_classification_csv"] = change_classification_csv
+        generated_files["Fase 2 (classificació de canvis)"].append(change_classification_csv)
+
+    if os.path.exists(es.FAILURES_LOG_PATH):
+        generated_files["Fallades (totes les fases)"] = [es.FAILURES_LOG_PATH]
 
     return outputs
 
 
 def parse_args() -> argparse.Namespace:
-    """
-    Defineix i parseja els arguments de la CLI. Sense arguments, mostra
-    l'ajuda i surt (mateix guard que `eligibility_scan.parse_args`).
-
-    :return: `argparse.Namespace` amb `input_csv`, `skip_version_extraction`,
-        `skip_classification`, `skip_size`, `tags_only`, `sample_size`,
-        `max_scanned`, `threads`, `seed`, `retry_max_attempts`,
-        `retry_base_wait`, `retry_max_wait`.
-    """
+    """Arguments de la CLI. Sense cap argument mostra l'ajuda i surt."""
     parser = argparse.ArgumentParser(
         description=(
             "Pipeline complet: mostreig+elegibilitat, extracció de versions, "
@@ -229,6 +229,14 @@ if __name__ == "__main__":
     print(f"\n{'=' * 65}")
     print("  RESUM PIPELINE COMPLET")
     print(f"{'=' * 65}")
-    for k, v in result.items():
-        print(f"  {k:<20} {v}")
-    print(f"{'=' * 65}\n")
+    print(f"  Carpeta d'aquesta execució: {result['run_dir']}")
+    print(f"  Datasets elegibles:         {result['eligible_total']}")
+    print(f"{'=' * 65}")
+    print("  Fitxers generats, per fase:")
+    for phase, paths in result["generated_files"].items():
+        if not paths:
+            continue
+        print(f"\n  {phase}")
+        for path in paths:
+            print(f"    - {os.path.basename(path)}")
+    print(f"\n{'=' * 65}\n")

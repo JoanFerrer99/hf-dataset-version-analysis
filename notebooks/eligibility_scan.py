@@ -1,28 +1,21 @@
 """
-Filtratge previ de datasets de HuggingFace amb versions reals (Fase 0).
+Fase 0 (mostreig + elegibilitat) i Fase 2 (classificació de canvis).
 
-Metodologia: Reservoir sampling (algoritme R de Vitter) sobre TOTA la població
-de datasets, sense ordenar per popularitat. Això garanteix que cada dataset
-de la població té igual probabilitat de ser seleccionat.
-
-Estratègia per detectar "versions reals":
-1. Es llisten tags/refs del repo (versionat explicit).
-2. Si no hi ha tags, es miren els commits i es filtren per fitxers substantius.
-3. Es considera "elegible" un dataset amb almenys 2 "punts de canvi" rellevants.
-
-Totes les crides a l'API que poden patir rate limiting (HTTP 429) es
-reintenten amb backoff exponencial + jitter (vegeu `errors.with_retry`).
-Els errors definitius es classifiquen en categories (accés restringit,
-no trobat, transitori esgotat, desconegut) i es registren de forma
-estructurada a `data/failures.csv`, separats del report principal.
+  - Mostreig: reservoir sampling uniforme sobre tota la població de HF.
+  - Elegibilitat: Criteri A (>=2 tags + >=2 commits substantius) o
+    Criteri B (>=2 branches + >=2 sessions de commits substantius).
+  - Classificació (`run_classification`): codis de la taxonomia per als
+    datasets elegibles d'un CSV ja generat.
 
 Ús:
   python eligibility_scan.py --sample-size 2000 --threads 4 --seed 42
   python eligibility_scan.py --sample-size 200 --max-scanned 5000  # prova ràpida, esbiaixada
+  python eligibility_scan.py --classify-eligible ../data/eligibility_report_2000_5.csv
 
 Output:
   data/eligibility_report_<N>_<run_id>.csv, data/funnel_summary_<N>_<run_id>.json
-  data/failures.csv (registre estructurat de fallades)
+  data/change_classification_<run_id>.csv (amb --classify-eligible)
+  data/failures.csv
 """
 
 import os
@@ -103,7 +96,6 @@ FAILURES_LOG_PATH = os.path.join(OUTPUT_DIR, "failures.csv")
 
 RETRY_CONFIG: dict = dict(errors.DEFAULT_RETRY_CONFIG)
 
-# Inicialització de l'API
 load_dotenv()
 HF_TOKEN = os.getenv("HF_TOKEN")
 if not HF_TOKEN:
@@ -113,28 +105,14 @@ if not HF_TOKEN:
 api = HfApi(token=HF_TOKEN)
 log.info("Token HF carregat correctament.")
 
+
 def iter_all_dataset_ids():
     """
-    Itera TOTA la població de datasets de HF sense cap ordenació, retornant
-    NOMÉS l'identificador (string) de cada dataset -- mai l'objecte
-    `DatasetInfo` complet ni cap altre camp.
+    Genera l'id de cada dataset habilitat de HF, sense ordenar.
+    `expand=["disabled"]` redueix el payload per dataset al mínim.
 
-    S'usa `expand=["disabled"]` perquè `list_datasets()` només torni
-    `id`/`disabled`/`trending_score` en lloc del payload complet per
-    dataset (descripció, tags, card_data, sha, dates...), reduint
-    dràsticament la transferència de dades durant un escaneig de ~950K
-    datasets. Els datasets marcats com `disabled` es descarten aquí mateix,
-    ja que `list_repo_refs`/`list_repo_commits` hi fallarien sempre.
-
-    No pren paràmetres: itera tota la població disponible via l'`api`
-    global (inicialitzada amb `HF_TOKEN` al carregar el mòdul).
-
-    :return: generador que produeix un `str` (`dataset.id`, format
-        `owner/name`) per cada dataset habilitat de la població. Si
-        `list_datasets()` llança una excepció (p.e. error de xarxa durant
-        la paginació), es registra amb `log.error` i el generador
-        s'atura silenciosament (no la repropaga): el cridant rep tots els
-        datasets vistos fins al moment del tall, no una excepció.
+    :return: generador de `str` (`owner/name`). Si la paginació falla, es
+        registra l'error i el generador s'atura (no es propaga).
     """
     try:
         for dataset in api.list_datasets(limit=None, expand=["disabled"]):
@@ -153,36 +131,15 @@ def reservoir_sample_dataset_ids(
     show_progress: bool = True,
 ) -> tuple[list[str], int]:
     """
-    Algorisme R de Vitter: mostreig aleatori uniforme sobre tota la població.
-    Cada dataset té igual probabilitat = sample_size / N de ser seleccionat.
+    Algorisme R de Vitter: cada dataset té probabilitat `sample_size / N`
+    de ser seleccionat. Memòria O(sample_size), mai la població sencera.
 
-    El reservori conté NOMÉS identificadors (strings), mai l'objecte
-    complet: si `dataset_iter` produeix objectes amb atribut `.id` (com el
-    `DatasetInfo` de `huggingface_hub`), se n'extreu l'id immediatament i
-    la resta de l'objecte queda sense referències -- mantenir-los vius
-    durant un escaneig de fins a ~950K datasets multiplicaria
-    innecessàriament la memòria pic.
-
-    :param dataset_iter: iterador/generador de datasets (objectes amb
-        atribut `.id`) o ja d'ids (`str`); no es materialitza mai a una
-        llista completa, es consumeix element a element.
-    :param sample_size: mida del reservori final (nombre de datasets a
-        seleccionar). Si la població té menys elements que `sample_size`,
-        el reservori final els conté tots.
-    :param max_scanned: límit opcional de datasets a escanejar abans
-        d'aturar-se (proves ràpides). ``None`` (per defecte) escaneja tota
-        la població, imprescindible per a un mostreig no esbiaixat.
-    :param rng: font d'aleatorietat determinista opcional (`random.Random`
-        amb llavor fixa, per tests reproduïbles); si no es passa, s'usa el
-        mòdul `random` global (no determinista entre execucions sense
-        `--seed`).
-    :param show_progress: si `True` (per defecte), mostra una barra `tqdm`
-        amb el progrés de l'escaneig. Es desactiva als tests unitaris per
-        no acoblar l'algorisme pur a una dependència d'interfície.
-    :return: tupla ``(reservoir, n_seen)`` on ``reservoir`` és la
-        `list[str]` d'ids seleccionats (longitud `min(sample_size, n_seen)`)
-        i ``n_seen`` és el nombre total de datasets escanejats (mida real
-        de la població, o `max_scanned` si s'ha aturat abans).
+    :param dataset_iter: iterable d'ids o d'objectes amb `.id`.
+    :param sample_size: mida del reservori.
+    :param max_scanned: límit d'elements a recórrer (només proves; esbiaixa).
+    :param rng: font d'aleatorietat (per a tests deterministes).
+    :param show_progress: barra `tqdm`.
+    :return: `(ids seleccionats, nombre d'elements vistos)`.
     """
     rng = rng or random
     reservoir: list[str] = []
@@ -222,93 +179,26 @@ def reservoir_sample_dataset_ids(
 
 def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes: bool = False) -> dict:
     """
-    Determina si un dataset és elegible per a l'estudi (>=2 "versions
-    reals") segons dos criteris independents:
+    Decideix si un dataset és elegible i, opcionalment, en classifica els
+    canvis.
 
-    Criteri A: >= 2 tags de Git (versionat explícit, com en el paper dels
-               LLM) I >= 2 commits substantius (mateix llindar que el
-               Criteri B). El segon requisit cobreix el cas (improbable)
-               d'un dataset amb >=2 tags on els commits associats només
-               toquen README/metadades: sense prou commits substantius,
-               els tags no representen canvis reals de dataset i no
-               compten com a Criteri A. S'avalua igual amb `tags_only=True`
-               o `False` (vegeu més avall).
-    Criteri B: >= 2 branches I >= 2 commits substancials (canvis reals de
-               dataset, no purament documentals) SEPARATS EN EL TEMPS per
-               almenys `MIN_SUBSTANTIVE_GAP_HOURS` hores. MAI s'avalua en
-               mode `tags_only=True` (vegeu més avall).
+    - Criteri A: >=2 tags i >=2 commits substantius.
+    - Criteri B: >=2 branches i commits substantius en >=2 sessions.
 
-    Un commit es considera substantiu si TOCA REALMENT algun fitxer de
-    dades (no purament de metadades/documentació): `determine_commit_
-    substantive` inspecciona els fitxers reals afegits/modificats/
-    eliminats per cada commit via un clonatge "bare" local
-    (`bare_clone`/`get_changed_files`/`is_substantive_path`), i
-    només recorre a l'heurística de títol (`is_substantive_commit`) si el
-    clonatge o `git show` fallen per aquest dataset/commit (git no
-    instal·lat, timeout, xarxa...).
+    Recorre fins a 50 commits sobre un clon bare. Sense `classify_changes`,
+    retorna tan bon punt el dataset és elegible.
 
-    :param dataset_id: identificador del dataset a classificar, format
-        `owner/name` (p.e. `"allenai/c4"`).
-    :param tags_only: si `True`, el dataset NOMÉS pot ser elegible via
-        Criteri A (el Criteri B mai s'avalua, encara que `branches >= 2`).
-        El Criteri A es verifica igual de rigorosament que en mode normal
-        (es crida `list_repo_commits` i es comprova `num_commits_
-        substantive >= 2`) -- `tags_only` restringeix QUIN criteri pot
-        concedir elegibilitat, no si es verifiquen els commits. Estalvia
-        crides (`list_repo_commits` + clonatge) només en el cas en què el
-        dataset no pot ser elegible per cap dels dos criteris en aquest
-        mode (`tags < 2` i, com que el Criteri B està desactivat, no cal
-        mirar `branches`).
-    :param classify_changes: si `True`, A MÉS de determinar l'elegibilitat,
-        classifica els canvis dins la finestra escanejada (fins a 50
-        commits) segons els 14 codis NO-metadada de la taxonomia
-        (C210-C530, `docs/taiga/taxonomy.md` -- **C100 exclòs
-        deliberadament**, no es classifiquen metadades). Descarrega i
-        compara contingut real NOMÉS dels fitxers tabulars (`.parquet`/
-        `.csv`/`.tsv`, `change_diff.is_tabular_path`) -- els fitxers
-        binaris (àudio/vídeo/tensors) només compten per a l'elegibilitat,
-        mai per a la classificació (no tenen "columnes"/"files"). La
-        UNITAT de canvi depèn del criteri d'elegibilitat:
-        - **Criteri A** (tags): un canvi per cada commit substantiu amb
-          un pare conegut (el seu propi pare de git), com sempre.
-        - **Criteri B** (sessions): un canvi NOMÉS entre CADA PARELL DE
-          SESSIONS consecutives (mateix agrupament que decideix
-          l'elegibilitat, `group_substantive_commits_into_sessions`) --
-          els commits DINS de la mateixa sessió NO generen cap diff
-          propi, perquè el "canvi" es compti amb la mateixa unitat que
-          la "versió" (vegeu `classify_session_boundary_tabular_
-          changes`).
-        Quan és `True`, la funció NO retorna anticipadament en trobar
-        elegibilitat: escaneja tots els commits fins al cap (per
-        classificar-los tots), a costa de moltes més crides i
-        descàrregues de contingut real.
-        **NOMÉS s'ha de fer servir sobre datasets ja coneguts com a
-        elegibles.
-    :return: diccionari amb els camps del CSV final:
-        - dataset_id (str): l'id rebut per paràmetre.
-        - num_tags (int): nombre de tags trobats (0 si ha fallat abans
-          d'obtenir-los).
-        - num_branches (int): nombre de branches trobades.
-        - num_commits_substantive (int): nombre de commits substantius
-          comptats fins al moment de decidir l'elegibilitat (o fins a 50
-          commits revisats si no s'ha trobat prou evidència).
-        - eligible (bool): `True` si compleix el Criteri A o el B.
-        - eligibility_reason (str): text explicant per quin criteri
-          (o per què no) s'ha decidit l'elegibilitat.
-        - status (str): "classified" (èxit, elegible o no),
-          "access_restricted" (403) o "error" (qualsevol altra
-          fallada definitiva). SEMPRE present, també en cas d'èxit: si cap
-          fila d'un lot tingués aquesta clau absent, `pd.DataFrame(rows)`
-          no tindria la columna "status" i `write_results` fallaria amb
-          `KeyError` en fer-hi `df["status"] == ...`.
-        - error_category (str): valor de `errors.ErrorCategory` si hi
-          ha hagut una fallada; `""` en cas d'èxit.
-        - error (str): missatge d'excepció truncat a 120 caràcters
-          (el missatge complet es registra a `data/failures.csv` via
-          `errors.append_failure_row`); `""` en cas d'èxit.
-        - change_labels (list[dict]): `[]` si `classify_changes=False`.
-          Si `True`, una entrada per codi de taxonomia detectat (format
-          `change_diff.ChangeLabel` via `dataclasses.asdict`).
+    :param dataset_id: dataset (`owner/name`).
+    :param tags_only: només permet el Criteri A.
+    :param classify_changes: classifica també els canvis dels fitxers
+        tabulars. Unitat de canvi: commit vs el seu pare (Criteri A) o
+        límit entre sessions (Criteri B). Descarrega contingut real: només
+        per a datasets ja elegibles.
+    :return: fila del report: `dataset_id`, `num_tags`, `num_branches`,
+        `num_commits_substantive`, `eligible`, `eligibility_reason`,
+        `status` (`classified`/`access_restricted`/`error`),
+        `error_category`, `error` (truncat a 120 caràcters) i
+        `change_labels` (`[]` si `classify_changes=False`).
     """
     result = {
         "dataset_id": dataset_id,
@@ -335,8 +225,7 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
 
         commits_scanned = 0
         num_commits_substantive = 0
-        earliest_substantive_time: datetime | None = None
-        latest_substantive_time: datetime | None = None
+        substantive_times: list[datetime] = []
         substantive_commits: list[tuple[int, object, list[str]]] = []
 
         if len(tags) >= 2 or (not tags_only and len(branches) >= 2):
@@ -353,10 +242,7 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
                         num_commits_substantive += 1
                         commit_time = getattr(commit, "created_at", None)
                         if commit_time is not None:
-                            if earliest_substantive_time is None or commit_time < earliest_substantive_time:
-                                earliest_substantive_time = commit_time
-                            if latest_substantive_time is None or commit_time > latest_substantive_time:
-                                latest_substantive_time = commit_time
+                            substantive_times.append(commit_time)
                         if classify_changes and changed_paths:
                             substantive_commits.append((i, commit, changed_paths))
 
@@ -365,7 +251,7 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
                             result["eligible"] = True
                             result["eligibility_reason"] = "Criteri A: tags>=2 amb commits substantius"
                         elif not tags_only and len(branches) >= 2 and has_time_dispersed_substantive_commits(
-                            [earliest_substantive_time, latest_substantive_time]
+                            substantive_times
                         ):
                             result["eligible"] = True
                             result["eligibility_reason"] = (
@@ -427,16 +313,11 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
 
 def is_substantive_commit(commit_title: str) -> bool:
     """
-    Avalua si un commit representa un canvi real de dataset (no purament
-    documental/de manteniment), a partir d'una heurística sobre el títol:
-    `False` si el títol (en minúscules) conté alguna de les paraules clau
-    de `NON_SUBSTANTIVE_TITLE_KEYWORDS` (p.e. "readme", "typo", "license").
+    Heurística de reserva quan no hi ha clon: el commit és substantiu si el
+    títol no conté cap paraula de `NON_SUBSTANTIVE_TITLE_KEYWORDS`.
 
-    :param commit_title: títol del commit tal com el retorna l'API de HF
-        (`commit.title`). Pot ser `None` o buit.
-    :return: `True` si el commit sembla substantiu (cap paraula clau de
-        manteniment/documentació al títol); `False` si el títol és buit/
-        `None` o conté alguna d'aquestes paraules clau.
+    :param commit_title: títol del commit (pot ser `None`).
+    :return: `False` si el títol és buit o conté alguna paraula clau.
     """
     if not commit_title:
         return False
@@ -452,26 +333,14 @@ def is_substantive_commit(commit_title: str) -> bool:
 
 def is_substantive_path(path: str) -> bool:
     """
-    Avalua si una ruta de fitxer dins del repositori representa un canvi
-    real de dades del dataset (no purament de metadades/documentació).
+    Decideix si un fitxer és dades reals (i no metadada), en aquest ordre:
 
-    Ordre de decisió (defensa en profunditat -- vegeu el comentari sobre
-    el calibratge empíric a `NON_SUBSTANTIVE_PATH_PREFIXES`):
-    1. Prefix de ruta a `NON_SUBSTANTIVE_PATH_PREFIXES` -> NO substantiu,
-       independentment de l'extensió (p.e. un `.parquet` sota `meta/` és
-       metadada, no dades -- comprovat abans que l'extensió a propòsit).
-    2. Nom exacte a `NON_SUBSTANTIVE_FILES`, o acaba amb una extensió de
-       `NON_SUBSTANTIVE_EXTENSIONS` -> NO substantiu.
-    3. Acaba amb una extensió de `SUBSTANTIVE_DATA_EXTENSIONS` ->
-       substantiu.
-    4. Qualsevol altre cas (p.e. `.json`/`.txt` fora de `meta/`, o una
-       extensió no prevista) -> substantiu per defecte.
+    1. Prefix a `NON_SUBSTANTIVE_PATH_PREFIXES` -> no (fins i tot un `.parquet`).
+    2. Nom a `NON_SUBSTANTIVE_FILES` o extensió a `NON_SUBSTANTIVE_EXTENSIONS` -> no.
+    3. Extensió a `SUBSTANTIVE_DATA_EXTENSIONS` -> sí.
+    4. Qualsevol altre cas -> sí per defecte (registrat amb `log.debug`).
 
-    :param path: ruta relativa dins del repositori tal com la retorna
-        `git show --name-status` (p.e. `"data/chunk-000/file-000.parquet"`
-        o `"meta/info.json"`).
-    :return: `True` si la ruta sembla representar dades reals del dataset;
-        `False` si sembla metadada/documentació/configuració.
+    :param path: ruta relativa dins del repositori.
     """
     if path.startswith(NON_SUBSTANTIVE_PATH_PREFIXES):
         return False
@@ -482,11 +351,6 @@ def is_substantive_path(path: str) -> bool:
     if basename.endswith(NON_SUBSTANTIVE_EXTENSIONS):
         return False
     if not basename.endswith(SUBSTANTIVE_DATA_EXTENSIONS):
-        # Extensió no prevista a cap de les dues llistes (p.e. `.json`/
-        # `.txt` fora de `meta/`, o un format nou): es tracta com a
-        # substantiu per defecte (fail-open), però es registra perquè es
-        # pugui revisar i, si cal, ampliar les llistes amb dades reals en
-        # lloc d'endevinar-les -- cap llista pot ser mai completa.
         log.debug(f"is_substantive_path: extensió no classificada, fail-open: {path}")
 
     return True
@@ -495,27 +359,14 @@ def is_substantive_path(path: str) -> bool:
 @contextmanager
 def bare_clone(dataset_id: str) -> Iterator[str | None]:
     """
-    Clona el repositori d'un dataset en mode "bare" i amb filtratge de
-    blobs (`git clone --bare --filter=blob:none`): NOMÉS l'historial de
-    git (commits, arbres, noms de fitxer), mai el contingut real dels
-    fitxers (les dades LFS no es descarreguen). El token es passa via
-    variables d'entorn de configuració de git (`GIT_CONFIG_KEY_0`/
-    `_VALUE_0`), no com a argument de la comanda, perquè no aparegui al
-    llistat de processos (`ps aux`) d'altres usuaris de la mateixa
-    màquina -- els fitxers de `/proc/<pid>/environ` només són llegibles
-    pel mateix usuari (o root), a diferència de `argv`.
+    Clona el repositori amb `git clone --bare --filter=blob:none`: només
+    l'historial (commits, arbres, noms de fitxer), cap contingut. El token
+    va per variables d'entorn de git, no a la línia d'ordres, perquè no
+    surti a `ps`. El directori temporal s'esborra en sortir.
 
-    :param dataset_id: identificador del dataset, format `owner/name`.
-    :yield: ruta absoluta (str) al directori clonat, o `None` si el
-        clonatge ha fallat (git no instal·lat, timeout, dataset no
-        accessible via git tot i ser-ho via l'API REST, etc.) -- en
-        aquest cas el cridant ha de recórrer a l'heurística de títol
-        (`is_substantive_commit`). El directori temporal s'esborra sempre
-        en sortir del context, amb èxit o amb fallada. Si `git` no és al
-        `PATH` (`FileNotFoundError`, subclasse d'`OSError`), es registra
-        un `log.error` UN SOL COP per procés (`_git_missing_warned`) en
-        lloc d'un cop per dataset, perquè el problema sigui visible als
-        logs sense inundar-los durant un escaneig de milers de datasets.
+    :param dataset_id: dataset (`owner/name`).
+    :yield: ruta del clon, o `None` si ha fallat (el cridant recorre a
+        l'heurística de títol). Si falta `git`, s'avisa un sol cop per procés.
     """
     global _git_missing_warned
 
@@ -554,16 +405,10 @@ def bare_clone(dataset_id: str) -> Iterator[str | None]:
 
 def get_changed_files(clone_dir: str, commit_sha: str) -> list[str] | None:
     """
-    Obté la llista de fitxers afegits/modificats/eliminats per un commit,
-    a partir d'un clonatge "bare" ja fet (vegeu `bare_clone`), sense cap
-    crida addicional a l'API de HF (tot és local un cop clonat).
+    Fitxers tocats per un commit (`git show --name-status`), en local sobre
+    el clon bare.
 
-    :param clone_dir: directori d'un clonatge "bare" ja fet.
-    :param commit_sha: hash del commit a inspeccionar.
-    :return: llista de rutes (`str`) afectades pel commit (`git show
-        --name-status <sha>`), o `None` si la crida a `git` falla (sha no
-        trobat, timeout, error de git) -- el cridant hauria de recórrer a
-        l'heurística de títol en aquest cas.
+    :return: llista de rutes, o `None` si `git` falla.
     """
     try:
         result = subprocess.run(
@@ -588,20 +433,13 @@ def get_changed_files(clone_dir: str, commit_sha: str) -> list[str] | None:
 
 def determine_commit_substantive_with_paths(commit, clone_dir: str | None) -> tuple[bool, list[str] | None]:
     """
-    Com `determine_commit_substantive`, però retorna també els camins
-    canviats -- evita una segona crida a `git show` quan el cridant
-    també necessita la llista de camins (p.e. `classify_dataset` amb
-    `classify_changes=True`, per triar quins fitxers tabulars classificar).
+    Un commit és substantiu si toca algun fitxer substantiu. Si no hi ha
+    clon o `git show` falla, s'usa l'heurística de títol.
 
-    :param commit: objecte commit (amb `.title` i `.commit_id`) tal com el
-        retorna `list_repo_commits`.
-    :param clone_dir: directori d'un clonatge "bare" ja fet (vegeu
-        `bare_clone`), o `None` si el clonatge ha fallat per aquest
-        dataset.
-    :return: tupla `(is_substantive, changed_paths)`. `changed_paths` és
-        `None` si no s'ha pogut obtenir (sense clonatge, o `git show` ha
-        fallat per aquest commit concret) -- en aquest cas `is_
-        substantive` ve de `is_substantive_commit(commit.title)`.
+    :param commit: commit de `list_repo_commits`.
+    :param clone_dir: clon bare, o `None`.
+    :return: `(és_substantiu, fitxers_tocats)`; `fitxers_tocats` és `None`
+        si s'ha fet servir l'heurística de títol.
     """
     if clone_dir is not None:
         changed_paths = get_changed_files(clone_dir, commit.commit_id)
@@ -612,24 +450,7 @@ def determine_commit_substantive_with_paths(commit, clone_dir: str | None) -> tu
 
 
 def determine_commit_substantive(commit, clone_dir: str | None) -> bool:
-    """
-    Decideix si un commit és substantiu, preferint la inspecció real dels
-    fitxers tocats i recorrent a l'heurística de títol
-    (`is_substantive_commit`) quan la primera no és disponible. Prima de
-    `determine_commit_substantive_with_paths` -- vegeu aquella funció si
-    també cal la llista de camins canviats.
-
-    :param commit: objecte commit (amb `.title` i `.commit_id`) tal com el
-        retorna `list_repo_commits`.
-    :param clone_dir: directori d'un clonatge "bare" ja fet (vegeu
-        `bare_clone`), o `None` si el clonatge ha fallat per aquest
-        dataset.
-    :return: si `clone_dir` no és `None` i `get_changed_files` retorna una
-        llista, `True` si almenys un fitxer tocat és substantiu segons
-        `is_substantive_path`. En qualsevol altre cas (sense clonatge, o
-        `git show` ha fallat per aquest commit concret), es recorre a
-        `is_substantive_commit(commit.title)`.
-    """
+    """Com `determine_commit_substantive_with_paths`, només el booleà."""
     return determine_commit_substantive_with_paths(commit, clone_dir)[0]
 
 
@@ -641,39 +462,15 @@ def classify_commit_tabular_changes(
     retry_config: dict,
 ) -> list[dict]:
     """
-    Classifica els canvis d'UN commit substantiu segons la taxonomia
-    (C210-C530, SENSE C100/metadada -- `classify_dataset(classify_
-    changes=True)` no vol classificar metadades). NOMÉS diferencia
-    contingut per als fitxers TABULARS (`change_diff.is_tabular_path`)
-    entre els que van canviar -- els fitxers binaris (àudio/vídeo/
-    tensors) ja compten per a l'elegibilitat via `is_substantive_path`,
-    però no tenen "columnes"/"files" a classificar.
+    Classifica una unitat de canvi: descarrega cada fitxer tabular canviat
+    (com a màxim `MAX_TABULAR_FILES_PER_COMMIT`) a les dues revisions i el
+    compara.
 
-    Cap de `MAX_TABULAR_FILES_PER_COMMIT` fitxers tabulars per commit
-    (primers `changed_paths`, en l'ordre que arriben de `git show`):
-    alguns datasets reals (p.e. formats "chunked" amb desenes de
-    fragments Parquet per commit, com `edinburghcstr/ami`) tocarien
-    desenes de fitxers en un sol commit -- classificar-los tots seria
-    desproporcionat (cada parell de descàrregues té un cost real, i
-    fragments del mateix commit solen representar el mateix tipus de
-    canvi repetit, p.e. "nou fragment de files" N cops). Limitació
-    coneguda: en un commit amb més fitxers tabulars que el cap, alguns
-    canvis (p.e. un canvi de tipus només en un fragment concret) podrien
-    no detectar-se -- mostra representativa, no exhaustiva.
-
-    :param dataset_id: identificador del dataset.
-    :param changed_paths: camins canviats en aquest commit (de
-        `determine_commit_substantive_with_paths`).
-    :param version_from: SHA del commit pare (versió anterior).
-    :param version_to: SHA d'aquest commit (versió posterior).
-    :param hf_token: token HF.
-    :param retry_config: mateix format que `RETRY_CONFIG` -- es passa
-        explícitament (mai un global de `change_diff.py`) perquè els
-        `--retry-*` d'aquest script també controlin les descàrregues de
-        contingut, no només `list_repo_refs`/`list_repo_commits`.
-    :return: llista de `dict` (via `dataclasses.asdict`), una entrada per
-        codi detectat en algun dels fitxers tabulars classificats -- `[]`
-        si cap fitxer tabular ha canviat en aquest commit.
+    :param changed_paths: fitxers tocats; els no tabulars s'ignoren.
+    :param version_from: SHA de la revisió anterior.
+    :param version_to: SHA de la revisió posterior.
+    :param retry_config: configuració de reintent (també per a les descàrregues).
+    :return: un `dict` (`ChangeLabel`) per codi detectat en algun fitxer.
     """
     labels = []
     tabular_paths = [p for p in changed_paths if change_diff.is_tabular_path(p)]
@@ -689,38 +486,26 @@ def group_substantive_commits_into_sessions(
     substantive_commits: list[tuple[int, object, list[str]]],
 ) -> list[list[tuple[int, object, list[str]]]]:
     """
-    Agrupa commits substantius en sessions de treball -- mateix criteri
-    que `cluster_commit_times` (un cop ordenats cronològicament, una
-    nova sessió comença quan dos commits consecutius estan separats per
-    més de `MIN_SUBSTANTIVE_GAP_HOURS`), però preservant l'associació
-    `(índex, commit, changed_paths)` que `cluster_commit_times` no porta
-    (aquella funció NOMÉS treballa amb `datetime` solts -- reutilitzada
-    igual per a l'elegibilitat, `has_time_dispersed_substantive_commits`,
-    i per a `version_extractor.build_sessions_from_commits`).
+    Agrupa commits substantius en sessions amb `cluster_commit_times`.
 
-    :param substantive_commits: `(índex a la llista completa de commits
-        de `classify_dataset`, commit, changed_paths)`, en ordre
-        NEWEST-FIRST (tal com els retorna `list_repo_commits` i els va
-        trobant `classify_dataset`). Els commits sense `created_at`
-        s'ignoren (no poden entrar a cap sessió temporal) -- mateix
-        comportament que `cluster_commit_times` amb els `None`.
-    :return: llista de sessions (cada sessió, una llista de triples,
-        també NEWEST-FIRST dins la sessió), ordenades NEWEST-FIRST (la
-        sessió `[0]` és la MÉS RECENT) -- llista buida si cap commit té
-        `created_at`.
+    :param substantive_commits: triples `(índex, commit, fitxers_tocats)`;
+        els commits sense `created_at` s'ignoren.
+    :return: sessions de la més recent a la més antiga (sense ordre dins
+        de cada sessió).
     """
     dated = [t for t in substantive_commits if getattr(t[1], "created_at", None) is not None]
     if not dated:
         return []
 
-    sessions: list[list[tuple[int, object, list[str]]]] = [[dated[0]]]
-    for triple in dated[1:]:
-        prev_time = sessions[-1][-1][1].created_at
-        if (prev_time - triple[1].created_at) > timedelta(hours=MIN_SUBSTANTIVE_GAP_HOURS):
-            sessions.append([triple])
-        else:
-            sessions[-1].append(triple)
-    return sessions
+    by_time: dict[datetime, list[tuple[int, object, list[str]]]] = {}
+    for triple in dated:
+        by_time.setdefault(triple[1].created_at, []).append(triple)
+
+    time_clusters = cluster_commit_times([triple[1].created_at for triple in dated])
+    return [
+        [triple for t in time_cluster for triple in by_time[t]]
+        for time_cluster in reversed(time_clusters)
+    ]
 
 
 def classify_session_boundary_tabular_changes(
@@ -728,32 +513,12 @@ def classify_session_boundary_tabular_changes(
     retry_config: dict,
 ) -> list[dict]:
     """
-    Classifica els canvis d'un dataset Criteri B (sessions) entre LÍMITS
-    DE SESSIÓ, no entre cada parell de commits consecutius: reutilitza
-    el mateix agrupament que decideix l'elegibilitat
-    (`group_substantive_commits_into_sessions`), perquè el "canvi" es
-    compti amb la mateixa unitat que la "versió" -- els commits DINS de
-    la mateixa sessió no generen cap diff propi.
+    Classificació per al Criteri B: per cada parell de sessions consecutives
+    compara el commit més recent de cada una, sobre la unió dels fitxers
+    tocats a la sessió posterior. Els commits dins d'una sessió no es
+    comparen entre ells.
 
-    Per cada parell de sessions consecutives, es compara el commit MÉS
-    RECENT de la sessió posterior contra el commit MÉS RECENT de la
-    sessió anterior -- els `changed_paths` a comparar són la UNIÓ de tots
-    els fitxers canviats en QUALSEVOL commit de la sessió posterior (tots
-    els commits substantius entre els dos límits de sessió pertanyen, per
-    construcció, a la sessió posterior). La sessió MÉS ANTIGA mai genera
-    cap etiqueta (no hi ha cap sessió anterior amb qui comparar-la) --
-    mateixa simetria "N versions -> N-1 diffs" que ja s'aplica als tags.
-
-    :param dataset_id: identificador del dataset.
-    :param substantive_commits: mateix format que `group_substantive_
-        commits_into_sessions`.
-    :param hf_token: token HF.
-    :param retry_config: mateix format que `RETRY_CONFIG`.
-    :return: llista de `dict` (via `dataclasses.asdict`), acumulada de
-        cridar `classify_commit_tabular_changes` un cop per límit de
-        sessió (reutilitzat sense canvis -- el cap `MAX_TABULAR_FILES_
-        PER_COMMIT` hi segueix aplicant-se igual, ara sobre la unió de
-        fitxers de tota la sessió en lloc d'un sol commit).
+    :return: etiquetes acumulades de `classify_commit_tabular_changes`.
     """
     sessions = group_substantive_commits_into_sessions(substantive_commits)
     if len(sessions) < 2:
@@ -761,8 +526,8 @@ def classify_session_boundary_tabular_changes(
 
     labels: list[dict] = []
     for newer_session, older_session in zip(sessions, sessions[1:]):
-        version_to_commit = newer_session[0][1]
-        version_from_commit = older_session[0][1]
+        version_to_commit = max(newer_session, key=lambda triple: triple[1].created_at)[1]
+        version_from_commit = max(older_session, key=lambda triple: triple[1].created_at)[1]
         changed_paths = sorted({path for _, _, paths in newer_session for path in paths})
         labels.extend(
             classify_commit_tabular_changes(
@@ -777,43 +542,24 @@ def has_time_dispersed_substantive_commits(
     commit_times: list[datetime | None], min_gap_hours: float = MIN_SUBSTANTIVE_GAP_HOURS
 ) -> bool:
     """
-    Determina si una llista de dates de commits substantius (segons
-    `is_substantive_commit`) representa actualitzacions prou separades en
-    el temps per considerar-se "versions" diferenciades, en lloc d'una
-    única sessió de pujada/creació.
+    Condició temporal del Criteri B: les dates formen >=2 sessions.
 
-    :param commit_times: dates (`datetime`) dels commits ja considerats
-        substantius, en qualsevol ordre. Els elements `None` (l'API no
-        sempre proporciona `created_at`) s'ignoren.
-    :param min_gap_hours: separació mínima, en hores, exigida entre el
-        commit substantiu més antic i el més recent de la llista.
-    :return: `True` si hi ha almenys 2 dates vàlides I la diferència entre
-        la més antiga i la més recent és >= `min_gap_hours`; `False` en
-        cas contrari (incloent-hi el cas de menys de 2 dates vàlides).
+    :param commit_times: dates dels commits substantius (`None` s'ignoren).
+    :param min_gap_hours: buit mínim entre sessions.
     """
-    valid_times = [t for t in commit_times if t is not None]
-    if len(valid_times) < 2:
-        return False
-
-    span = max(valid_times) - min(valid_times)
-    return span >= timedelta(hours=min_gap_hours)
+    return len(cluster_commit_times(commit_times, gap_hours=min_gap_hours)) >= 2
 
 
 def cluster_commit_times(
     commit_times: list[datetime | None], gap_hours: float = MIN_SUBSTANTIVE_GAP_HOURS
 ) -> list[list[datetime]]:
     """
-    Agrupa dates de commits en "sessions" de treball diferenciades: un cop
-    ordenades, una nova sessió comença quan dos commits consecutius estan
-    separats per més de `gap_hours` hores. Funció pura, sense crides a
-    l'API
+    Agrupa dates en sessions: ordenades, una sessió nova comença quan dos
+    commits consecutius estan separats per MÉS de `gap_hours`. És l'única
+    definició de sessió del pipeline (la fan servir les Fases 0, 1 i 2).
 
-    :param commit_times: dates (`datetime`) en qualsevol ordre; els
-        elements `None` s'ignoren.
-    :param gap_hours: buit mínim, en hores, entre dos commits consecutius
-        perquè es considerin sessions diferents.
-    :return: llista de llistes de `datetime`, cadascuna una sessió,
-        ordenades cronològicament; llista buida si no hi ha cap data vàlida.
+    :param commit_times: dates en qualsevol ordre; `None` s'ignoren.
+    :return: sessions en ordre cronològic.
     """
     valid_times = sorted(t for t in commit_times if t is not None)
     if not valid_times:
@@ -830,19 +576,11 @@ def cluster_commit_times(
 
 def classify_dataset_safe(args: tuple) -> dict | None:
     """
-    Wrapper de `classify_dataset` segur per a execució paral·lela amb
-    `ThreadPoolExecutor`: captura qualsevol excepció NO prevista per
-    `classify_dataset` (que ja gestiona internament els errors esperats
-    de l'API) perquè un fallo inesperat en un thread no aturi tot el pool.
+    `classify_dataset` per al pool de threads: captura qualsevol excepció
+    no prevista perquè no aturi el pool.
 
-    :param args: tupla ``(idx, dataset_id, tags_only)`` on ``idx`` és un
-        índex només per a fins de logging (identificar quin element del
-        lot ha fallat), ``dataset_id`` és l'id a classificar i
-        ``tags_only`` es passa tal qual a `classify_dataset`.
-    :return: el `dict` retornat per `classify_dataset`, o `None` si s'ha
-        capturat una excepció inesperada (es registra amb `log.warning`;
-        el cridant (`run_sampling`) descarta les files `None` del resultat
-        final).
+    :param args: `(idx, dataset_id, tags_only)`.
+    :return: la fila, o `None` si hi ha hagut una excepció inesperada.
     """
     idx, dataset_id, tags_only = args
     try:
@@ -859,20 +597,13 @@ def classify_dataset_safe(args: tuple) -> dict | None:
 @dataclass(frozen=True)
 class FunnelCounts:
     """
-    Recompte brut d'un escaneig/mostreig, abans de calcular proporcions.
-    Entrada de `compute_funnel_stats`.
+    Recomptes bruts d'una execució.
 
-    :ivar total_scanned: mida de la població escanejada durant la Fase 1
-        (reservoir sampling), no la mida de la mostra classificada.
-    :ivar eligible: nombre de datasets classificats amb èxit i elegibles
-        (Criteri A o B).
-    :ivar ineligible: nombre de datasets classificats amb èxit però NO
-        elegibles.
-    :ivar access_restricted: nombre de datasets amb `status ==
-        "access_restricted"` (403; vegeu "DISSENY: 403" a `errors.py`).
-    :ivar errors: nombre de datasets amb `status == "error"` (qualsevol
-        altra fallada definitiva: 429 esgotat, 404, transitori esgotat,
-        desconegut).
+    :ivar total_scanned: mida de la població recorreguda.
+    :ivar eligible: classificats amb èxit i elegibles.
+    :ivar ineligible: classificats amb èxit i no elegibles.
+    :ivar access_restricted: 403.
+    :ivar errors: qualsevol altra fallada definitiva.
     """
 
     total_scanned: int
@@ -884,35 +615,15 @@ class FunnelCounts:
 
 def compute_funnel_stats(counts: FunnelCounts) -> dict:
     """
-    Calcula les mètriques agregades de l'embut d'elegibilitat amb els
-    denominadors correctes.
+    Mètriques de l'embut.
 
-    `eligible_proportion` EXCLOU els datasets amb accés restringit i els que
-    han fallat definitivament (errors) del denominador, ja que cap dels dos
-    representa una classificació d'elegibilitat vàlida: incloure'ls
-    esbiaixa a la baixa l'estimació de la proporció real d'elegibles (era
-    exactament el bug abans d'aquest disseny: `errors` es comptava dins
-    del `total` usat per calcular la proporció).
+    - `eligible_proportion`: elegibles / classificats amb èxit (sense 403
+      ni errors al denominador).
+    - `eligible_proportion_of_attempts`: elegibles / tots els intents.
+    - `estimated_eligible_in_population`: extrapolació a `total_scanned`,
+      assumint que els inaccessibles tenen la mateixa proporció.
 
-    `eligible_proportion_of_attempts` és una mètrica secundària que SÍ
-    inclou tots els intents (útil per veure quin percentatge de la mostra
-    es pot classificar amb èxit, és a dir, la taxa d'èxit de l'scan).
-
-    `estimated_eligible_in_population` extrapola `eligible_proportion` a
-    tota la població escanejada (`total_scanned`), assumint que els
-    datasets amb accés restringit o error tenen, en proporció,
-    elegibilitat similar als que sí s'han pogut classificar (amenaça a la
-    validesa a documentar a la memòria: no hi ha manera de verificar-ho
-    sense poder-hi accedir).
-
-    :param counts: recompte brut (`FunnelCounts`) d'un escaneig o mostreig.
-    :return: diccionari amb les claus ``eligible``, ``ineligible``,
-        ``access_restricted``, ``errors`` (còpia directa dels camps de
-        `counts`), més les mètriques derivades ``eligible_proportion``,
-        ``eligible_proportion_of_attempts`` i
-        ``estimated_eligible_in_population`` descrites més amunt. Totes
-        les proporcions retornen ``0.0``/``0`` (en lloc de llançar
-        `ZeroDivisionError`) quan el denominador corresponent és 0.
+    :return: els recomptes més les tres mètriques (0 si el denominador és 0).
     """
     denom_valid = counts.eligible + counts.ineligible
     denom_attempts = denom_valid + counts.access_restricted + counts.errors
@@ -935,16 +646,10 @@ def compute_funnel_stats(counts: FunnelCounts) -> dict:
 
 def get_next_run_id(output_dir: str, sample_size: int) -> int:
     """
-    Determina el següent número de run per a un `sample_size` donat,
-    inspeccionant els fitxers `funnel_summary_<sample_size>_<run_id>.json`
-    ja existents a `output_dir`, perquè cada execució amb la mateixa mida
-    de mostra generi sortides numerades sense sobreescriure les anteriors.
+    Següent número de run per a aquest `sample_size`, a partir dels
+    `funnel_summary_<sample_size>_<id>.json` existents.
 
-    :param output_dir: directori on es guarden els resultats (`OUTPUT_DIR`).
-    :param sample_size: mida de mostra de l'execució actual; només es
-        consideren els fitxers amb aquest `sample_size` al nom.
-    :return: el `run_id` més alt trobat + 1 (o ``1`` si no hi ha cap
-        fitxer previ amb aquest `sample_size`).
+    :return: id més alt + 1 (1 si no n'hi ha cap).
     """
     max_id = 0
     prefix = f"funnel_summary_{sample_size}_"
@@ -964,31 +669,14 @@ def get_next_run_id(output_dir: str, sample_size: int) -> int:
 
 def write_results(rows: list[dict], run_id: int, sample_size: int, total_scanned: int) -> tuple[str, str, dict]:
     """
-    Escriu el CSV amb una fila per dataset classificat i el JSON amb el
-    resum agregat de l'embut d'elegibilitat.
+    Escriu el report per dataset (CSV, sense `change_labels`) i el resum de
+    l'embut (JSON).
 
-    :param rows: llista de diccionaris retornats per `classify_dataset`
-        (un per dataset classificat amb èxit dins del pool de threads; les
-        entrades `None` de `classify_dataset_safe` ja s'han filtrat abans
-        de cridar aquesta funció).
-    :param run_id: número de run (de `get_next_run_id`), s'incorpora al
-        nom dels fitxers de sortida per no sobreescriure execucions
-        prèvies amb el mateix `sample_size`.
-    :param sample_size: mida de mostra sol·licitada (s'incorpora al nom
-        dels fitxers de sortida; pot diferir de ``len(rows)`` si la
-        població real era més petita que la mostra sol·licitada).
-    :param total_scanned: mida de la població escanejada a la Fase 1
-        (reservoir sampling), usada com a denominador per a
-        `estimated_eligible_in_population`.
-    :return: tupla ``(csv_path, json_path, summary)`` on ``csv_path`` i
-        ``json_path`` són les rutes absolutes dels fitxers escrits
-        (`data/eligibility_report_<sample_size>_<run_id>.csv` i
-        `data/funnel_summary_<sample_size>_<run_id>.json`) i ``summary``
-        és el diccionari de resum (el mateix que s'escriu al JSON):
-        metadades de l'execució (`timestamp`, `sampling_method`,
-        `sample_size`, `population_scanned`), recomptes per criteri
-        (`eligible_total`, `eligible_Criteri_A`, `eligible_Criteri_B`) i
-        totes les mètriques de `compute_funnel_stats`.
+    :param rows: files de `classify_dataset`.
+    :param run_id: número de run.
+    :param sample_size: mida demanada (va al nom dels fitxers).
+    :param total_scanned: mida de la població recorreguda.
+    :return: `(csv_path, json_path, summary)`.
     """
     df = pd.DataFrame(rows)
 
@@ -1035,34 +723,14 @@ def run_sampling(
     sample_size: int, max_scanned: int | None, num_threads: int, tags_only: bool = False
 ) -> tuple[str, str, dict]:
     """
-    Orquestrador principal: executa l'embut complet en tres fases --
-    (1) reservoir sampling sobre tota la població, (2) classificació
-    paral·lela de la mostra amb `classify_dataset_safe`, (3) escriptura
-    de resultats amb `write_results` -- i n'imprimeix un resum per
-    consola. NOMÉS fa mostreig/elegibilitat -- mai classifica canvis
-    (vegeu `run_classification`, i `notebooks/run_pipeline.py` per
-    l'orquestrador que encadena totes les fases del pipeline).
+    Fase 0 completa: mostreig, classificació d'elegibilitat en paral·lel i
+    escriptura de resultats. No classifica canvis.
 
-    :param sample_size: mida de la mostra a classificar (mida del
-        reservori; vegeu `reservoir_sample_dataset_ids`).
-    :param max_scanned: límit opcional de datasets a escanejar a la Fase 1
-        (proves ràpides, esbiaixat). ``None`` per a un mostreig complet i
-        no esbiaixat (recomanat per a l'estimació principal).
-    :param num_threads: nombre de threads del `ThreadPoolExecutor` per a
-        la Fase 2 (classificació). Més threads = més paral·lelisme però
-        més pressió sobre l'API i més risc de 429 (vegeu "DISSENY: 429" a
-        `errors.py`).
-    :param tags_only: es passa tal qual a `classify_dataset` per a cada
-        dataset de la mostra (vegeu la documentació d'aquest paràmetre a
-        `classify_dataset`).
-    :return: tupla ``(csv_path, json_path, summary)``, el mateix que
-        retorna `write_results` -- perquè un cridant (p.e. `run_pipeline.
-        run_full_pipeline`) pugui encadenar altres fases amb el mateix CSV
-        sense re-derivar-ne la ruta. Efectes: escriu `data/eligibility_
-        report_*.csv` i `data/funnel_summary_*.json` (via `write_results`),
-        pot escriure `data/failures.csv` (via `classify_dataset`/`errors.
-        append_failure_row` per cada fallada), i imprimeix un resum de
-        l'embut per consola.
+    :param sample_size: mida de la mostra.
+    :param max_scanned: límit de població a recórrer (proves).
+    :param num_threads: threads per a la classificació.
+    :param tags_only: es passa a `classify_dataset`.
+    :return: `(csv_path, json_path, summary)` de `write_results`.
     """
     log.info(f"FASE 1: Reservoir sampling (objectiu={sample_size}, max_scanned={max_scanned})")
     dataset_ids, total_scanned = reservoir_sample_dataset_ids(
@@ -1104,7 +772,7 @@ def run_sampling(
 
 
 def _next_classification_run_id(output_dir: str) -> int:
-    """Anàleg a `get_next_run_id`, per al patró `change_classification_<run_id>.csv`."""
+    """Com `get_next_run_id`, per a `change_classification_<id>.csv`."""
     prefix = "change_classification_"
     max_id = 0
     for filename in os.listdir(output_dir):
@@ -1116,19 +784,14 @@ def _next_classification_run_id(output_dir: str) -> int:
     return max_id + 1
 
 
-def run_classification(input_csv: str) -> None:
+def run_classification(input_csv: str) -> str:
     """
-    Classifica els canvis de cada dataset elegible d'un `eligibility_report_*.csv`
-    ja generat, reutilitzant `classify_dataset(dataset_id, classify_changes=True)` --
-    MAI es crida amb aquest paràmetre durant `run_sampling` (l'escaneig
-    poblacional es manté igual de barat, vegeu la docstring de
-    `classify_dataset`).
+    Fase 2: classifica els canvis de cada dataset elegible del CSV amb
+    `classify_dataset(..., classify_changes=True)`.
 
-    :param input_csv: CSV de datasets elegibles (`eligibility_report_
-        *.csv`, amb columnes `dataset_id`/`eligible`).
-    :return: None. Efectes: escriu `data/change_classification_<run_id>.
-        csv` (columnes `dataset_id, version_from, version_to, code,
-        is_breaking`) i imprimeix un resum per consola.
+    :param input_csv: `eligibility_report_*.csv`.
+    :return: ruta de `change_classification_<id>.csv` (`dataset_id,
+        version_from, version_to, code, description, is_breaking`).
     """
     df = pd.read_csv(input_csv)
     eligible = df[df["eligible"] == True]  # noqa: E712
@@ -1149,6 +812,7 @@ def run_classification(input_csv: str) -> None:
     run_id = _next_classification_run_id(OUTPUT_DIR)
     output_csv = os.path.join(OUTPUT_DIR, f"change_classification_{run_id}.csv")
     out_df = pd.DataFrame(all_labels, columns=["dataset_id", "version_from", "version_to", "code", "is_breaking"])
+    out_df.insert(4, "description", out_df["code"].map(change_diff.CODE_DESCRIPTIONS))
     out_df.to_csv(output_csv, index=False, encoding="utf-8")
 
     print(f"\n{'=' * 65}")
@@ -1160,6 +824,8 @@ def run_classification(input_csv: str) -> None:
     print(f"{'=' * 65}")
     print(f"\n  CSV: {output_csv}\n")
 
+    return output_csv
+
 
 # ---------------------------------------------------------------------------
 # Punt d'entrada amb argparse
@@ -1167,19 +833,8 @@ def run_classification(input_csv: str) -> None:
 
 def parse_args() -> argparse.Namespace:
     """
-    Defineix i parseja els arguments de la CLI. Sense arguments, mostra
-    l'ajuda i surt (`sys.exit(0)`) en lloc d'executar amb els valors per
-    defecte, perquè una crida accidental sense arguments no encengui una
-    execució llarga per error. `-h`/`--help` ja el gestiona `argparse`
-    automàticament (no cal cap comprovació manual addicional).
-
-    Cada flag es documenta al seu `help=` (visible amb `--help`); no es
-    repeteix aquí per no duplicar-ho en dos llocs.
-
-    :return: `argparse.Namespace` amb tots els arguments parsejats
-        (`classify_eligible`, `tags_only`, `sample_size`, `max_scanned`,
-        `threads`, `seed`, `retry_max_attempts`, `retry_base_wait`,
-        `retry_max_wait`).
+    Arguments de la CLI. Sense cap argument mostra l'ajuda i surt, perquè
+    una crida accidental no engegui una execució llarga.
     """
     parser = argparse.ArgumentParser(
         description="Filtratge de datasets de HF mitjançant mostreig (reservoir sampling).",
