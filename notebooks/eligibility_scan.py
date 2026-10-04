@@ -28,7 +28,7 @@ import logging
 import subprocess
 import tempfile
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Iterable, Iterator
@@ -38,8 +38,9 @@ from dotenv import load_dotenv
 from tqdm import tqdm
 from huggingface_hub import HfApi, list_repo_commits, list_repo_refs
 
-import change_diff
 import errors
+from diffengine import pairs, units
+from diffengine.output import CHANGE_COLUMNS, legacy_frame
 from errors import ErrorCategory
 
 
@@ -197,8 +198,9 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
     :return: fila del report: `dataset_id`, `num_tags`, `num_branches`,
         `num_commits_substantive`, `eligible`, `eligibility_reason`,
         `status` (`classified`/`access_restricted`/`error`),
-        `error_category`, `error` (truncat a 120 caràcters) i
-        `change_labels` (`[]` si `classify_changes=False`).
+        `error_category`, `error` (truncat a 120 caràcters), `change_labels`
+        (una fila per canvi detectat) i `change_pairs` (estat de cada taula
+        comparada); totes dues `[]` si `classify_changes=False`.
     """
     result = {
         "dataset_id": dataset_id,
@@ -211,6 +213,7 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
         "error_category": "",
         "error": "",
         "change_labels": [],
+        "change_pairs": [],
     }
 
     try:
@@ -268,19 +271,21 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
 
             if classify_changes and substantive_commits:
                 if result["eligibility_reason"].startswith("Criteri B"):
-                    result["change_labels"] = classify_session_boundary_tabular_changes(
+                    changes, statuses = classify_session_boundary_tabular_changes(
                         dataset_id, substantive_commits, HF_TOKEN, RETRY_CONFIG,
                     )
+                    result["change_labels"] += changes
+                    result["change_pairs"] += statuses
                 else:
                     for i, commit, changed_paths in substantive_commits:
                         if i + 1 < len(commits):
                             parent_commit = commits[i + 1]
-                            result["change_labels"].extend(
-                                classify_commit_tabular_changes(
-                                    dataset_id, changed_paths, parent_commit.commit_id, commit.commit_id, HF_TOKEN,
-                                    RETRY_CONFIG,
-                                )
+                            changes, statuses = classify_commit_tabular_changes(
+                                dataset_id, changed_paths, parent_commit.commit_id, commit.commit_id, HF_TOKEN,
+                                RETRY_CONFIG,
                             )
+                            result["change_labels"] += changes
+                            result["change_pairs"] += statuses
 
         result["num_commits_substantive"] = num_commits_substantive
         if not result["eligible"]:
@@ -454,32 +459,25 @@ def determine_commit_substantive(commit, clone_dir: str | None) -> bool:
     return determine_commit_substantive_with_paths(commit, clone_dir)[0]
 
 
-MAX_TABULAR_FILES_PER_COMMIT = 5
-
-
 def classify_commit_tabular_changes(
     dataset_id: str, changed_paths: list[str], version_from: str, version_to: str, hf_token: str | None,
     retry_config: dict,
-) -> list[dict]:
+) -> tuple[list[dict], list[dict]]:
     """
-    Classifica una unitat de canvi: descarrega cada fitxer tabular canviat
-    (com a màxim `MAX_TABULAR_FILES_PER_COMMIT`) a les dues revisions i el
-    compara.
+    Classifica una unitat de canvi amb el motor v2 (`notebooks/diffengine`):
+    compara taula a taula (subset, split) les dues revisions. Si cap fitxer
+    tocat és tabular, no es consulta res.
 
-    :param changed_paths: fitxers tocats; els no tabulars s'ignoren.
+    :param changed_paths: fitxers tocats (del clon bare).
     :param version_from: SHA de la revisió anterior.
     :param version_to: SHA de la revisió posterior.
     :param retry_config: configuració de reintent (també per a les descàrregues).
-    :return: un `dict` (`ChangeLabel`) per codi detectat en algun fitxer.
+    :return: `(canvis, estats)`: una fila per canvi i una fila d'estat per taula.
     """
-    labels = []
-    tabular_paths = [p for p in changed_paths if change_diff.is_tabular_path(p)]
-    for path in tabular_paths[:MAX_TABULAR_FILES_PER_COMMIT]:
-        before_df = change_diff.download_tabular_file_at_revision(dataset_id, path, version_from, hf_token, retry_config)
-        after_df = change_diff.download_tabular_file_at_revision(dataset_id, path, version_to, hf_token, retry_config)
-        for label in change_diff.classify_file_change(dataset_id, before_df, after_df, version_from, version_to):
-            labels.append(asdict(label))
-    return labels
+    if not any(units.is_tabular_path(p) for p in changed_paths):
+        return [], []
+    compared = pairs.compare_revisions(dataset_id, version_from, version_to, hf_token, retry_config)
+    return pairs.revision_rows(dataset_id, version_from, version_to, compared)
 
 
 def group_substantive_commits_into_sessions(
@@ -511,31 +509,32 @@ def group_substantive_commits_into_sessions(
 def classify_session_boundary_tabular_changes(
     dataset_id: str, substantive_commits: list[tuple[int, object, list[str]]], hf_token: str | None,
     retry_config: dict,
-) -> list[dict]:
+) -> tuple[list[dict], list[dict]]:
     """
     Classificació per al Criteri B: per cada parell de sessions consecutives
     compara el commit més recent de cada una, sobre la unió dels fitxers
     tocats a la sessió posterior. Els commits dins d'una sessió no es
     comparen entre ells.
 
-    :return: etiquetes acumulades de `classify_commit_tabular_changes`.
+    :return: `(canvis, estats)` acumulats de `classify_commit_tabular_changes`.
     """
     sessions = group_substantive_commits_into_sessions(substantive_commits)
     if len(sessions) < 2:
-        return []
+        return [], []
 
     labels: list[dict] = []
+    statuses: list[dict] = []
     for newer_session, older_session in zip(sessions, sessions[1:]):
         version_to_commit = max(newer_session, key=lambda triple: triple[1].created_at)[1]
         version_from_commit = max(older_session, key=lambda triple: triple[1].created_at)[1]
         changed_paths = sorted({path for _, _, paths in newer_session for path in paths})
-        labels.extend(
-            classify_commit_tabular_changes(
-                dataset_id, changed_paths, version_from_commit.commit_id, version_to_commit.commit_id,
-                hf_token, retry_config,
-            )
+        changes, pair_statuses = classify_commit_tabular_changes(
+            dataset_id, changed_paths, version_from_commit.commit_id, version_to_commit.commit_id,
+            hf_token, retry_config,
         )
-    return labels
+        labels += changes
+        statuses += pair_statuses
+    return labels, statuses
 
 
 def has_time_dispersed_substantive_commits(
@@ -681,7 +680,7 @@ def write_results(rows: list[dict], run_id: int, sample_size: int, total_scanned
     df = pd.DataFrame(rows)
 
     csv_path = os.path.join(OUTPUT_DIR, f"eligibility_report_{sample_size}_{run_id}.csv")
-    df.drop(columns=["change_labels"], errors="ignore").to_csv(csv_path, index=False, encoding="utf-8")
+    df.drop(columns=["change_labels", "change_pairs"], errors="ignore").to_csv(csv_path, index=False, encoding="utf-8")
 
     total = len(rows)
     eligible = int(df["eligible"].sum())
@@ -787,17 +786,25 @@ def _next_classification_run_id(output_dir: str) -> int:
 def run_classification(input_csv: str) -> str:
     """
     Fase 2: classifica els canvis de cada dataset elegible del CSV amb
-    `classify_dataset(..., classify_changes=True)`.
+    `classify_dataset(..., classify_changes=True)` (motor v2).
+
+    Escriu, amb el mateix `<id>`:
+      - `changes_<id>.csv` i `.parquet`: una fila per canvi, amb columna,
+        subtipus, evidència i confiança.
+      - `change_pairs_<id>.csv`: estat de cada taula comparada.
+      - `change_classification_<id>.csv`: export compatible amb el CSV antic
+        (`dataset_id, version_from, version_to, file_path, code, description,
+        is_breaking`).
 
     :param input_csv: `eligibility_report_*.csv`.
-    :return: ruta de `change_classification_<id>.csv` (`dataset_id,
-        version_from, version_to, code, description, is_breaking`).
+    :return: ruta de `change_classification_<id>.csv`.
     """
     df = pd.read_csv(input_csv)
     eligible = df[df["eligible"] == True]  # noqa: E712
     log.info(f"Classificant canvis de {len(eligible)} datasets elegibles de {input_csv}...")
 
-    all_labels: list[dict] = []
+    all_changes: list[dict] = []
+    all_pairs: list[dict] = []
     n_failed = 0
     for _, row in eligible.iterrows():
         dataset_id = row["dataset_id"]
@@ -807,20 +814,26 @@ def run_classification(input_csv: str) -> str:
             n_failed += 1
             log.warning(f"    Fallada ({result['status']}): {dataset_id}")
             continue
-        all_labels.extend(result["change_labels"])
+        all_changes.extend(result["change_labels"])
+        all_pairs.extend(result["change_pairs"])
 
     run_id = _next_classification_run_id(OUTPUT_DIR)
+    changes = pd.DataFrame(all_changes, columns=CHANGE_COLUMNS)
+    changes.to_csv(os.path.join(OUTPUT_DIR, f"changes_{run_id}.csv"), index=False, encoding="utf-8")
+    changes.to_parquet(os.path.join(OUTPUT_DIR, f"changes_{run_id}.parquet"), index=False)
+    pd.DataFrame(all_pairs).to_csv(os.path.join(OUTPUT_DIR, f"change_pairs_{run_id}.csv"), index=False,
+                                   encoding="utf-8")
     output_csv = os.path.join(OUTPUT_DIR, f"change_classification_{run_id}.csv")
-    out_df = pd.DataFrame(all_labels, columns=["dataset_id", "version_from", "version_to", "code", "is_breaking"])
-    out_df.insert(4, "description", out_df["code"].map(change_diff.CODE_DESCRIPTIONS))
-    out_df.to_csv(output_csv, index=False, encoding="utf-8")
+    legacy_frame(changes).to_csv(output_csv, index=False, encoding="utf-8")
 
+    statuses = pd.Series([p.get("status") for p in all_pairs]).value_counts().to_dict()
     print(f"\n{'=' * 65}")
     print("  RESUM CLASSIFICACIÓ DE CANVIS")
     print(f"{'=' * 65}")
     print(f"  Datasets elegibles           {len(eligible)}")
     print(f"  Datasets fallats             {n_failed}")
-    print(f"  Etiquetes de canvi generades {len(all_labels)}")
+    print(f"  Taules comparades            {len(all_pairs)} {statuses}")
+    print(f"  Canvis detectats             {len(all_changes)}")
     print(f"{'=' * 65}")
     print(f"\n  CSV: {output_csv}\n")
 

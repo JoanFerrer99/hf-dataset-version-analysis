@@ -14,7 +14,7 @@ processen els datasets elegibles.
 Output: tot dins de `data/run_<id>/` (numerada, mai sobreescriu):
   eligibility_report_<N>_<k>.csv, funnel_summary_<N>_<k>.json (Fase 0)
   versions_<k>.csv (Fase 1)
-  change_classification_<k>.csv (Fase 2)
+  changes_<k>.csv/.parquet, change_pairs_<k>.csv, change_classification_<k>.csv (Fase 2)
   failures.csv (si hi ha fallades)
 Al final s'imprimeix la llista de fitxers generats per fase.
 """
@@ -125,6 +125,11 @@ def run_full_pipeline(
         change_classification_csv = es.run_classification(eligibility_csv)
         outputs["change_classification_csv"] = change_classification_csv
         generated_files["Fase 2 (classificació de canvis)"].append(change_classification_csv)
+        folder, name = os.path.split(change_classification_csv)
+        suffix = name[len("change_classification_"):-len(".csv")]
+        for sibling in (f"changes_{suffix}.csv", f"changes_{suffix}.parquet", f"change_pairs_{suffix}.csv"):
+            if os.path.exists(os.path.join(folder, sibling)):
+                generated_files["Fase 2 (classificació de canvis)"].append(os.path.join(folder, sibling))
 
     if os.path.exists(es.FAILURES_LOG_PATH):
         generated_files["Fallades (totes les fases)"] = [es.FAILURES_LOG_PATH]

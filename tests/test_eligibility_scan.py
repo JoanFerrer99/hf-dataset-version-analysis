@@ -649,55 +649,24 @@ class TestDetermineCommitSubstantiveWithPaths:
 # ---------------------------------------------------------------------------
 
 class TestClassifyCommitTabularChanges:
-    def test_ignores_non_tabular_paths(self, monkeypatch):
-        monkeypatch.setattr(es.change_diff, "is_tabular_path", lambda path: False)
-        labels = es.classify_commit_tabular_changes("org/ds", ["video.mp4"], "sha1", "sha2", "tok", es.RETRY_CONFIG)
-        assert labels == []
+    """Fase 2 amb el motor v2: es compara taula a taula amb `diffengine.pairs`."""
 
-    def test_classifies_tabular_path_changes(self, monkeypatch):
-        import pandas as pd
+    @staticmethod
+    def _fake_pair(status="ok", result=None):
+        from diffengine.pairs import UnitPair
 
-        before_df = pd.DataFrame({"a": [1, 2]})
-        after_df = pd.DataFrame({"a": [1, 2], "b": [3, 4]})
+        return UnitPair("default/train", ("data/train.csv",), ("data/train.csv",), status=status, result=result)
 
-        monkeypatch.setattr(es.change_diff, "is_tabular_path", lambda path: path.endswith(".csv"))
-        monkeypatch.setattr(
-            es.change_diff, "download_tabular_file_at_revision",
-            lambda repo_id, path, revision, token, retry_config: before_df if revision == "sha1" else after_df,
-        )
+    def test_commit_without_tabular_files_makes_no_hub_calls(self, monkeypatch):
+        def must_not_be_called(*a, **kw):
+            raise AssertionError("no s'havia de consultar el Hub")
 
-        labels = es.classify_commit_tabular_changes(
-            "org/ds", ["data/file.csv"], "sha1", "sha2", "tok", es.RETRY_CONFIG
-        )
+        monkeypatch.setattr(es.pairs, "compare_revisions", must_not_be_called)
+        assert es.classify_commit_tabular_changes(
+            "org/ds", ["video.mp4", "README.md"], "sha1", "sha2", "tok", es.RETRY_CONFIG) == ([], [])
 
-        assert len(labels) == 1
-        assert labels[0]["code"] == "C221"
-        assert labels[0]["dataset_id"] == "org/ds"
-        assert labels[0]["version_from"] == "sha1"
-        assert labels[0]["version_to"] == "sha2"
-        assert isinstance(labels[0], dict)  # dataclasses.asdict, no ChangeLabel
-
-    def test_no_signal_produces_no_labels(self, monkeypatch):
-        import pandas as pd
-
-        df = pd.DataFrame({"a": [1, 2]})
-        monkeypatch.setattr(es.change_diff, "is_tabular_path", lambda path: True)
-        monkeypatch.setattr(es.change_diff, "download_tabular_file_at_revision", lambda *a, **kw: df)
-
-        labels = es.classify_commit_tabular_changes(
-            "org/ds", ["data/file.csv"], "sha1", "sha2", "tok", es.RETRY_CONFIG
-        )
-        assert labels == []
-
-    def test_real_binary_extensions_never_reach_download_or_classification(self, monkeypatch):
-        # Reforç demanat pel director (feedback de reunió): confirmar amb
-        # `is_tabular_path` REAL (no monkeypatched) que els fitxers binaris
-        # (àudio/vídeo/tensors -- SUBSTANTIVE_DATA_EXTENSIONS a `eligibility_
-        # scan.py`, que SÍ compten per a l'elegibilitat) mai arriben a
-        # `download_tabular_file_at_revision`/classificació. Espia que fa
-        # fallar el test si es crida per a QUALSEVOL path binari.
-        import pandas as pd
-
+    def test_real_binary_extensions_never_reach_the_engine(self, monkeypatch):
+        # Feedback del director: els binaris compten per a l'elegibilitat, però mai es classifiquen.
         binary_paths = [
             "audio/sample.wav", "audio/sample.mp3", "audio/sample.flac",
             "video/clip.mp4", "video/clip.avi", "video/clip.mov",
@@ -705,50 +674,38 @@ class TestClassifyCommitTabularChanges:
             "tensors/weights.safetensors", "tensors/array.npy", "tensors/array.npz",
             "archive/data.tar.gz", "archive/data.zip",
         ]
-        # Confirma que aquests paths SÍ compten per a l'elegibilitat (substantius)
-        # -- el punt del test és que compten per elegibilitat PERÒ mai es classifiquen.
         assert all(es.is_substantive_path(p) for p in binary_paths)
-
-        tabular_paths = ["data/train.csv", "data/test.parquet"]
-        df = pd.DataFrame({"a": [1]})
-
-        def _download_spy(repo_id, path, revision, token, retry_config):
-            assert path in tabular_paths, f"download cridat per a un path NO tabular: {path}"
-            return df
-
-        monkeypatch.setattr(es.change_diff, "download_tabular_file_at_revision", _download_spy)
-
-        # change_diff.is_tabular_path REAL (sense monkeypatch): confirma que
-        # NOMÉS els paths tabulars arriben a classificar-se, mai els binaris.
-        labels = es.classify_commit_tabular_changes(
-            "org/ds", binary_paths + tabular_paths, "sha1", "sha2", "tok", es.RETRY_CONFIG
-        )
-        # Amb before==after (mateix "df" a totes dues bandes) no hi ha senyal
-        # -- el que importa aquí és que l'espia no ha llençat cap AssertionError.
-        assert labels == []
-
-    def test_caps_tabular_files_classified_per_commit(self, monkeypatch):
-        # Datasets "chunked" (p.e. edinburghcstr/ami) poden tocar desenes
-        # de fragments Parquet en un sol commit -- confirmat en una
-        # execució real. Només se'n classifiquen els primers
-        # MAX_TABULAR_FILES_PER_COMMIT, no tots.
-        import pandas as pd
-
         calls = []
+        monkeypatch.setattr(es.pairs, "compare_revisions", lambda *a, **kw: calls.append(a) or [])
+        es.classify_commit_tabular_changes("org/ds", binary_paths, "sha1", "sha2", "tok", es.RETRY_CONFIG)
+        assert calls == []
+        es.classify_commit_tabular_changes("org/ds", binary_paths + ["data/train.csv"], "sha1", "sha2", "tok",
+                                           es.RETRY_CONFIG)
+        assert len(calls) == 1
 
-        def fake_download(repo_id, path, revision, token, retry_config):
-            calls.append((path, revision))
-            return pd.DataFrame({"a": [1, 2]})
+    def test_returns_one_row_per_change_and_one_status_per_table(self, monkeypatch):
+        from diffengine.output import Change, DiffResult
 
-        many_paths = [f"data/chunk-{i:03d}.parquet" for i in range(20)]
-        monkeypatch.setattr(es.change_diff, "is_tabular_path", lambda path: True)
-        monkeypatch.setattr(es.change_diff, "download_tabular_file_at_revision", fake_download)
+        result = DiffResult("ok", [Change("C221", column="b", subtype="unexplained")])
+        monkeypatch.setattr(es.pairs, "compare_revisions", lambda *a, **kw: [self._fake_pair(result=result)])
 
-        es.classify_commit_tabular_changes("org/ds", many_paths, "sha1", "sha2", "tok", es.RETRY_CONFIG)
+        changes, statuses = es.classify_commit_tabular_changes(
+            "org/ds", ["data/train.csv"], "sha1", "sha2", "tok", es.RETRY_CONFIG)
 
-        distinct_paths = {path for path, _ in calls}
-        assert len(distinct_paths) == es.MAX_TABULAR_FILES_PER_COMMIT
-        assert distinct_paths == set(many_paths[: es.MAX_TABULAR_FILES_PER_COMMIT])
+        assert len(changes) == 1
+        assert changes[0]["code"] == "C221"
+        assert (changes[0]["repo_id"], changes[0]["old_rev"], changes[0]["new_rev"]) == ("org/ds", "sha1", "sha2")
+        assert changes[0]["file_path"] == "data/train.csv"
+        assert [s["status"] for s in statuses] == ["ok"]
+
+    def test_download_failure_gives_a_status_and_no_changes(self, monkeypatch):
+        monkeypatch.setattr(es.pairs, "compare_revisions", lambda *a, **kw: [self._fake_pair("download_failed")])
+
+        changes, statuses = es.classify_commit_tabular_changes(
+            "org/ds", ["data/train.csv"], "sha1", "sha2", "tok", es.RETRY_CONFIG)
+
+        assert changes == []
+        assert [s["status"] for s in statuses] == ["download_failed"]
 
 
 # ---------------------------------------------------------------------------
@@ -783,7 +740,7 @@ class TestClassifyDatasetWithChangeClassification:
         monkeypatch.setattr(es, "list_repo_commits", lambda **kw: commits)
         monkeypatch.setattr(es, "bare_clone", _fake_git_clone)
         monkeypatch.setattr(es, "get_changed_files", lambda clone_dir, sha: ["data/file.parquet"])
-        monkeypatch.setattr(es, "classify_commit_tabular_changes", lambda *a, **kw: [])
+        monkeypatch.setattr(es, "classify_commit_tabular_changes", lambda *a, **kw: ([], []))
         monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
 
         result = es.classify_dataset("org/ds", classify_changes=True)
@@ -800,8 +757,8 @@ class TestClassifyDatasetWithChangeClassification:
 
         def fake_classify(dataset_id, changed_paths, version_from, version_to, hf_token, retry_config):
             calls.append((version_from, version_to))
-            return [{"dataset_id": dataset_id, "version_from": version_from, "version_to": version_to,
-                      "code": "C421", "is_breaking": False}]
+            return ([{"repo_id": dataset_id, "old_rev": version_from, "new_rev": version_to, "code": "C421"}],
+                    [{"status": "ok"}])
 
         monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1", "v2"]))
         monkeypatch.setattr(es, "list_repo_commits", lambda **kw: commits)
@@ -818,8 +775,23 @@ class TestClassifyDatasetWithChangeClassification:
         assert calls == [("c1", "c2")]
         assert len(result["change_labels"]) == 1
         assert result["change_labels"][0]["code"] == "C421"
+        assert result["change_pairs"] == [{"status": "ok"}]
 
     def test_classify_changes_never_produces_c100(self, monkeypatch, tmp_path):
+        # Un canvi de format (CSV -> parquet) seria C100, que és fora d'abast.
+        import io
+
+        import pandas as pd
+
+        from diffengine.engine import diff_bytes
+        from diffengine.pairs import UnitPair
+
+        df = pd.DataFrame({"a": range(30), "b": ["x", "y", "z"] * 10})
+        buf = io.BytesIO()
+        df.to_parquet(buf, index=False)
+        result = diff_bytes(df.to_csv(index=False).encode(), ".csv", buf.getvalue(), ".parquet")
+        pair = UnitPair("default/train", ("data.csv",), ("data.parquet",), status="ok", result=result)
+
         commits = [
             _FakeCommit("Add batch 2", commit_id="c2"),
             _FakeCommit("Add batch 1", commit_id="c1"),
@@ -827,15 +799,13 @@ class TestClassifyDatasetWithChangeClassification:
         monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1", "v2"]))
         monkeypatch.setattr(es, "list_repo_commits", lambda **kw: commits)
         monkeypatch.setattr(es, "bare_clone", _fake_git_clone)
-        monkeypatch.setattr(es, "get_changed_files", lambda clone_dir, sha: ["data/file.parquet"])
+        monkeypatch.setattr(es, "get_changed_files", lambda clone_dir, sha: ["data.parquet"])
         monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
-
-        import pandas as pd
-        monkeypatch.setattr(es.change_diff, "download_tabular_file_at_revision",
-                             lambda repo_id, path, revision, token: pd.DataFrame({"a": [1], "b": [2]}))
+        monkeypatch.setattr(es.pairs, "compare_revisions", lambda *a, **kw: [pair])
 
         result = es.classify_dataset("org/ds", classify_changes=True)
 
+        assert result["change_pairs"]
         assert all(label["code"] != "C100" for label in result["change_labels"])
 
     def test_eligibility_report_csv_never_gets_a_change_labels_column(self, monkeypatch, tmp_path):
@@ -845,43 +815,49 @@ class TestClassifyDatasetWithChangeClassification:
         result_row = {
             "dataset_id": "org/ds", "num_tags": 0, "num_branches": 0, "num_commits_substantive": 0,
             "eligible": False, "eligibility_reason": "x", "status": "classified",
-            "error_category": "", "error": "", "change_labels": [],
+            "error_category": "", "error": "", "change_labels": [], "change_pairs": [],
         }
         csv_path, json_path, summary = es.write_results([result_row], run_id=1, sample_size=1, total_scanned=1)
         import pandas as pd
         df = pd.read_csv(csv_path)
         assert "change_labels" not in df.columns
+        assert "change_pairs" not in df.columns
 
 
 class TestRunClassification:
-    def test_csv_has_readable_description_column(self, monkeypatch, tmp_path):
+    def test_writes_full_table_statuses_and_compatible_export(self, monkeypatch, tmp_path):
         import pandas as pd
 
         input_csv = tmp_path / "eligibility_report.csv"
         pd.DataFrame([{"dataset_id": "org/ds", "eligible": True}]).to_csv(input_csv, index=False)
+
+        def row(code, subtype):
+            return {"repo_id": "org/ds", "old_rev": "sha1", "new_rev": "sha2", "file_path": "train.csv",
+                    "old_file_path": None, "code": code, "column": "x", "old_column": None, "subtype": subtype,
+                    "n_affected": 3, "share_affected": 0.1, "confidence": 1.0, "evidence_json": "{}",
+                    "engine_version": "2", "config_hash": "abc"}
 
         monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
         monkeypatch.setattr(
             es, "classify_dataset",
             lambda dataset_id, classify_changes: {
                 "status": "classified",
-                "change_labels": [
-                    {"dataset_id": dataset_id, "version_from": "sha1", "version_to": "sha2",
-                     "code": "C421", "is_breaking": False},
-                    {"dataset_id": dataset_id, "version_from": "sha1", "version_to": "sha2",
-                     "code": "C223", "is_breaking": True},
-                ],
+                "change_labels": [row("C421", "new"), row("C223", None)],
+                "change_pairs": [{"repo_id": "org/ds", "status": "ok"}],
             },
         )
 
         output_csv = es.run_classification(str(input_csv))
 
-        out_df = pd.read_csv(output_csv)
-        assert list(out_df.columns) == [
-            "dataset_id", "version_from", "version_to", "code", "description", "is_breaking",
+        legacy = pd.read_csv(output_csv)
+        assert list(legacy.columns) == [
+            "dataset_id", "version_from", "version_to", "file_path", "code", "description", "is_breaking",
         ]
-        assert out_df[out_df["code"] == "C421"].iloc[0]["description"] == "Afegir fila"
-        assert out_df[out_df["code"] == "C223"].iloc[0]["description"] == "Renombrar columna"
+        assert legacy[legacy["code"] == "C421"].iloc[0]["description"] == "Afegir fila"
+        assert bool(legacy[legacy["code"] == "C223"].iloc[0]["is_breaking"]) is True
+        full = pd.read_parquet(tmp_path / "changes_1.parquet")
+        assert list(full["subtype"].fillna("")) == ["new", ""]
+        assert pd.read_csv(tmp_path / "change_pairs_1.csv")["status"].tolist() == ["ok"]
 
     def test_returns_the_csv_path(self, monkeypatch, tmp_path):
         import pandas as pd
@@ -1013,11 +989,11 @@ class TestClassifySessionBoundaryTabularChanges:
         base = datetime(2026, 1, 1, 12, 0, 0)
         commits = [(0, _FakeCommit("a", created_at=base, commit_id="c1"), ["a.csv"])]
         calls = []
-        monkeypatch.setattr(es, "classify_commit_tabular_changes", lambda *a, **kw: calls.append(a) or [])
+        monkeypatch.setattr(es, "classify_commit_tabular_changes", lambda *a, **kw: calls.append(a) or ([], []))
 
         labels = es.classify_session_boundary_tabular_changes("org/ds", commits, "tok", es.RETRY_CONFIG)
 
-        assert labels == []
+        assert labels == ([], [])
         assert calls == []  # una sola sessio -- no hi ha cap limit a diferenciar
 
     def test_two_sessions_diff_boundary_commits_not_intra_session_pairs(self, monkeypatch):
@@ -1033,17 +1009,16 @@ class TestClassifySessionBoundaryTabularChanges:
 
         def fake_classify(dataset_id, changed_paths, version_from, version_to, hf_token, retry_config):
             calls.append((version_from, version_to, sorted(changed_paths)))
-            return [{"dataset_id": dataset_id, "version_from": version_from, "version_to": version_to,
-                      "code": "C421", "is_breaking": False}]
+            return [{"code": "C421"}], [{"status": "ok"}]
 
         monkeypatch.setattr(es, "classify_commit_tabular_changes", fake_classify)
 
-        labels = es.classify_session_boundary_tabular_changes("org/ds", commits, "tok", es.RETRY_CONFIG)
+        labels, statuses = es.classify_session_boundary_tabular_changes("org/ds", commits, "tok", es.RETRY_CONFIG)
 
         # NOMES una crida (1 limit de sessio: la sessio nova [c1,c2] vs la vella [c3])
         # -- MAI c1 vs c2 (son de la mateixa sessio).
         assert calls == [("c3", "c1", ["a.csv", "b.csv"])]
-        assert len(labels) == 1
+        assert len(labels) == 1 and len(statuses) == 1
 
     def test_three_sessions_produce_two_boundary_diffs(self, monkeypatch):
         base = datetime(2026, 1, 1, 12, 0, 0)
@@ -1057,7 +1032,7 @@ class TestClassifySessionBoundaryTabularChanges:
         monkeypatch.setattr(
             es, "classify_commit_tabular_changes",
             lambda dataset_id, changed_paths, version_from, version_to, hf_token, retry_config: (
-                calls.append((version_from, version_to)) or []
+                calls.append((version_from, version_to)) or ([], [])
             ),
         )
 
@@ -1090,7 +1065,7 @@ class TestClassifyDatasetCriteriBUsesSessionBoundaries:
         monkeypatch.setattr(
             es, "classify_commit_tabular_changes",
             lambda dataset_id, changed_paths, version_from, version_to, hf_token, retry_config: (
-                calls.append((version_from, version_to)) or []
+                calls.append((version_from, version_to)) or ([], [])
             ),
         )
 

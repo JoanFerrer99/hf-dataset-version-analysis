@@ -21,8 +21,9 @@ import pandas as pd
 from dotenv import load_dotenv
 from huggingface_hub import hf_hub_download
 
-import change_diff
 import errors
+from diffengine.engine import diff_bytes
+from diffengine.output import BREAKING_CODES, TABULAR_CODES
 from version_extractor import get_next_run_id
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
@@ -63,34 +64,38 @@ PAPER_GROUND_TRUTH: dict[str, frozenset[str]] = {
 }
 
 
-def download_uci_adult_baseline() -> pd.DataFrame:
-    """D0: `adult.data` de la UCI (sense capçalera), amb `CENSUS_INCOME_COLUMN_NAMES`."""
-    return pd.read_csv(
-        UCI_ADULT_DATA_URL, header=None, names=CENSUS_INCOME_COLUMN_NAMES, skipinitialspace=True
-    )
+def download_uci_adult_baseline() -> bytes:
+    """
+    D0: `adult.data` de la UCI tal com es publica, amb una línia de capçalera
+    afegida (no en té) escrita amb el mateix separador `, ` que les dades.
+    """
+    import urllib.request
+
+    with urllib.request.urlopen(UCI_ADULT_DATA_URL) as response:
+        raw = response.read()
+    return (", ".join(CENSUS_INCOME_COLUMN_NAMES) + "\n").encode() + raw
 
 
-def download_census_income_version(version: str, hf_token: str | None) -> pd.DataFrame:
+def download_census_income_version(version: str, hf_token: str | None) -> tuple[bytes, str]:
     """
     :param version: clau de `CENSUS_INCOME_SOURCES` (`"D1"`...`"D7"`).
-    :return: el fitxer d'aquella versió (CSV o Parquet).
+    :return: `(contingut del fitxer, extensió)`.
     """
     source = CENSUS_INCOME_SOURCES[version]
     local_path = errors.with_retry(
         hf_hub_download, repo_id=source["repo_id"], repo_type="dataset",
         filename=source["filename"], token=hf_token, **errors.DEFAULT_RETRY_CONFIG,
     )
-    if local_path.endswith(".parquet"):
-        return pd.read_parquet(local_path)
-    return pd.read_csv(local_path)
+    with open(local_path, "rb") as f:
+        return f.read(), os.path.splitext(local_path)[1]
 
 
 def run_validation(hf_token: str | None) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Compara cada D_i amb D0 amb `change_diff.compute_all_diffs`.
+    Compara cada D_i amb D0 amb el motor v2 (`diffengine`), fitxer cru contra fitxer cru.
 
     :return: `(detectability_df, labels_df)`: una fila per versió amb un
-        booleà per codi, i una fila per etiqueta detectada.
+        booleà per codi, i una fila per canvi detectat.
     """
     log.info("Descarregant D0 (baseline UCI)...")
     baseline = download_uci_adult_baseline()
@@ -99,27 +104,25 @@ def run_validation(hf_token: str | None) -> tuple[pd.DataFrame, pd.DataFrame]:
     all_labels = []
     for version in CENSUS_INCOME_SOURCES:
         log.info(f"Descarregant i comparant {version}...")
-        df = download_census_income_version(version, hf_token)
-        diffs = change_diff.compute_all_diffs(baseline, df)
+        data, ext = download_census_income_version(version, hf_token)
+        result = diff_bytes(baseline, ".csv", data, ext)
 
-        codes_detected = sum(1 for code in change_diff.TABULAR_CODES if diffs.get(code))
         row = {
-            "version": version, "codes_detected": codes_detected,
+            "version": version, "codes_detected": len(result.codes),
             "paper_row_total": len(PAPER_GROUND_TRUTH[version]),
         }
-        row.update({code: diffs.get(code) for code in change_diff.TABULAR_CODES})
+        row.update({code: code in result.codes for code in TABULAR_CODES})
         detectability_rows.append(row)
-
-        all_labels.extend(change_diff.classify_diffs(
-            diffs, dataset_id=f"census_income_{version}", version_from="D0", version_to=version,
-        ))
+        for c in result.changes:
+            all_labels.append({
+                "dataset_id": f"census_income_{version}", "version_from": "D0", "version_to": version,
+                "code": c.code, "subtype": c.subtype, "column": c.column, "old_column": c.old_column,
+                "is_breaking": c.code in BREAKING_CODES,
+            })
 
     detectability_df = pd.DataFrame(detectability_rows)
-    labels_df = pd.DataFrame(
-        [{"dataset_id": label.dataset_id, "version_from": label.version_from, "version_to": label.version_to,
-          "code": label.code, "is_breaking": label.is_breaking} for label in all_labels],
-        columns=["dataset_id", "version_from", "version_to", "code", "is_breaking"],
-    )
+    labels_df = pd.DataFrame(all_labels, columns=["dataset_id", "version_from", "version_to", "code", "subtype",
+                                                  "column", "old_column", "is_breaking"])
     return detectability_df, labels_df
 
 
@@ -135,7 +138,7 @@ def compare_detectability_with_paper(detectability_df: pd.DataFrame) -> pd.DataF
     for _, row in detectability_df.iterrows():
         version = row["version"]
         paper_codes = PAPER_GROUND_TRUTH[version] - {"C100"}
-        our_codes = {code for code in change_diff.TABULAR_CODES if row.get(code)}
+        our_codes = {code for code in TABULAR_CODES if row.get(code)}
         tp, fn, fp = paper_codes & our_codes, paper_codes - our_codes, our_codes - paper_codes
         rows.append({
             "version": version,
@@ -156,11 +159,11 @@ def summarize_agreement_by_code(detectability_df: pd.DataFrame) -> pd.DataFrame:
 
     :return: una fila per codi amb algun TP/FN/FP (`code`, `tp`, `fn`, `fp`).
     """
-    counts = {code: {"tp": 0, "fn": 0, "fp": 0} for code in change_diff.TABULAR_CODES}
+    counts = {code: {"tp": 0, "fn": 0, "fp": 0} for code in TABULAR_CODES}
     for _, row in detectability_df.iterrows():
         version = row["version"]
         paper_codes = PAPER_GROUND_TRUTH[version] - {"C100"}
-        our_codes = {code for code in change_diff.TABULAR_CODES if row.get(code)}
+        our_codes = {code for code in TABULAR_CODES if row.get(code)}
         for code in paper_codes & our_codes:
             counts[code]["tp"] += 1
         for code in paper_codes - our_codes:
@@ -226,6 +229,3 @@ if __name__ == "__main__":
     print(f"  Classificació:  {classification_path}")
     print(f"  Comparativa:    {comparison_path}")
     print(f"  Per codi:       {by_code_path}")
-    print("\n  NOTA: aquests fitxers són una RE-validació (motor actual, amb C410),")
-    print("  no substitueixen el registre històric original -- vegeu")
-    print("  docs/census_income_validation_report.md.\n")

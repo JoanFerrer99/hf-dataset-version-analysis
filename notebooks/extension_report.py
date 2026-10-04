@@ -27,9 +27,9 @@ from datetime import datetime
 import pandas as pd
 from dotenv import load_dotenv
 
-import change_diff
 import errors
 import version_extractor as ve
+from diffengine.units import TABULAR_EXTENSIONS, is_tabular_path
 
 log = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ def build_extension_report(input_csv: str, hf_token: str | None, retry_config: d
             ext = _file_extension(path)
             ext_counts[ext] = ext_counts.get(ext, 0) + 1
             total_files += 1
-            if change_diff.is_tabular_path(path):
+            if is_tabular_path(path):
                 total_tabular += 1
                 tabular_files_per_dataset[dataset_id] += 1
 
@@ -98,7 +98,7 @@ def build_extension_report(input_csv: str, hf_token: str | None, retry_config: d
             {
                 "extension": ext, "file_count": n,
                 "pct_of_total": round(100 * n / total_files, 2) if total_files else 0.0,
-                "is_tabular": ext in change_diff.TABULAR_EXTENSIONS,
+                "is_tabular": ext in TABULAR_EXTENSIONS,
             }
             for ext, n in ext_counts.items()
         ),

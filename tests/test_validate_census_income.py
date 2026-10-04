@@ -10,14 +10,14 @@ coberts indirectament per la resta del projecte).
 
 import pandas as pd
 
-import change_diff as cd
+from diffengine.output import TABULAR_CODES
 import validate_census_income as vci
 
 
 def _detectability_row(version: str, true_codes: set[str]) -> dict:
     """Una fila de `detectability_df` amb NOMÉS `true_codes` a True."""
     row = {"version": version, "codes_detected": len(true_codes), "paper_row_total": 0}
-    row.update({code: (code in true_codes) for code in cd.TABULAR_CODES})
+    row.update({code: (code in true_codes) for code in TABULAR_CODES})
     return row
 
 
