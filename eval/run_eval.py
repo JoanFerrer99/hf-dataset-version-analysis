@@ -8,11 +8,12 @@ permès. El report només mostra el conjunt reservat (`heldout`); el de
 calibratge és per ajustar llindars.
 
 Ús:
-  python eval/run_eval.py                 # tots els motors registrats
-  python eval/run_eval.py --split calibration
+  python eval/run_eval.py                       # reservat: motor antic (desat) vs nou
+  python eval/run_eval.py --split calibration   # per ajustar llindars
 """
 
 import argparse
+import json
 import os
 import pickle
 import sys
@@ -23,9 +24,20 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from eval.adapters import ENGINES  # noqa: E402
 from eval.mutations import CACHE_DIR, MUTATIONS, Case, build_cases  # noqa: E402
 
-CODES = ("C210", "C221", "C222", "C223", "C311", "C312", "C321", "C322",
-         "C410", "C421", "C422", "C510", "C520", "C530")
+from diffengine.output import TABULAR_CODES as CODES  # noqa: E402
 REPORT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "report.md")
+# Resultats del motor antic (change_diff.py, retirat) sobre el conjunt reservat,
+# desats abans de retirar-lo.
+BASELINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "baseline_old_engine.json")
+
+
+def _from_json(data: dict) -> dict:
+    return {
+        "per_code": {k: Counter(v) for k, v in data["per_code"].items()},
+        "per_mutation": defaultdict(Counter, {k: Counter(v) for k, v in data["per_mutation"].items()}),
+        "confusion": Counter({(m, e): n for m, e, n in data["confusion"]}),
+        "per_subtype": defaultdict(Counter, {(c, s): Counter(v) for c, s, v in data["per_subtype"]}),
+    }
 
 
 def load_cases(split: str) -> list[Case]:
@@ -128,7 +140,11 @@ def main() -> None:
     args = parser.parse_args()
 
     cases = load_cases(args.split)
-    results = {name: evaluate(cases, ENGINES[name]) for name in args.engines}
+    results = {}
+    if args.split == "heldout":
+        with open(BASELINE) as f:
+            results["old"] = _from_json(json.load(f))
+    results.update({name: evaluate(cases, ENGINES[name]) for name in args.engines})
     report = write_report(args.split, len(cases), results)
     if args.split == "heldout":
         with open(REPORT, "w") as f:

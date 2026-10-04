@@ -298,7 +298,8 @@ def cat_anonymize(old, new, seed, rng, mag):
 @mutation("cat_cell_edits", "column")
 def cat_cell_edits(old, new, seed, rng, mag):
     col = _pick(rng, _low_card(seed, new.df))
-    rows = _rows(rng, len(new.df), 0.02 * mag)
+    present = np.flatnonzero(new.df[col].notna().to_numpy())
+    rows = rng.choice(present, size=min(len(present), max(1, int(len(new.df) * 0.02 * mag))), replace=False)
     domain = new.df[col].dropna().unique()
     for r in rows:
         current = new.df.at[r, col]
@@ -308,11 +309,8 @@ def cat_cell_edits(old, new, seed, rng, mag):
 
 @mutation("cat_whitespace", "column")
 def cat_whitespace(old, new, seed, rng, mag):
-    col = _pick(rng, seed.categorical)
-    if seed.name == "adult":
-        new.df[col] = new.df[col].str.strip()
-    else:
-        new.df[col] = new.df[col].str.upper()
+    col = _pick(rng, [c for c in seed.categorical if (new.df[c].dropna() != new.df[c].dropna().str.upper()).any()])
+    new.df[col] = new.df[col].str.upper()
     return Effect({("C312", "representation")}, touched={col})
 
 
@@ -381,10 +379,12 @@ def num_cell_edits(old, new, seed, rng, mag):
     """Cas 5: unes poques cel·les editades dins del rang existent."""
     col = _numeric_feature(seed, new.df, rng)
     rows = _rows(rng, len(new.df), 0.01 * mag)
-    lo, hi = new.df[col].min(), new.df[col].max()
+    pool = new.df[col].dropna().to_numpy()
     for r in rows:
-        new.df.at[r, col] = type(new.df.at[r, col])(rng.uniform(lo, hi)) if hi > lo else new.df.at[r, col]
-    return Effect({("C322", "cell_edits")}, touched={col})
+        options = pool[pool != new.df.at[r, col]]
+        if len(options):
+            new.df.at[r, col] = rng.choice(options)
+    return Effect({("C322", "cell_edits")}, allowed={"C520"}, touched={col})
 
 
 @mutation("num_scientific_notation", "column")
@@ -583,7 +583,7 @@ def flip_labels_subgroup(old, new, seed, rng, mag):
         raise NotApplicable
     mask = new.df[group_col] == group
     new.df.loc[mask, seed.label] = new.df.loc[mask, seed.label].map({values[0]: values[1], values[1]: values[0]})
-    return Effect({("C312", "cell_edits"), ("C530", None)}, allowed={"C520"}, touched={seed.label})
+    return Effect({("C312", "cell_edits")}, allowed={"C520", "C530"}, touched={seed.label})
 
 
 # ---------------------------------------------------------------------------
@@ -628,7 +628,13 @@ def int_to_float_same_values(old, new, seed, rng, mag):
 # ---------------------------------------------------------------------------
 
 
+# Mutacions que reconstrueixen la versió nova a partir de l'antiga: s'han
+# d'aplicar primer perquè no esborrin l'efecte de les altres.
+SETUP_FIRST = ("remove_rows_with_nulls", "impute_constant", "missing_token_change", "remove_one_duplicate")
+
+
 def _apply(names: list[str], seed: Seed, rng, mag: float, fmt: str) -> tuple[Version, Version, Effect]:
+    names = sorted(names, key=lambda n: n not in SETUP_FIRST)
     old = Version(seed.df.copy(), fmt=fmt)
     new = Version(seed.df.copy(), fmt=fmt)
     total = Effect()

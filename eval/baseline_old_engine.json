@@ -1,0 +1,578 @@
+{
+ "per_code": {
+  "C210": {
+   "tp": 11
+  },
+  "C221": {
+   "tp": 26,
+   "fp": 30
+  },
+  "C222": {
+   "fp": 28,
+   "tp": 24
+  },
+  "C223": {
+   "fn": 20
+  },
+  "C311": {
+   "tp": 13,
+   "fn": 12
+  },
+  "C312": {
+   "tp": 76,
+   "fn": 27,
+   "fp": 5
+  },
+  "C321": {
+   "fp": 75,
+   "tp": 19
+  },
+  "C322": {
+   "fp": 7,
+   "fn": 18,
+   "tp": 67
+  },
+  "C410": {
+   "tp": 12,
+   "fn": 13
+  },
+  "C421": {
+   "tp": 34,
+   "fp": 5,
+   "fn": 20
+  },
+  "C422": {
+   "fp": 5,
+   "tp": 71,
+   "fn": 18
+  },
+  "C510": {
+   "tp": 55,
+   "fp": 50
+  },
+  "C520": {
+   "fp": 10,
+   "tp": 10
+  },
+  "C530": {
+   "fp": 46,
+   "tp": 24
+  }
+ },
+ "per_mutation": {
+  "add_column_derived": {
+   "ok": 6
+  },
+  "add_column_unexplained": {
+   "ok": 6
+  },
+  "add_rows_duplicate": {
+   "ok": 3,
+   "ko": 3
+  },
+  "add_rows_new": {
+   "ok": 1,
+   "ko": 5
+  },
+  "cat_anonymize": {
+   "ok": 6
+  },
+  "cat_cell_edits": {
+   "ko": 6
+  },
+  "cat_merge": {
+   "ok": 6
+  },
+  "cat_new_categories": {
+   "ok": 6
+  },
+  "cat_relabel": {
+   "ok": 6
+  },
+  "cat_split": {
+   "ok": 6
+  },
+  "cat_whitespace": {
+   "ok": 6
+  },
+  "categorical_to_codes": {
+   "ok": 6
+  },
+  "csv_to_parquet": {
+   "ok": 1,
+   "ko": 5
+  },
+  "flip_labels_subgroup": {
+   "ko": 6
+  },
+  "identical": {
+   "ok": 6
+  },
+  "impute_constant": {
+   "ok": 6
+  },
+  "inject_nulls": {
+   "ko": 4,
+   "ok": 2
+  },
+  "int_gains_nan": {
+   "ko": 6
+  },
+  "int_to_float_same_values": {
+   "ko": 6
+  },
+  "missing_token_change": {
+   "ko": 5
+  },
+  "num_cell_edits": {
+   "ko": 4,
+   "ok": 2
+  },
+  "num_factor": {
+   "ko": 6
+  },
+  "num_log": {
+   "ko": 6
+  },
+  "num_minmax": {
+   "ko": 6
+  },
+  "num_perturb": {
+   "ok": 2,
+   "ko": 4
+  },
+  "num_scientific_notation": {
+   "ko": 2
+  },
+  "num_standardize": {
+   "ko": 6
+  },
+  "numeric_to_bins": {
+   "ok": 6
+  },
+  "one_hot": {
+   "ko": 6
+  },
+  "oversample_minority": {
+   "ok": 3,
+   "ko": 3
+  },
+  "permute_column": {
+   "ko": 6
+  },
+  "real_to_integer": {
+   "ok": 3
+  },
+  "remove_by_predicate": {
+   "ok": 3,
+   "ko": 3
+  },
+  "remove_column": {
+   "ok": 6
+  },
+  "remove_column_mostly_null": {
+   "ok": 6
+  },
+  "remove_one_duplicate": {
+   "ok": 3,
+   "ko": 3
+  },
+  "remove_outliers": {
+   "ok": 2,
+   "ko": 3
+  },
+  "remove_rows_random": {
+   "ok": 3,
+   "ko": 3
+  },
+  "remove_rows_with_nulls": {
+   "ok": 6
+  },
+  "rename_identical": {
+   "ko": 6
+  },
+  "rename_recode": {
+   "ko": 6
+  },
+  "replace_rows": {
+   "ko": 6
+  },
+  "resave_quoting_crlf": {
+   "ok": 4
+  },
+  "shuffle_rows": {
+   "ok": 6
+  },
+  "sort_rows": {
+   "ok": 6
+  },
+  "swap_columns": {
+   "ok": 6
+  },
+  "undersample_majority": {
+   "ok": 3,
+   "ko": 3
+  }
+ },
+ "confusion": [
+  [
+   "C223",
+   "C221",
+   18
+  ],
+  [
+   "C223",
+   "C222",
+   16
+  ],
+  [
+   "C311",
+   "C221",
+   12
+  ],
+  [
+   "C311",
+   "C222",
+   12
+  ],
+  [
+   "C312",
+   "C221",
+   10
+  ],
+  [
+   "C421",
+   "C510",
+   9
+  ],
+  [
+   "C422",
+   "C510",
+   8
+  ],
+  [
+   "C312",
+   "C222",
+   6
+  ],
+  [
+   "C421",
+   "C520",
+   6
+  ],
+  [
+   "C422",
+   "C520",
+   5
+  ],
+  [
+   "C223",
+   "C530",
+   4
+  ],
+  [
+   "C421",
+   "C321",
+   4
+  ],
+  [
+   "C422",
+   "C321",
+   4
+  ],
+  [
+   "C223",
+   "C321",
+   4
+  ],
+  [
+   "C421",
+   "C322",
+   3
+  ],
+  [
+   "C422",
+   "C322",
+   3
+  ],
+  [
+   "C312",
+   "C321",
+   3
+  ],
+  [
+   "C312",
+   "C530",
+   2
+  ],
+  [
+   "C410",
+   "C321",
+   2
+  ],
+  [
+   "C410",
+   "C530",
+   2
+  ],
+  [
+   "C421",
+   "C530",
+   2
+  ],
+  [
+   "C422",
+   "C530",
+   2
+  ],
+  [
+   "C322",
+   "C221",
+   2
+  ],
+  [
+   "C322",
+   "C222",
+   2
+  ],
+  [
+   "C311",
+   "C510",
+   1
+  ],
+  [
+   "C410",
+   "C510",
+   1
+  ],
+  [
+   "C312",
+   "C510",
+   1
+  ],
+  [
+   "C223",
+   "C510",
+   1
+  ]
+ ],
+ "per_subtype": [
+  [
+   "C221",
+   "derived",
+   {
+    "miss": 6
+   }
+  ],
+  [
+   "C221",
+   "unexplained",
+   {
+    "miss": 6
+   }
+  ],
+  [
+   "C421",
+   "duplicate_of_existing",
+   {
+    "miss": 12
+   }
+  ],
+  [
+   "C421",
+   "new",
+   {
+    "miss": 12
+   }
+  ],
+  [
+   "C312",
+   "anonymization",
+   {
+    "miss": 6
+   }
+  ],
+  [
+   "C312",
+   "cell_edits",
+   {
+    "miss": 18
+   }
+  ],
+  [
+   "C312",
+   "merge",
+   {
+    "miss": 6
+   }
+  ],
+  [
+   "C312",
+   "relabel",
+   {
+    "miss": 12
+   }
+  ],
+  [
+   "C312",
+   "split",
+   {
+    "miss": 6
+   }
+  ],
+  [
+   "C312",
+   "representation",
+   {
+    "miss": 6
+   }
+  ],
+  [
+   "C311",
+   "to_numeric",
+   {
+    "miss": 6
+   }
+  ],
+  [
+   "C510",
+   "imputed_constant",
+   {
+    "miss": 6
+   }
+  ],
+  [
+   "C510",
+   "masking",
+   {
+    "miss": 12
+   }
+  ],
+  [
+   "C510",
+   "representation",
+   {
+    "miss": 5
+   }
+  ],
+  [
+   "C322",
+   "cell_edits",
+   {
+    "miss": 12
+   }
+  ],
+  [
+   "C322",
+   "factor",
+   {
+    "miss": 6
+   }
+  ],
+  [
+   "C322",
+   "log",
+   {
+    "miss": 6
+   }
+  ],
+  [
+   "C322",
+   "minmax",
+   {
+    "miss": 6
+   }
+  ],
+  [
+   "C322",
+   "perturbation",
+   {
+    "miss": 6
+   }
+  ],
+  [
+   "C322",
+   "representation",
+   {
+    "miss": 2
+   }
+  ],
+  [
+   "C322",
+   "standardization",
+   {
+    "miss": 6
+   }
+  ],
+  [
+   "C321",
+   "to_categorical",
+   {
+    "miss": 6
+   }
+  ],
+  [
+   "C311",
+   "one_hot",
+   {
+    "miss": 6
+   }
+  ],
+  [
+   "C321",
+   "real_to_integer",
+   {
+    "miss": 3
+   }
+  ],
+  [
+   "C422",
+   "predicate",
+   {
+    "miss": 6
+   }
+  ],
+  [
+   "C222",
+   "unexplained",
+   {
+    "miss": 6
+   }
+  ],
+  [
+   "C222",
+   "mostly_null",
+   {
+    "miss": 6
+   }
+  ],
+  [
+   "C422",
+   "duplicate_removed",
+   {
+    "miss": 6
+   }
+  ],
+  [
+   "C422",
+   "outlier",
+   {
+    "miss": 5
+   }
+  ],
+  [
+   "C422",
+   "had_nulls",
+   {
+    "miss": 6
+   }
+  ],
+  [
+   "C410",
+   "sorted_by",
+   {
+    "miss": 6
+   }
+  ]
+ ]
+}
