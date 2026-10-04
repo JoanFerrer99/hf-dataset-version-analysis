@@ -1,17 +1,17 @@
 """
-Validació d'extractibilitat contra el ground truth Census Income
-(D1-D7) -- script AÏLLAT, mai part del pipeline principal
-
+Valida el motor de diffing contra el ground truth de Census Income:
+compara cada versió D1-D7 (Hugging Face) amb l'original de la UCI (D0) i
+contrasta els codis detectats amb la Taula 1 del paper. Script aïllat,
+no el crida `run_pipeline.py`.
 
 Ús:
   python validate_census_income.py
 
-Output (numerat per run -- MAI sobreescriu els originals congelats
-`data/census_income_diff_report.csv`/`data/census_income_classification.
-csv`, que segueixen sent el registre pre-C410, vegeu `docs/census_income_
-validation_report.md`):
+Output (numerat, mai sobreescriu):
   data/census_income_diff_report_<run_id>.csv
   data/census_income_classification_<run_id>.csv
+  data/census_income_paper_comparison_<run_id>.csv
+  data/census_income_paper_comparison_by_code_<run_id>.csv
 """
 
 import logging
@@ -51,7 +51,7 @@ CENSUS_INCOME_SOURCES = {
     "D7": {"repo_id": "kuldeepbishnoi29/adult-fairness", "filename": "adult_processed.csv"},
 }
 
-# Ground truth REAL de la Taula 1 del paper
+# Taula 1 del paper, transcrita a mà (inclou C100, que el motor no detecta).
 PAPER_GROUND_TRUTH: dict[str, frozenset[str]] = {
     "D1": frozenset({"C100", "C223", "C410"}),
     "D2": frozenset({"C100", "C223", "C410"}),
@@ -64,13 +64,7 @@ PAPER_GROUND_TRUTH: dict[str, frozenset[str]] = {
 
 
 def download_uci_adult_baseline() -> pd.DataFrame:
-    """
-    Baseline D0: dataset original de la UCI (`adult.data`), sense capçalera
-    -- 14 columnes de característiques + la columna objectiu `income`.
-    Descàrrega directa, pública, sense autenticació.
-
-    :return: `DataFrame` amb `CENSUS_INCOME_COLUMN_NAMES` com a columnes.
-    """
+    """D0: `adult.data` de la UCI (sense capçalera), amb `CENSUS_INCOME_COLUMN_NAMES`."""
     return pd.read_csv(
         UCI_ADULT_DATA_URL, header=None, names=CENSUS_INCOME_COLUMN_NAMES, skipinitialspace=True
     )
@@ -78,14 +72,8 @@ def download_uci_adult_baseline() -> pd.DataFrame:
 
 def download_census_income_version(version: str, hf_token: str | None) -> pd.DataFrame:
     """
-    Descarrega UNA versió (D1-D7) segons `CENSUS_INCOME_SOURCES`.
-
-    :param version: clau de `CENSUS_INCOME_SOURCES` (p.e. `"D1"`).
-    :param hf_token: token HF (cap dels 7 repositoris és gated, però es
-        passa igual per coherència amb la resta del pipeline).
-    :return: `DataFrame` amb el contingut tal com el retorna `pandas`
-        (CSV o Parquet segons l'extensió de `filename`).
-    :raises KeyError: si `version` no és una clau vàlida.
+    :param version: clau de `CENSUS_INCOME_SOURCES` (`"D1"`...`"D7"`).
+    :return: el fitxer d'aquella versió (CSV o Parquet).
     """
     source = CENSUS_INCOME_SOURCES[version]
     local_path = errors.with_retry(
@@ -99,17 +87,10 @@ def download_census_income_version(version: str, hf_token: str | None) -> pd.Dat
 
 def run_validation(hf_token: str | None) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Descarrega D0 i D1-D7, calcula els diffs de cada D_i contra D0 amb el
-    motor ACTUAL de `change_diff.py` (inclou C410, Decisió T-14), i
-    retorna la taula de detectabilitat + les etiquetes de canvi reals.
+    Compara cada D_i amb D0 amb `change_diff.compute_all_diffs`.
 
-    :param hf_token: token HF.
-    :return: tupla `(detectability_df, labels_df)` -- `detectability_df`
-        té una fila per versió (`version`, `codes_detected`,
-        `paper_row_total`, i una columna booleana per codi); `labels_df`
-        té una fila per etiqueta detectada (`dataset_id`, `version_from`,
-        `version_to`, `code`, `is_breaking`), buida si cap D_i produeix
-        cap senyal.
+    :return: `(detectability_df, labels_df)`: una fila per versió amb un
+        booleà per codi, i una fila per etiqueta detectada.
     """
     log.info("Descarregant D0 (baseline UCI)...")
     baseline = download_uci_adult_baseline()
@@ -144,18 +125,11 @@ def run_validation(hf_token: str | None) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 def compare_detectability_with_paper(detectability_df: pd.DataFrame) -> pd.DataFrame:
     """
-    Compara la detectabilitat del nostre motor amb `PAPER_GROUND_TRUTH`,
-    codi per codi, per a cada versió -- EXCLOENT C100 (el nostre motor
-    mai el compta, vegeu `change_diff.py`). Funció PURA: no fa cap crida
-    de xarxa, només processa `detectability_df` ja calculat.
+    TP/FN/FP per versió contra `PAPER_GROUND_TRUTH`, sense C100.
 
-    :param detectability_df: mateix format que retorna `run_validation`
-        (una fila per versió, una columna booleana per codi de
-        `change_diff.TABULAR_CODES`).
-    :return: `DataFrame` amb una fila per versió: `version`,
-        `paper_total` (15 codis, incl. C100), `paper_minus_c100`,
-        `our_total`, `tp`, `fn`, `fp`, i `tp_codes`/`fn_codes`/`fp_codes`
-        (strings separats per comes, `"-"` si el conjunt és buit).
+    :param detectability_df: sortida de `run_validation`.
+    :return: una fila per versió amb els recomptes i els codis de cada
+        conjunt (`"-"` si és buit).
     """
     rows = []
     for _, row in detectability_df.iterrows():
@@ -178,15 +152,9 @@ def compare_detectability_with_paper(detectability_df: pd.DataFrame) -> pd.DataF
 
 def summarize_agreement_by_code(detectability_df: pd.DataFrame) -> pd.DataFrame:
     """
-    Mateixa comparació que `compare_detectability_with_paper`, agregada
-    per CODI en lloc de per versió -- per detectar patrons sistemàtics
-    (un codi concret que sempre es perd, o que sempre es sobre-detecta).
-    Funció PURA, mateixa entrada que `compare_detectability_with_paper`.
+    La mateixa comparació, agregada per codi.
 
-    :param detectability_df: mateix format que `compare_detectability_with_paper`.
-    :return: `DataFrame` amb una fila per codi (`code`, `tp`, `fn`, `fp`),
-        NOMÉS per als codis amb algun TP/FN/FP -- els codis que mai
-        apareixen ni al paper ni al nostre motor es descarten.
+    :return: una fila per codi amb algun TP/FN/FP (`code`, `tp`, `fn`, `fp`).
     """
     counts = {code: {"tp": 0, "fn": 0, "fp": 0} for code in change_diff.TABULAR_CODES}
     for _, row in detectability_df.iterrows():
@@ -209,14 +177,9 @@ def summarize_agreement_by_code(detectability_df: pd.DataFrame) -> pd.DataFrame:
 
 def compute_agreement_metrics(comparison_df: pd.DataFrame) -> dict:
     """
-    Precisió/Recall/F1 agregats a partir de `compare_detectability_with_
-    paper`. Funció PURA.
-
-    :param comparison_df: sortida de `compare_detectability_with_paper`
-        (necessita només les columnes `tp`/`fn`/`fp`).
-    :return: `dict` amb `tp`, `fn`, `fp` (`int`) i `precision`/`recall`/
-        `f1` (`float`, `0.0` si el denominador corresponent és 0, per
-        evitar divisió per zero).
+    :param comparison_df: sortida de `compare_detectability_with_paper`.
+    :return: `tp`, `fn`, `fp` totals i `precision`, `recall`, `f1` (0.0 si
+        el denominador és 0).
     """
     tp, fn, fp = int(comparison_df["tp"].sum()), int(comparison_df["fn"].sum()), int(comparison_df["fp"].sum())
     precision = tp / (tp + fp) if (tp + fp) else 0.0

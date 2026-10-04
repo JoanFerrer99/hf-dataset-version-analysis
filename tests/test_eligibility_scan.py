@@ -134,17 +134,39 @@ class TestHasTimeDispersedSubstantiveCommits:
         times = [base, base - timedelta(minutes=59)]
         assert es.has_time_dispersed_substantive_commits(times, min_gap_hours=1.0) is False
 
-    def test_commits_at_or_beyond_the_minimum_gap_are_dispersed(self):
+    def test_commits_beyond_the_minimum_gap_are_dispersed(self):
         base = datetime(2026, 1, 1, 12, 0, 0)
-        times = [base, base - timedelta(hours=1)]
+        times = [base, base - timedelta(hours=1, seconds=1)]
         assert es.has_time_dispersed_substantive_commits(times, min_gap_hours=1.0) is True
 
-    def test_only_the_span_between_extremes_matters_not_the_count(self):
-        # Molts commits intermedis dins de la mateixa finestra no haurien
-        # de fer variar el resultat: només importa el rang (max - min).
+    def test_commits_exactly_at_the_gap_are_still_one_session(self):
+        # cluster_commit_times exigeix MES DE gap_hours per obrir una
+        # sessio nova ("mes de", no "com a minim") -- exactament al
+        # llindar es queda a la MATEIXA sessio. Abans aquesta funcio
+        # comprovava `span >= gap_hours` (inclusiu), inconsistent amb
+        # cluster_commit_times -- ara delega a la mateixa funcio i
+        # hereta el mateix criteri estricte arreu del pipeline.
         base = datetime(2026, 1, 1, 12, 0, 0)
-        times = [base - timedelta(minutes=m) for m in range(0, 30, 2)]
+        times = [base, base - timedelta(hours=1)]
         assert es.has_time_dispersed_substantive_commits(times, min_gap_hours=1.0) is False
+
+    def test_dense_commits_spanning_a_wide_interval_are_still_one_session(self):
+        # Regressio real: abans, una UNICA sessio densa (cap buit intern
+        # per sobre del llindar) amb un interval TOTAL ampli (per sobre
+        # del llindar) es comptava incorrectament com "dispersa" --
+        # nomes mirava l'interval entre extrems, no si real ment hi havia
+        # >=2 sessions. 20 commits cada 5h (gaps sempre <6h) sumen 95h
+        # d'interval total, per sobre del llindar de 6h, PERO segueix
+        # sent UNA sola sessio real (cap buit intern supera les 6h).
+        base = datetime(2026, 1, 1, 12, 0, 0)
+        times = [base - timedelta(hours=5 * i) for i in range(20)]
+        assert es.has_time_dispersed_substantive_commits(times, min_gap_hours=6.0) is False
+
+    def test_two_real_sessions_are_dispersed(self):
+        base = datetime(2026, 1, 1, 12, 0, 0)
+        session_a = [base - timedelta(minutes=m) for m in range(0, 30, 10)]
+        session_b = [base - timedelta(hours=10, minutes=m) for m in range(0, 30, 10)]
+        assert es.has_time_dispersed_substantive_commits(session_a + session_b, min_gap_hours=6.0) is True
 
 
 # ---------------------------------------------------------------------------
@@ -831,6 +853,49 @@ class TestClassifyDatasetWithChangeClassification:
         assert "change_labels" not in df.columns
 
 
+class TestRunClassification:
+    def test_csv_has_readable_description_column(self, monkeypatch, tmp_path):
+        import pandas as pd
+
+        input_csv = tmp_path / "eligibility_report.csv"
+        pd.DataFrame([{"dataset_id": "org/ds", "eligible": True}]).to_csv(input_csv, index=False)
+
+        monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
+        monkeypatch.setattr(
+            es, "classify_dataset",
+            lambda dataset_id, classify_changes: {
+                "status": "classified",
+                "change_labels": [
+                    {"dataset_id": dataset_id, "version_from": "sha1", "version_to": "sha2",
+                     "code": "C421", "is_breaking": False},
+                    {"dataset_id": dataset_id, "version_from": "sha1", "version_to": "sha2",
+                     "code": "C223", "is_breaking": True},
+                ],
+            },
+        )
+
+        output_csv = es.run_classification(str(input_csv))
+
+        out_df = pd.read_csv(output_csv)
+        assert list(out_df.columns) == [
+            "dataset_id", "version_from", "version_to", "code", "description", "is_breaking",
+        ]
+        assert out_df[out_df["code"] == "C421"].iloc[0]["description"] == "Afegir fila"
+        assert out_df[out_df["code"] == "C223"].iloc[0]["description"] == "Renombrar columna"
+
+    def test_returns_the_csv_path(self, monkeypatch, tmp_path):
+        import pandas as pd
+
+        input_csv = tmp_path / "eligibility_report.csv"
+        pd.DataFrame([{"dataset_id": "org/ds", "eligible": False}]).to_csv(input_csv, index=False)
+        monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
+
+        output_csv = es.run_classification(str(input_csv))
+
+        assert output_csv == str(tmp_path / "change_classification_1.csv")
+        assert os.path.exists(output_csv)
+
+
 # ---------------------------------------------------------------------------
 # run_sampling -- retorna (csv_path, json_path, summary) perquè un cridant
 # extern (notebooks/run_pipeline.py) pugui encadenar altres fases amb el
@@ -916,12 +981,14 @@ class TestGroupSubstantiveCommitsIntoSessions:
         assert es.group_substantive_commits_into_sessions(triples) == []
 
     def test_commits_within_gap_form_one_session(self):
+        # L'ordre DINS d'una sessio no esta garantit (vegeu docstring) --
+        # nomes que hi siguin tots dos, com a conjunt.
         base = datetime(2026, 1, 1, 12, 0, 0)
         newer = (0, _FakeCommit("newer", created_at=base, commit_id="c-newer"), ["a.csv"])
         older = (1, _FakeCommit("older", created_at=base - timedelta(minutes=30), commit_id="c-older"), ["b.csv"])
         sessions = es.group_substantive_commits_into_sessions([newer, older])
         assert len(sessions) == 1
-        assert sessions[0] == [newer, older]
+        assert newer in sessions[0] and older in sessions[0] and len(sessions[0]) == 2
 
     def test_commits_beyond_gap_form_separate_sessions(self):
         base = datetime(2026, 1, 1, 12, 0, 0)

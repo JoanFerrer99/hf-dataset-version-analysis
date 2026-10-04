@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-09-26T20:09:48.250415",
+  "sampling_method": "reservoir_sampling_R_Vitter_uniform_no_bias",
+  "sample_size": 2000,
+  "population_scanned": 1064295,
+  "eligible_total": 7,
+  "eligible_Criteri_A": 1,
+  "eligible_Criteri_B": 6,
+  "eligible": 7,
+  "ineligible": 1901,
+  "access_restricted": 87,
+  "errors": 5,
+  "eligible_proportion": 0.0037,
+  "eligible_proportion_of_attempts": 0.0035,
+  "estimated_eligible_in_population": 3938
+}

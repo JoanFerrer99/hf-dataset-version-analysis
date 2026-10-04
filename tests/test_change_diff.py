@@ -185,6 +185,19 @@ class TestDiffNumericValues:
         after = pd.DataFrame({"a": ["y", "x"]})
         assert cd.diff_numeric_values(before, after) == {}
 
+    def test_small_floating_point_noise_is_not_flagged(self):
+        # Regressio (Decisio T-21): abans el llindar era rtol=atol=1e-9,
+        # practicament igualtat bit a bit -- soroll tipic d'una
+        # reexportacio parquet<->csv (~1e-6) disparava un canvi fals.
+        before = pd.DataFrame({"a": [1.0, 2.0, 3.0]})
+        after = pd.DataFrame({"a": [1.000001, 2.000002, 3.000001]})
+        assert cd.diff_numeric_values(before, after) == {}
+
+    def test_change_beyond_the_threshold_is_still_detected(self):
+        before = pd.DataFrame({"a": [1.0, 2.0, 3.0]})
+        after = pd.DataFrame({"a": [1.2, 2.2, 3.2]})
+        assert "a" in cd.diff_numeric_values(before, after)
+
 
 class TestDiffRowCount:
     def test_same_count(self):
