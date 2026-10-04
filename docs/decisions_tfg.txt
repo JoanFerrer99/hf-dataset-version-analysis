@@ -1067,6 +1067,45 @@ Estat: Fet
   documentades a la conversa, no com a properes decisions obertes.
 
 
+
+DECISIÓ T-17: motor de detecció v2 (`notebooks/diffengine/`) en lloc de `change_diff.py`
+Data: octubre 2026
+Responsable: Joan
+Estat: Fet (decisions provisionals pendents de confirmar a `docs/open_decisions.md`)
+
+  MOTIU: l'auditoria del motor anterior (`docs/engine_audit.md`) va
+  mostrar que els errors no eren de llindar sinó d'estructura: comparava
+  columnes només pel nom (un renom amagava qualsevol canvi de contingut),
+  no aparellava files (C421/C422 eren el signe del recompte), tractava
+  els identificadors com a variables, confonia el dtype de pandas amb el
+  tipus de la columna, i convertia una descàrrega fallida en "fitxer
+  eliminat". De 14 casos coneguts en fallava 9.
+
+  DECISIÓ: reescriure'l per capes (`docs/engine.md`): taules (subset,
+  split) en lloc de fitxers; tipus deduït dels valors; aparellament de
+  files (clau inferida o hash de fila) i de columnes (nom i contingut);
+  un detector per família de codis; cada canvi amb subtipus, confiança i
+  evidència; cada parell amb un estat; tots els llindars a `config.py`.
+  L'arnès d'avaluació (`eval/`) es va construir ABANS del motor, amb la
+  línia base del motor antic, i els llindars només s'ajusten sobre el
+  conjunt de calibratge.
+
+  DECISIONS DE JOAN dins d'aquesta: C530 és un canvi de distribució de
+  qualsevol atribut (sense identificar el target); unitat = taula
+  (subset, split); C100 fora d'abast; dependències noves permeses
+  (`datasets`, `scipy`, `scikit-learn`).
+
+  RESULTAT: conjunt reservat (379 casos generats): F1 ≥ 0.98 a tots els
+  codis (abans, entre 0.34 i 1.00, i C223 mai detectat). Census Income:
+  vegeu `docs/architecture.md` §13.2. `change_diff.py` i els seus tests
+  s'han retirat; els seus resultats queden a
+  `eval/baseline_old_engine.json`. Substitueix el límit de 5 fitxers per
+  unitat de canvi per un límit de bytes per taula, i obsoleta T-16 i la
+  part de T-15 sobre `download_tabular_file_at_revision` (el motor nou
+  llegeix el fitxer sencer igualment; la projecció per columnes continua
+  pendent).
+
+
 ================================================================================
 BLOC 4 — DECISIONS D'ABAST
 ================================================================================

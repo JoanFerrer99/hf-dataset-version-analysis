@@ -58,10 +58,11 @@ regles de `datasets` ja excloen la major part (vegeu U1).
 ## U4. Cost de concatenar shards
 
 Una taula LeRobot pot tenir centenars d'episodis. **Per defecte:** límit
-de bytes per taula (`max_unit_bytes`); per sobre, estat
-`too_large_profile_only` i només codis de perfil. Els fitxers sense canvis
-entre revisions no es tornen a llegir (perfil en caché per hash de
-contingut).
+de bytes per taula (`max_unit_bytes`, la suma de les dues versions); per
+sobre, estat `too_large_profile_only` i **cap codi**. Les taules amb el
+mateix contingut a les dues revisions (hash LFS o blob de git) no es
+descarreguen. Encara no hi ha perfil en caché per fitxer ni codis de perfil
+per a les taules massa grans.
 
 ---
 
@@ -75,6 +76,7 @@ contingut).
 | **P5** | Els canvis només de representació es reporten, mai s'amaguen: espais o majúscules en categories → C312 `representation`; separador decimal o notació científica → C322 `representation`; token d'absent (`?` → buit) → C510 `representation`. | No reportar-los |
 | **P6** | Les columnes de text lliure (moltes categories, textos llargs) es tracten com a categòriques, però només amb comparacions de resum (diferència de domini, taxa de nuls). | Comparar-ne la distribució |
 | **P8** | Si el canvi d'una columna queda explicat per una transformació ajustada (C322: factor, log, min-max, estandardització...), **no** s'emet C530 per a la mateixa columna: el canvi de distribució n'és conseqüència. | Emetre també C530 |
+| **P9** | C312 només surt de canvis en files **aparellades** (o de representació). Si una categoria apareix o desapareix només perquè s'han afegit o eliminat files, el canvi és C421/C422, no C312. | Comptar també la diferència de domini de tota la columna |
 
 Decisions del prompt original que **no s'apliquen**, per decisió de Joan:
 - **D2 / P4** (C530 només per a la variable objectiu): C530 és un canvi
@@ -82,6 +84,26 @@ Decisions del prompt original que **no s'apliquen**, per decisió de Joan:
   C520 cobreix tots els parells de columnes.
 - **P7 i C100**: C100 és fora d'abast; un canvi de format o de
   delimitador queda registrat a l'estat del parell, sense codi.
+
+## Preguntes amb evidència de Census Income (Taula 1 del paper)
+
+Casos on el motor detecta una cosa que és certa a les dades però que el
+paper no marca, o al revés. No s'ha ajustat cap llindar per fer-los
+coincidir: són preguntes per a Alberto.
+
+- **Codificar categòriques com a enters (D7).** D7 converteix totes les
+  categòriques en codis numèrics. Amb P3 el motor ho marca com a C311; el
+  paper hi marca **C312** i no C311. Si el criteri del paper és aquest, P3
+  s'hauria de canviar.
+- **Eliminar les files amb valors absents (D7).** D7 elimina totes les
+  files amb `?`. El motor hi marca C422 `had_nulls` i C510 (la proporció de
+  nuls passa de ~7% a 0%). El paper no marca ni C422 ni C510 per a D7. Cal
+  C510 quan el canvi de nuls ve només de files eliminades?
+- **Files d'una altra mostra (D3, D4, D6).** Aquestes versions no tenen les
+  mateixes files que l'original (D3 en té 12.211 de 32.561, en part
+  d'`adult.test`). El motor hi marca C421; el paper no.
+- **Ordre de files a D4.** D3 i D4 venen del mateix repositori
+  (`mstz/adult`) i el paper marca C410 per a D3 però no per a D4.
 
 ## Preguntes d'etiquetatge trobades en construir l'avaluació
 
@@ -91,6 +113,11 @@ Decisions del prompt original que **no s'apliquen**, per decisió de Joan:
 - **Real → enter arrodonint** (`3.7` → `4`): és C321 (canvi de tipus). Els
   valors també canvien lleugerament: per defecte només C321; C322 es
   permet.
+- **Files eliminades per un predicat que també tenien nuls**: si les
+  files eliminades són exactament les d'una categoria i, alhora, totes
+  tenen algun nul, el motor diu `had_nulls` (es comprova abans que
+  `predicate`). Totes dues descripcions són certes; quina s'ha de
+  preferir?
 - **Benchmark d'Explain-Da-V**: pendent de revisar-ne la llicència i el
   format; el mapatge dels seus tipus de canvi als nostres codis s'afegirà
   aquí abans de fer-lo servir.

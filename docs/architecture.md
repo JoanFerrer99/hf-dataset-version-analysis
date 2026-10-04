@@ -157,7 +157,8 @@ Termes que defineix aquest codi:
 | **Criteri B** | ≥2 branques i commits substantius repartits en ≥2 sessions. | investigació de 2 sessions a la funció `has_time_dispersed_substantive_commits` |
 | **Versió** | Criteri A: cada tag. Criteri B: cada sessió (representada pel seu commit més recent). | extracció a `version_extractor.extract_versions_for_dataset` |
 | **Unitat de canvi** | Què es compara a la Fase 2. Criteri A: cada commit substantiu contra el commit anterior. Criteri B: el final de cada sessió contra el final de l'anterior. | classificat després de`classify_dataset` |
-| **Fitxer tabular** | `.parquet`, `.csv` o `.tsv`. L'únic tipus que es descarrega i es compara. | es defineix a la funció `change_diff.is_tabular_path` |
+| **Fitxer tabular** | `.parquet`, `.csv`, `.tsv`, `.json` o `.jsonl`. L'únic tipus que es descarrega i es compara. | es defineix a la funció `diffengine.units.is_tabular_path` |
+| **Taula** | El que compara la Fase 2: un (subset, split) tal com el mostra el Hub. Els shards d'un split formen una sola taula. | `diffengine.units.resolve_units` (`docs/engine.md`) |
 | **Embut (funnel)** | Recompte de la Fase 0: mostra → elegibles / no elegibles / inaccessibles / errors. | contat a la funció `compute_funnel_stats` |
 
 >Un fitxer *substantiu* compta per a l'**elegibilitat** (inclou vídeo, àudio, tensors...), però només els *tabulars* entren a la **classificació**.
@@ -188,7 +189,8 @@ python notebooks/run_pipeline.py --sample-size 50 --threads 4 --seed 42 --max-sc
 python notebooks/run_pipeline.py --sample-size 2000 --threads 4 --seed 42                    # execució real
 
 pytest                                 # tests (no fan cap crida de xarxa)
-ruff check notebooks tests             # lint
+ruff check notebooks tests eval        # lint
+python eval/run_eval.py                # avaluació del motor (eval/report.md)
 ```
 
 - Cal `git` al sistema (la imatge Docker ja l'inclou).
@@ -217,16 +219,16 @@ Mòduls de `notebooks/`:
 | `run_pipeline.py` | **Orquestrador**: executa Fase 0 → 1 → 2 i desa tot en una carpeta per execució 
 | `eligibility_scan.py` | Fase 0 (mostreig i elegibilitat) i Fase 2 (classificació de canvis) |
 | `version_extractor.py` | Fase 1 (extreu les metadades de la seqüència de versions) |
-| `change_diff.py` | Motor que compara dues versions d'un fitxer i en treu els codis |
+| `diffengine/` | Motor que compara dues revisions taula a taula i en treu els codis (`docs/engine.md`) |
 | `errors.py` | Reintents, classificació d'errors, registre de fallades |
 | `extension_report.py` | Recompte d'extensions de fitxer dels elegibles, no cridat per l'orquestrador |
 | `validate_census_income.py` | Valida el motor contra Census Income, també executable aÏllat de l'orquestrador |
 
 Puntualitzacions:
 
-- **La Fase 2 viu a `eligibility_scan.py`, no a `change_diff.py`.**
-  `change_diff.py` només sap comparar dues taules ja carregades. Qui
-  decideix *quines* revisions i *quins* fitxers comparar és
+- **La Fase 2 viu a `eligibility_scan.py`, no a `diffengine/`.**
+  `diffengine` sap comparar dues revisions donades. Qui decideix *quines*
+  revisions comparar és
   `classify_dataset`, que ja recorre els commits per decidir
   l'elegibilitat (decisió T-08).
 - **`eligibility_scan.py` surt amb error en importar-lo si no troba
@@ -249,9 +251,10 @@ Puntualitzacions:
         │  autors i mida.  sortida: versions_*.csv
         ▼
  FASE 2  Classificació de canvis          eligibility_scan.run_classification
-        │  per a cada elegible: compara versions consecutives dels
-        │  fitxers tabulars → codis de la taxonomia
-        │  sortida: change_classification_*.csv
+        │  per a cada elegible: compara versions consecutives de les
+        │  taules → codis de la taxonomia amb evidència
+        │  sortida: changes_*.csv/.parquet, change_pairs_*.csv,
+        │           change_classification_*.csv
         ▼
  FASE 3  Esquema de dades               (pendent)
 ```
@@ -395,9 +398,10 @@ de cada repositori (`fetch_tree_paths`), no l'historial.
 ## 9. Fase 2 — Classificació de canvis
 
 Codi: `eligibility_scan.run_classification` → `classify_dataset(...,
-classify_changes=True)`, i el motor `change_diff.py`. És l'única fase que
-**descarrega contingut real**, i per això només s'aplica als elegibles
-(la classificació de tota la mostra baixaria centenars de GB).
+classify_changes=True)`, i el motor `notebooks/diffengine/`
+(**`docs/engine.md`**). És l'única fase que **descarrega contingut real**,
+i per això només s'aplica als elegibles (la classificació de tota la
+mostra baixaria centenars de GB).
 
 ### 9.1 Què es compara
 
@@ -407,58 +411,35 @@ classify_changes=True)`, i el motor `change_diff.py`. És l'única fase que
    - Criteri A: cada commit substantiu contra el commit anterior de
      l'historial.
    - Criteri B: el commit més recent de cada sessió contra el de la
-     sessió anterior, sobre tots els fitxers tocats a la sessió nova.
-     Els commits dins d'una mateixa sessió no es comparen entre ells.
-3. Per a cada unitat, dels fitxers modificats es queden els **tabulars**,
-   fins a 5 (`MAX_TABULAR_FILES_PER_COMMIT`; alguns datasets parteixen
-   les dades en desenes de fitxers i sense límit trigaven hores).
-4. Cada fitxer es descarrega a les dues revisions i es carrega sencer
-   amb pandas (`download_tabular_file_at_revision`; per què pandas:
-   decisió T-15).
-5. `classify_file_change` hi aplica el motor:
-   - fitxer que no existia abans → C421 (afegir files);
-   - fitxer que ja no existeix → C422 (eliminar files);
-   - si existeix a totes dues → `compute_all_diffs` + `classify_diffs`.
+     sessió anterior. Els commits dins d'una mateixa sessió no es
+     comparen entre ells.
+3. Si cap fitxer tocat per la unitat és tabular, no es fa res més. Si no,
+   `classify_commit_tabular_changes` crida el motor amb les dues
+   revisions (`pairs.compare_revisions`):
+   - cada revisió es resol en **taules (subset, split)** amb les regles
+     de la llibreria `datasets` (els shards d'un split són una sola taula);
+   - les taules s'aparellen entre revisions; les que tenen el mateix hash
+     de contingut no es descarreguen;
+   - la resta es descarrega, es llegeix i es compara.
+4. Cada parell de taules acaba amb un **estat** (`ok`,
+   `identical_content`, `absent_old`/`absent_new`, `download_failed`,
+   `parse_failed`, `too_large_profile_only`). Una fallada de descàrrega
+   no es converteix mai en codis.
 
-### 9.2 El motor de diffing (`change_diff.py`)
+### 9.2 El motor (`diffengine/`)
 
-`compute_all_diffs(before, after)` rep dos `DataFrame` i crida 9
-funcions pures independents. Cadascuna retorna fets ("la columna X ha
-desaparegut"), i `compute_all_diffs` els converteix en un booleà per
-codi. `classify_diffs` crea un `ChangeLabel` per a cada codi detectat.
-
-| Funció | Codis | Com detecta el canvi |
-|---|---|---|
-| `diff_columns` | C210, C221, C222, C223 | Diferència entre els conjunts de noms de columna. És un renom si una columna eliminada i una d'afegida tenen el mateix nom normalitzat (minúscules, sense `-_. `) i tipus de la mateixa família (decisió T-12). L'ordre es mira sobre les columnes comunes. |
-| `diff_column_types` | C311, C321 | El `dtype` d'una columna comuna ha canviat. |
-| `diff_categorical_values` | C312 | Columnes no numèriques: han aparegut o desaparegut categories. |
-| `diff_numeric_values` | C322 | Columnes numèriques: `mean`, `std`, `min` o `max` canvien més d'un 5% (decisió T-16). |
-| `diff_row_count` | C421, C422 | El nombre de files creix o decreix. |
-| `diff_row_order` | C410 | Es calcula un hash per fila; si el conjunt de hashes és el mateix però en un altre ordre, és una reordenació (decisió T-11). |
-| `diff_missingness` | C510 | La proporció de nuls d'una columna ha canviat. |
-| `diff_correlation` | C520 | La matriu de correlació (Pearson) de les columnes numèriques varia més de 0.05. |
-| `diff_distribution` | C530 | Quartils (numèriques, tolerància 5%) o freqüència de cada categoria (variació > 0.05). |
+Per a cada parell de taules: llegeix els fitxers deduint el tipus de cada
+columna pels valors (L1), aparella les columnes per nom i per contingut
+(L3) i les files per clau inferida o per hash de fila (L4), i aplica un
+detector per família de codis (L5). Cada canvi surt amb subtipus (p.e.
+C322 `standardization`, C422 `had_nulls`), files afectades, confiança i
+evidència. Tots els llindars són a `diffengine/config.py`. Detall de cada
+capa i criteri: `docs/engine.md`.
 
 ### 9.3 Limitacions conegudes
 
-Convé tenir-les presents abans d'interpretar resultats:
-
-- **Columnes comunes = mateix nom.** Totes les funcions menys
-  `diff_columns` comparen només columnes amb el mateix nom a les dues
-  versions. Si una columna es reanomena, el seu contingut no es compara.
-- **Renoms semàntics** (`sex` → `is_male`) no es detecten com a renom:
-  surten com una columna eliminada més una d'afegida (C222 + C221).
-- **C410 només detecta reordenació pura**: si, a més, hi ha qualsevol
-  altre canvi de contingut, no es detecta.
-- **C421/C422 són aproximats**: sense un identificador estable de fila
-  només se sap si el nombre de files creix o decreix, no quines files.
-  Un fitxer que no s'ha pogut descarregar es tracta igual que un fitxer
-  inexistent.
-- **Columnes no hashables** (àudio o imatge llegits com a diccionaris)
-  s'exclouen de valors, distribució i ordre.
-- **El CSV de sortida no diu de quin fitxer ve cada etiqueta.** Si
-  canvien diversos fitxers entre les mateixes dues versions, el mateix
-  codi surt repetit (`docs/multi_file_repos_investigation.md`).
+`docs/engine.md` §8. Les decisions d'etiquetatge encara provisionals
+(p.e. si valor → nul és C510 o C312/C322) són a `docs/open_decisions.md`.
 
 ---
 
@@ -472,7 +453,9 @@ incremental, mai sobreescriu) i hi desa tot:
 | `eligibility_report_<N>_<k>.csv` | 0 | Una fila per dataset de la mostra: `dataset_id, num_tags, num_branches, num_commits_substantive, eligible, eligibility_reason, status, error_category, error`. `status` = `classified`, `access_restricted` (403) o `error`. |
 | `funnel_summary_<N>_<k>.json` | 0 | Resum de l'embut (secció 7.4): població recorreguda, elegibles per criteri, inaccessibles, errors, proporcions. |
 | `versions_<k>.csv` | 1 | Una fila per versió: `dataset_id, version_label, version_order, version_source, commit_sha, commit_date, authors, approx_size_bytes, session_commit_count, status`. |
-| `change_classification_<k>.csv` | 2 | Una fila per codi detectat en un fitxer d'una unitat de canvi: `dataset_id, version_from, version_to, code, description, is_breaking`. `version_from`/`version_to` són SHA de commit. |
+| `changes_<k>.csv` / `.parquet` | 2 | Una fila per canvi detectat: revisions, fitxer(s), `code`, `column`, `old_column`, `subtype`, files afectades, `confidence`, `evidence_json`, `engine_version`, `config_hash` (esquema complet: `docs/engine.md` §L6). |
+| `change_pairs_<k>.csv` | 2 | Una fila per parell de taules comparat, amb el seu `status` i com s'han aparellat les files. |
+| `change_classification_<k>.csv` | 2 | Format antic, derivat de `changes`: `dataset_id, version_from, version_to, file_path, code, description, is_breaking`. `version_from`/`version_to` són SHA de commit. |
 | `failures.csv` | totes | Només si hi ha fallades: `timestamp, source, dataset_id, error_category, error_message, retries_attempted`. `source` indica la fase. |
 
 `N` = `--sample-size`; `<k>` = número que posa cada fase. Amb
@@ -524,17 +507,17 @@ descàrregues es fan.
   `list_repo_tree`.
 
 **Fase 2** (només elegibles, l'única que baixa dades):
-- Per unitat de canvi: fins a 5 fitxers × 2 descàrregues completes
-  (queden a la caché local de HF). Baixar el contingut complet de totes
-  les versions de 11 elegibles es va estimar en 151 GB (un sol dataset en
-  pesava 78): per això el límit de fitxers i el filtre d'elegibles.
-- `compute_all_diffs` sobre un fitxer de `r` files i `c` columnes,
-  amb les dues taules a memòria: majoritàriament O(r·c); l'ordre de
-  files hi afegeix O(r log r) per ordenar hashes; la correlació és
-  O(r·c²). Tot vectoritzat amb pandas, sense bucles per fila.
+- Per unitat de canvi: 2 `list_repo_tree` (+ el README de cada
+  revisió) i 2 descàrregues per cada taula amb contingut diferent (queden
+  a la caché local de HF). Baixar el contingut complet de totes les
+  versions de 11 elegibles es va estimar en 151 GB (un sol dataset en
+  pesava 78): per això el salt per hash, el límit de bytes per taula
+  (`max_unit_bytes`) i el filtre d'elegibles.
+- Comparar una taula de `r` files i `c` columnes: majoritàriament O(r·c)
+  per passada, vectoritzat (`docs/engine.md` §5).
 
-Límits fixos: 50 commits per dataset (`MAX_COMMITS`), 5 fitxers per
-unitat de canvi, 30 s per clonar, 10 s per `git show`.
+Límits fixos: 50 commits per dataset (`MAX_COMMITS`), 500 MB per taula,
+30 s per clonar, 10 s per `git show`.
 
 ---
 
@@ -542,7 +525,7 @@ unitat de canvi, 30 s per clonar, 10 s per `git show`.
 
 ### 13.1 Tests
 
-`tests/` té un fitxer per mòdul (224 tests). L'API de HF sempre se
+`tests/` té un fitxer per mòdul (202 tests). L'API de HF sempre se
 simula amb `monkeypatch`: els tests no necessiten xarxa ni token real.
 `tests/conftest.py` afegeix `notebooks/` al `sys.path`.
 
@@ -554,22 +537,26 @@ paper, codi per codi, sense C100 (decisió T-14). Per a cada versió i
 codi: vertader positiu (TP) si el paper i el motor el marquen, fals
 negatiu (FN) si només el paper, fals positiu (FP) si només el motor.
 
-Resultat actual (`data/census_income/census_income_paper_comparison_by_code_5.csv`):
-***precisió 76.9%** (20/26)
+Resultat actual, motor v2 (`data/census_income/census_income_paper_comparison_by_code_6.csv`):
+**precisió 61.0%, recall 96.2%, F1 74.6%** (motor anterior, `_5`:
+64.5% / 76.9% / 70.2%). Census Income no s'ha fet servir mai per ajustar
+cap llindar.
 
 | Codi | TP | FN | FP | Lectura |
 |---|---|---|---|---|
-| C210, C421, C422 | 2, 1, 3 | 0 | 0 | Encert total |
-| C223 | 5 | 2 | 0 | Perd els renoms semàntics (9.3) |
-| C410 | 3 | 1 | 0 | Perd la reordenació barrejada amb altres canvis |
-| C221 | 1 | 0 | 4 | Sobredetecció: en part, renoms semàntics comptats com a eliminar + afegir |
-| C222 | 2 | 0 | 2 | Mateixa causa |
-| C312 | 0 | 3 | 1 | Mai encertat. Hipòtesi no verificada: els valors canvien en columnes que també es reanomenen, i aquestes no es comparen (9.3) |
-| C322 | 0 | 0 | 2 | Els 2 FP que queden són diferències reals per sobre del 5% |
-| C311, C530 | 2, 1 | 0 | 1 | Un FP cadascun |
+| C210, C223, C422 | 2, 7, 3 | 0 | 0, 0, 1 | Tots els renoms, inclosos els semàntics (abans 5 de 7) |
+| C312 | 2 | 1 | 0 | Abans mai encertat: ara es comparen també les columnes reanomenades |
+| C410 | 4 | 0 | 3 | Reordenacions reals que el paper no marca a D4, D6 i D7 |
+| C421 | 1 | 0 | 3 | D3, D4 i D6 tenen files d'una altra mostra (D3 en té 12.211 de 32.561) |
+| C221, C222, C311, C510, C530 | 1, 2, 2, 0, 1 | 0 | 2, 2, 1, 2, 2 | Diferències reals de les dades que el paper no marca |
 
-D6 té una ambigüitat: el repositori té tres fitxers candidats i el paper
-no diu quin va fer servir; probablement n'hem triat un altre.
+D1, D2 i D5 coincideixen exactament amb el paper. Gairebé tots els FP que
+queden són canvis que sí que hi ha a les dades però que el paper no
+etiqueta (p.e. D7 elimina les files amb `?`: C422 + C510). Quins són
+criteri del paper i quins errors del motor és una pregunta oberta,
+recollida a `docs/open_decisions.md`. D6 té una ambigüitat: el
+repositori té tres fitxers candidats i el paper no diu quin va fer
+servir.
 
 ---
 
@@ -594,6 +581,10 @@ no diu quin va fer servir; probablement n'hem triat un altre.
 | `README.md` | Instal·lació, token, Docker, ordres |
 | `docs/decisions_tfg.txt` | Totes les decisions amb el seu perquè |
 | `docs/taxonomy.md` | La taxonomia completa i concepte `is_breaking` explicat|
+| `docs/engine.md` | El motor de detecció de canvis: capes, criteris, sortida, avaluació |
+| `docs/open_decisions.md` | Decisions provisionals del motor, pendents de confirmar |
+| `docs/engine_audit.md` | Auditoria del motor anterior (per què es va reescriure) |
+| `eval/report.md` | Precisió/recall per codi, motor antic vs nou, sobre casos generats |
 | `docs/taiga/taiga_user_stories.md` | Històries d'usuari (US-xxx) |
 | `docs/us108_validation_report.md` | Validació manual del criteri d'elegibilitat |
 | `docs/multi_file_repos_investigation.md` | Notes sobre repositoris amb diversos fitxers tabulars |
