@@ -79,6 +79,7 @@ per a les taules massa grans.
 | **P9** | C312 només surt de canvis en files **aparellades** (o de representació). Si una categoria apareix o desapareix només perquè s'han afegit o eliminat files, el canvi és C421/C422, no C312. | Comptar també la diferència de domini de tota la columna |
 | **P10** | Els comptadors de posició (enters no decreixents al llarg de les files a totes dues versions: `index`, `episode_index` de LeRobot) no són atributs: no són clau, no entren al hash de fila ni a C520/C530, i si es renumeren surten com a C322 `renumbered`. Trobat a l'execució real (`stlee601/cube_pick1`). | Tractar-los com qualsevol columna numèrica |
 | **P11** | En un repositori de media (més vídeos que parquet, p.e. LeRobot), els fitxers tabulars que la media no fa servir es resolen com a taules pròpies i es comparen. La regla estricta de `datasets` (un sol format per repositori) els deixaria fora. | Seguir `datasets` al peu de la lletra |
+| **P12** | Si la proporció de nuls d'una columna només canvia perquè s'afegeixen o s'eliminen files (cap cel·la aparellada passa de nul a valor o al revés), no és C510: és conseqüència de C421/C422. Criteri del paper a Census D6/D7. | C510 sempre que canviï la proporció |
 
 Decisions del prompt original que **no s'apliquen**, per decisió de Joan:
 - **D2 / P4** (C530 només per a la variable objectiu): C530 és un canvi
@@ -89,23 +90,28 @@ Decisions del prompt original que **no s'apliquen**, per decisió de Joan:
 
 ## Preguntes amb evidència de Census Income (Taula 1 del paper)
 
-Casos on el motor detecta una cosa que és certa a les dades però que el
-paper no marca, o al revés. No s'ha ajustat cap llindar per fer-los
-coincidir: són preguntes per a Alberto.
+Resultat actual: precisió 71,4%, recall 96,2% (25 TP, 10 FP, 1 FN;
+`data/census_income/census_income_paper_comparison_by_code_7.csv`). Cada
+fals positiu s'ha comprovat obrint les dades:
 
-- **Codificar categòriques com a enters (D7).** D7 converteix totes les
-  categòriques en codis numèrics. Amb P3 el motor ho marca com a C311; el
-  paper hi marca **C312** i no C311. Si el criteri del paper és aquest, P3
-  s'hauria de canviar.
-- **Eliminar les files amb valors absents (D7).** D7 elimina totes les
-  files amb `?`. El motor hi marca C422 `had_nulls` i C510 (la proporció de
-  nuls passa de ~7% a 0%). El paper no marca ni C422 ni C510 per a D7. Cal
-  C510 quan el canvi de nuls ve només de files eliminades?
-- **Files d'una altra mostra (D3, D4, D6).** Aquestes versions no tenen les
-  mateixes files que l'original (D3 en té 12.211 de 32.561, en part
-  d'`adult.test`). El motor hi marca C421; el paper no.
-- **Ordre de files a D4.** D3 i D4 venen del mateix repositori
-  (`mstz/adult`) i el paper marca C410 per a D3 però no per a D4.
+| Versió | Codi del motor que el paper no marca | Què hi ha a les dades | Tipus |
+|---|---|---|---|
+| D3, D4 | C421 | 3.534 files (29%) amb una combinació (edat, `fnlwgt`, guanys, pèrdues) que no existeix a D0: vénen d'`adult.test` | Canvi real |
+| D6 | C421 | Una altra mostra de files, part noves | Canvi real |
+| D3 | C222 `education-num` | La columna `education` passa a ser numèrica (C311, que el paper sí marca) i `education-num` desapareix | Canvi real; el paper hi és incoherent |
+| D6 | C222 `fnlwgt` | `fnlwgt` no hi és | Canvi real |
+| D4, D6 | C410 | Ordre de files aleatori respecte a D0 (tau de Kendall ≈ 0). D3 ve del mateix repositori i el paper sí que hi marca C410 | Canvi real |
+| D7 | C422 `had_nulls` | S'eliminen les 2.385 files amb `?` | Canvi real |
+| D7 | C311 (i C312 no detectat) | Totes les categòriques passen a codis enters. Amb P3 és C311; el paper hi marca C312, però a D3/D4 marca C311 per al mateix tipus de canvi | Criteri (P3); el paper no és coherent |
+| D7 | C410 | 14 files de D0 amb un nul s'aparellen amb files d'`adult.test` idèntiques en totes les altres columnes; D7 conserva l'ordre de D0 | Error del motor, indecidible amb les dades |
+
+Ja resolts: el renom `fnlwgt` → `final_weight` sobre una altra mostra de
+files (D3/D4, abans C221 + C222), i el C510 de D6/D7, que ara segueix el
+criteri del paper (P12).
+
+**Preguntes per a Alberto:** amb quin criteri el paper no marca C421 quan
+la versió nova té files que no eren a l'original (D3, D4, D6), ni C422 a
+D7? I la codificació de categòriques com a enters, és C311 o C312?
 
 ## Preguntes d'etiquetatge trobades en construir l'avaluació
 

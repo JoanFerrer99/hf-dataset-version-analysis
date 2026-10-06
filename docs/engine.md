@@ -106,7 +106,9 @@ d'absent, estil numèric) i el dialecte CSV.
   passen a nul i es guarden per detectar canvis de token.
 - **Parquet/JSON**: tipus natius; les columnes de text també passen pels
   tokens d'absent. Una columna d'arrays d'un sol element (LeRobot desa així
-  els escalars, p.e. `gripper_width`) es llegeix com a escalar.
+  els escalars, p.e. `gripper_width`) es llegeix com a escalar. Una columna
+  sense cap valor no té tipus: pren el de la columna aparellada, així que
+  una columna buida que s'omple és C510, no un canvi de tipus.
 - **Tipus lògic** (dels valors, no del dtype): `numeric` si tots els
   valors no nuls es poden llegir com a nombre; `text` si és text lliure
   (P6); `opaque` per a cel·les dict/list/bytes (imatges, àudio), que es
@@ -153,7 +155,11 @@ aparellades. Una parella eliminada/afegida és la mateixa columna si una
 explicació reprodueix ≥95% de les files (`column_match_min_validity`):
 valors idèntics, bijecció de categories, una transformació numèrica, o el
 mateix multiconjunt de valors (si té ≥20 valors distints; no cal aparellar
-files). Abans es busquen codificacions one-hot. L'assignació global es
+files). Si la versió nova és **una altra mostra de files** (p.e. Census D3,
+amb part de les files noves), una columna amb ≥20 valors distints també és
+la mateixa si la majoria dels seus valors distints ja hi eren
+(`same_column_min_shared_values`) i la seva distribució no canvia segons el
+criteri de C530 (`transforms.distribution_distance` < `c530_min_distance`). Abans es busquen codificacions one-hot. L'assignació global es
 resol amb l'algorisme hongarès (`scipy.optimize.linear_sum_assignment`);
 la semblança del nom només desempata.
 
@@ -191,9 +197,9 @@ files aparellades no ambigües.
 | `detect_column_set` | C210, C221, C222, C223, C311 `one_hot` | Ordre relatiu de les columnes aparellades; columnes sobrants; renoms |
 | `detect_kinds` | C311, C321 | Canvi de família numèric ↔ categòric, codificat pel tipus antic (P3). C321 `real_to_integer` només si l'ajust és un arrodoniment |
 | `detect_values` | C312, C322, C510 | Cel·les de files aparellades. Valor ↔ nul és C510 (P1: `imputed_constant:<mean\|median\|mode\|value>`, `masking`). Numèriques: subtipus de l'ajust, `perturbation`, `representation` (notació científica, coma decimal) o `cell_edits`. Categòriques: el tipus de mapatge (P9) |
-| `detect_order` | C410 | Les files aparellades no ambigües canvien d'ordre: subsqüència creixent més llarga i tau de Kendall; `sorted_by:<col>` si la nova està ordenada per una columna |
+| `detect_order` | C410 | Les files aparellades **segures** (no ambigües i fetes amb totes les columnes, no editades) canvien d'ordre: subsqüència creixent més llarga i tau de Kendall; `sorted_by:<col>` si la nova està ordenada per una columna |
 | `detect_rows` | C421, C422 | Files sense parella. C421 `duplicate_of_existing`/`new`. C422 `duplicate_removed`, `had_nulls`, `outlier`, `predicate` (arbre de decisió de profunditat 2) o `unexplained` |
-| `detect_missing` | C510 | Proporció de nuls de la columna: prova de dues proporcions + efecte ≥ `c510_min_rate_delta`; canvi de token d'absent → `representation` |
+| `detect_missing` | C510 | Proporció de nuls de la columna: prova de dues proporcions + efecte ≥ `c510_min_rate_delta`, excepte si el canvi només ve de files afegides o eliminades (P12); canvi de token d'absent → `representation` |
 | `detect_correlation` | C520 | Spearman (num-num), V de Cramér corregida (cat-cat, categories rares agrupades; no es calcula si no compleix la regla de Cochran), raó de correlació (num-cat); \|Δ\| ≥ `c520_min_delta` i prova de Fisher z p < `alpha` per a totes les mesures |
 | `detect_distribution` | C530 | KS (numèriques) o variació total (categòriques) ≥ `c530_min_distance` i p < `alpha`. Salta identificadors, columnes amb canvi de tipus, text i columnes explicades per una transformació (P8); compara després d'aplicar el reetiquetatge |
 
@@ -228,7 +234,8 @@ altres valors: `dataclasses.replace(DEFAULT_CONFIG, alpha=0.05)`; el
 `config_hash` de la sortida ho registra. Les decisions provisionals són
 interruptors:
 `null_transition_is_c510` (P1), `kind_change_by_old_kind` (P3),
-`report_representation` (P5), `transformation_suppresses_c530` (P8).
+`report_representation` (P5), `transformation_suppresses_c530` (P8),
+`row_change_suppresses_c510` (P12).
 
 ## 4. Avaluació
 
