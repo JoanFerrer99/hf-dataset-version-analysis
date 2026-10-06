@@ -20,6 +20,10 @@ TABULAR_EXTENSIONS = (".parquet", ".csv", ".tsv", ".json", ".jsonl")
 TABULAR_BUILDERS = {"parquet", "csv", "json", "arrow"}
 _BUILDER_EXTENSIONS = {"parquet": (".parquet",), "csv": (".csv", ".tsv"), "json": (".json", ".jsonl"), "arrow": (".arrow",)}
 
+# Fitxers JSON de metadades, no de dades: del Hub/`datasets` i de LeRobot (`meta/info.json`, `meta/stats.json`).
+METADATA_FILES = {"dataset_info.json", "dataset_infos.json", "dataset_dict.json", "state.json", "info.json",
+                  "stats.json"}
+
 _HF_SHARD = re.compile(r"-\d{5}-of-\d{5}(?=\.)")
 _TRAILING_NUMBER = re.compile(r"\d+(?=\.[^./]+$)")
 
@@ -52,8 +56,10 @@ class RepoLayout:
 
     :ivar units: taules tabulars trobades.
     :ivar excluded: fitxers tabulars que no formen part de cap taula, amb el motiu.
-    :ivar builder: format inferit (també per a repositoris de media).
-    :ivar error: motiu si `datasets` no ha pogut resoldre el repositori.
+    :ivar builder: format inferit (també per a repositoris de media, on les
+        taules són els fitxers tabulars que la media no fa servir).
+    :ivar error: motiu si `datasets` no ha pogut resoldre el repositori; llavors
+        cada fitxer tabular és una taula (`naming="single"`, split = ruta).
     """
 
     units: list[Unit] = field(default_factory=list)
@@ -63,7 +69,7 @@ class RepoLayout:
 
 
 def is_tabular_path(path: str) -> bool:
-    return path.lower().endswith(TABULAR_EXTENSIONS)
+    return path.lower().endswith(TABULAR_EXTENSIONS) and os.path.basename(path) not in METADATA_FILES
 
 
 def classify_naming(files: list[str]) -> str:
@@ -111,7 +117,8 @@ def resolve_units(paths: list[str], readme_text: str | None = None) -> RepoLayou
     layout = RepoLayout()
     with tempfile.TemporaryDirectory(prefix="hf_layout_") as root:
         for path in paths:
-            if path == "README.md":
+            # El README es reescriu a sota; les metadades buides farien fallar `datasets` en llegir-les.
+            if path == "README.md" or os.path.basename(path) in METADATA_FILES:
                 continue
             full = os.path.join(root, path)
             os.makedirs(os.path.dirname(full), exist_ok=True)
@@ -125,9 +132,8 @@ def resolve_units(paths: list[str], readme_text: str | None = None) -> RepoLayou
             module = LocalDatasetModuleFactory(root).get_module()
         except Exception as exc:
             layout.error = f"{type(exc).__name__}: {exc}"[:200]
-            for path in paths:
-                if is_tabular_path(path):
-                    layout.excluded[path] = "unresolved"
+            layout.units = [Unit("default", path, (path,), os.path.splitext(path)[1].lstrip("."), "single")
+                            for path in sorted(paths) if is_tabular_path(path)]
             return layout
 
         builder = module.module_path.rsplit(".", 1)[-1]
@@ -151,12 +157,21 @@ def resolve_units(paths: list[str], readme_text: str | None = None) -> RepoLayou
                         builder=builder, naming=classify_naming(rel),
                     ))
 
+    if builder not in TABULAR_BUILDERS:
+        # Repositori de media (p.e. LeRobot: més vídeos que parquet). El metadata.csv
+        # del constructor de media no és un dataset, però les taules que no fa servir
+        # sí: es resolen soles, amb les mateixes regles i sense el README (que descriu la media).
+        tabular = [p for p in paths if is_tabular_path(p)]
+        layout.excluded = {p: "media_metadata" for p in tabular if p in used}
+        loose = [p for p in tabular if p not in used]
+        if loose:
+            inner = resolve_units(loose)
+            layout.units, layout.error = inner.units, inner.error
+            layout.excluded.update(inner.excluded)
+        return layout
+
     for path in paths:
-        if not is_tabular_path(path):
-            continue
-        if builder not in TABULAR_BUILDERS:
-            layout.excluded[path] = "media_metadata" if path in used else "outside_any_split"
-        elif path not in used:
+        if is_tabular_path(path) and path not in used:
             same_format = path.lower().endswith(_BUILDER_EXTENSIONS[builder])
             layout.excluded[path] = "outside_any_split" if same_format else "other_format"
     return layout

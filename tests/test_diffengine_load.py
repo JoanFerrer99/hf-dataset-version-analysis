@@ -55,3 +55,15 @@ def test_image_cells_are_opaque_and_deterministic():
     second = load_table(parquet(df), ".parquet")
     assert first.columns["img"].kind == OPAQUE
     assert first.values["img"].tolist() == second.values["img"].tolist()
+
+
+def test_single_element_arrays_are_read_as_scalars():
+    """LeRobot desa escalars com a arrays d'un element (`gripper_width`)."""
+    df = pd.DataFrame({"gripper_width": [np.array([0.5]), np.array([np.nan]), np.array([0.25])],
+                       "state": [np.array([1.0, 2.0])] * 3})
+    buf = io.BytesIO()
+    df.to_parquet(buf, index=False)
+    table = load_table(buf.getvalue(), ".parquet")
+    assert table.columns["gripper_width"].kind == NUMERIC
+    assert table.values["gripper_width"].isna().tolist() == [False, True, False]
+    assert table.columns["state"].kind == OPAQUE

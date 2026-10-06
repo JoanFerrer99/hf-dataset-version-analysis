@@ -12,6 +12,9 @@ from dataclasses import asdict, dataclass, field
 
 import pandas as pd
 
+ENGINE_VERSION = "2.1.0"
+"""Es desa a cada fila de sortida, amb el hash de la configuració."""
+
 # Els 14 codis tabulars de la taxonomia (C100, metadades, és fora d'abast).
 TABULAR_CODES = ("C210", "C221", "C222", "C223", "C311", "C312", "C321", "C322",
                  "C410", "C421", "C422", "C510", "C520", "C530")
@@ -87,6 +90,7 @@ def status_frame(result: DiffResult, key: dict) -> pd.DataFrame:
         "key_columns": ",".join(info.get("key_columns", [])),
         "matched_row_share": info.get("matched_row_share"),
         "format_old": info.get("format_old"), "format_new": info.get("format_new"),
+        "detail": info.get("reason") or info.get("error"),
     }])
 
 

@@ -10,6 +10,7 @@ llista de fitxers + README, sense descarregar dades.
   python eval/survey_units.py            # resultats a eval/survey/
 """
 
+import functools
 import glob
 import json
 import os
@@ -18,11 +19,12 @@ from collections import Counter
 
 import pandas as pd
 from dotenv import load_dotenv
-from huggingface_hub import hf_hub_download, list_repo_tree
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "notebooks"))
 import errors  # noqa: E402
-from diffengine.units import resolve_units  # noqa: E402
+from diffengine import pairs  # noqa: E402
+
+RETRY = functools.partial(errors.with_retry, **errors.DEFAULT_RETRY_CONFIG)
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "eval", "survey")
@@ -54,31 +56,16 @@ def eligible_revisions() -> dict[str, list[str]]:
 
 
 def fetch_layout(repo: str, revision: str, token: str) -> dict:
-    """Llista fitxers i README d'una revisió i en resol les taules."""
+    """Llista fitxers i README d'una revisió i en resol les taules (mateix codi que el motor)."""
     try:
-        entries = errors.with_retry(
-            lambda: list(list_repo_tree(repo, repo_type="dataset", revision=revision, recursive=True, token=token)),
-            **errors.DEFAULT_RETRY_CONFIG,
-        )
+        rev = pairs.list_revision(repo, revision, token, call=RETRY)
     except Exception as exc:
         return {"error": f"tree: {errors.classify_error(exc).value}"}
-    paths = [e.path for e in entries if getattr(e, "size", None) is not None]
-    readme = None
-    if "README.md" in paths:
-        try:
-            local = errors.with_retry(
-                hf_hub_download, repo_id=repo, repo_type="dataset", filename="README.md",
-                revision=revision, token=token, **errors.DEFAULT_RETRY_CONFIG,
-            )
-            with open(local, encoding="utf-8", errors="replace") as f:
-                readme = f.read()
-        except Exception:
-            pass
-    layout = resolve_units(paths, readme)
+    layout = rev.layout
     return {
         "builder": layout.builder,
         "error": layout.error,
-        "n_files": len(paths),
+        "n_files": len(rev.sizes),
         "units": [{"subset": u.subset, "split": u.split, "files": list(u.files), "naming": u.naming,
                    "builder": u.builder} for u in layout.units],
         "excluded": layout.excluded,

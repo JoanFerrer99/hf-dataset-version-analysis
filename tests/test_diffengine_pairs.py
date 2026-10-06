@@ -1,7 +1,5 @@
 """Tests de L0 (`diffengine.pairs`): aparellament de taules i estats, sense xarxa."""
 
-
-
 import pandas as pd
 
 from diffengine import pairs
@@ -25,6 +23,14 @@ class TestPairUnits:
         assert set(result) == {"default/train"}
         assert result["default/train"].status == "pending"
         assert len(result["default/train"].new_files) == 2
+
+    def test_changed_file_outside_any_split_is_recorded_as_excluded(self):
+        old = revision("a", {"train.csv": "t", "test.csv": "s", "notes.csv": "n1", "extra.csv": "e"})
+        new = revision("b", {"train.csv": "t", "test.csv": "s", "notes.csv": "n2", "extra.csv": "e"})
+        result = by_key(pairs.pair_units(old, new))
+        assert result["notes.csv"].status == "excluded"
+        assert result["notes.csv"].info == {"reason": "outside_any_split"}
+        assert "extra.csv" not in result  # exclòs però sense canvis: no cal registrar-lo
 
     def test_identical_content_is_not_compared(self):
         files = {"train.csv": "same"}
@@ -63,7 +69,7 @@ def _csv(df):
 
 class TestComparePair:
     def _setup(self, monkeypatch, contents: dict[tuple[str, str], bytes]):
-        def fake_load(repo_id, revision, files, token, retry_config, config):
+        def fake_load(repo_id, revision, files, token, call, config):
             from diffengine.load import load_table
             return load_table(contents[(revision, files[0])], ".csv", config)
         monkeypatch.setattr(pairs, "_load_files", fake_load)

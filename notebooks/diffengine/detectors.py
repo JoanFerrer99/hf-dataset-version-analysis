@@ -13,14 +13,13 @@ from scipy import stats
 
 from diffengine.columns import ColumnAlignment, ColumnMatch, order_changed
 from diffengine.config import EngineConfig
-from diffengine.load import NUMERIC, OPAQUE, TEXT, Table
+from diffengine.load import NULL_TOKEN, NUMERIC, OPAQUE, TEXT, Table
 from diffengine.output import Change
-from diffengine.rows import RowAlignment, cell_tokens, is_identifier_like
-from diffengine.transforms import _norm_repr, analyze_mapping, fit_numeric, is_perturbation
+from diffengine.rows import RowAlignment, cell_tokens, is_identifier_like, is_row_number, is_sequence, paired_values
+from diffengine.transforms import analyze_mapping, fit_numeric, is_perturbation, normalize_value
 
-_FIT_SUBTYPE = {"factor": "factor", "linear": "linear", "minmax": "minmax", "standardization": "standardization",
-                "normalization": "normalization", "log": "log", "sqrt": "sqrt", "reciprocal": "reciprocal",
-                "exp": "exp"}
+# Ajustos que són un subtipus de C322 (`identity` no és un canvi; `round` és C321).
+_C322_FITS = {"factor", "linear", "minmax", "standardization", "normalization", "log", "sqrt", "reciprocal", "exp"}
 
 
 @dataclass
@@ -31,6 +30,7 @@ class Context:
     rows: RowAlignment
     config: EngineConfig
     identifiers: set[str] = field(default_factory=set)
+    row_numbers: set[str] = field(default_factory=set)
     explained: dict[str, str] = field(default_factory=dict)
     relabeled: dict[str, dict] = field(default_factory=dict)
     representation: set[str] = field(default_factory=set)
@@ -38,9 +38,8 @@ class Context:
     c510_columns: set[str] = field(default_factory=set)
 
     def paired(self, m: ColumnMatch) -> tuple[pd.Series, pd.Series]:
-        a = self.old.values[m.old].iloc[self.rows.pairs[:, 0]].reset_index(drop=True)
-        b = self.new.values[m.new].iloc[self.rows.pairs[:, 1]].reset_index(drop=True)
-        return a, b
+        pairs = self.rows.pairs
+        return paired_values(self.old, m.old, pairs[:, 0]), paired_values(self.new, m.new, pairs[:, 1])
 
 
 def _family(kind: str) -> str:
@@ -129,7 +128,8 @@ def detect_values(ctx: Context) -> list[Change]:
         return out
     for m in ctx.cols.matches:
         ko, kn = ctx.old.columns[m.old], ctx.new.columns[m.new]
-        if m.old in ctx.kind_changed or OPAQUE in (ko.kind, kn.kind) or _family(ko.kind) != _family(kn.kind):
+        if m.old in ctx.kind_changed or m.old in ctx.row_numbers or OPAQUE in (ko.kind, kn.kind) \
+                or _family(ko.kind) != _family(kn.kind):
             continue
         a, b = ctx.paired(m)
         na, nb = a.isna().to_numpy(), b.isna().to_numpy()
@@ -169,11 +169,14 @@ def _numeric_values(ctx, m, a, b, ko, kn) -> list[Change]:
                                       "decimal_comma": [ko.decimal_comma, kn.decimal_comma]})]
         return []
     share = n_changed / both.sum()
+    if is_sequence(ctx.old, m.old) and is_sequence(ctx.new, m.new):
+        # Comptador de posició (p.e. `episode_index`) desplaçat per files inserides o eliminades.
+        return [_change("C322", m, subtype="renumbered", n_affected=n_changed, share_affected=float(share))]
     if n_changed >= ctx.config.min_explained_rows:
         fit = fit_numeric(x, y, ctx.config.column_match_min_validity, explain_changed=True)
-        if fit is not None and fit.kind in _FIT_SUBTYPE:
+        if fit is not None and fit.kind in _C322_FITS:
             ctx.explained[m.old] = fit.kind
-            return [_change("C322", m, subtype=_FIT_SUBTYPE[fit.kind], n_affected=n_changed,
+            return [_change("C322", m, subtype=fit.kind, n_affected=n_changed,
                             share_affected=float(share), confidence=fit.validity,
                             evidence={"fit": fit.kind, **fit.params})]
     if is_perturbation(x, y):
@@ -252,6 +255,8 @@ def _removed_subtype(ctx: Context, removed: np.ndarray, kept: np.ndarray) -> tup
     cfg = ctx.config
     old = ctx.old
     cols = [m.old for m in ctx.cols.matches if old.columns[m.old].kind != OPAQUE]
+    if not len(kept):
+        return "all_rows", {}
     if not len(removed) or not cols:
         return "unexplained", {}
     nulls = old.values[cols].isna().any(axis=1).to_numpy()
@@ -284,7 +289,7 @@ def _predicate(ctx: Context, cols: list[str], removed: np.ndarray, kept: np.ndar
             feats.append(df[c].fillna(df[c].median()).rename(c))
         elif ctx.old.columns[c].kind != TEXT:
             # Un predicat només pot fer servir valors de les files eliminades: els 20 més freqüents.
-            values = df[c].fillna("\x00null")
+            values = df[c].fillna(NULL_TOKEN)
             for v in values.iloc[removed].value_counts().index[:20]:
                 feats.append((values == v).astype(int).rename(f"{c}={v}"))
     if not feats:
@@ -387,7 +392,9 @@ def _assoc(x: pd.Series, y: pd.Series, kx: str, ky: str) -> float | None:
         table = pd.crosstab(df["x"], df["y"])
         if min(table.shape) < 2:
             return None
-        chi2 = stats.chi2_contingency(table, correction=False)[0]
+        chi2, _, _, expected = stats.chi2_contingency(table, correction=False)
+        if (expected >= 5).mean() < 0.8:
+            return None  # regla de Cochran: amb comptes esperats tan petits, la V no és fiable
         n = table.to_numpy().sum()
         r, k = table.shape
         phi2 = max(0.0, chi2 / n - (k - 1) * (r - 1) / (n - 1))
@@ -423,16 +430,17 @@ def detect_correlation(ctx: Context) -> list[Change]:
             r_new = _assoc(ctx.new.values[a.new], ctx.new.values[b.new], ka, kb)
             if r_old is None or r_new is None or abs(r_new - r_old) < cfg.c520_min_delta:
                 continue
+            # Prova de Fisher z per a la diferència (exacta per a Spearman, aproximada
+            # per a V de Cramér i eta): amb poques files, |Δ| ≥ 0.1 sol no n'hi ha prou.
             n1, n2 = ctx.old.n_rows, ctx.new.n_rows
-            confidence = 1.0
-            if ka == NUMERIC and kb == NUMERIC and n1 > 3 and n2 > 3:
-                z = (np.arctanh(np.clip(r_old, -0.9999, 0.9999)) - np.arctanh(np.clip(r_new, -0.9999, 0.9999)))
-                pval = 2 * stats.norm.sf(abs(z) / np.sqrt(1 / (n1 - 3) + 1 / (n2 - 3)))
-                if pval >= cfg.alpha:
-                    continue
-                confidence = float(1 - pval)
-            out.append(Change("C520", column=f"{a.new}|{b.new}", confidence=confidence,
-                              evidence={"old": r_old, "new": r_new,
+            if min(n1, n2) <= 3:
+                continue
+            z = np.arctanh(np.clip(r_old, -0.9999, 0.9999)) - np.arctanh(np.clip(r_new, -0.9999, 0.9999))
+            pval = float(2 * stats.norm.sf(abs(z) / np.sqrt(1 / (n1 - 3) + 1 / (n2 - 3))))
+            if pval >= cfg.alpha:
+                continue
+            out.append(Change("C520", column=f"{a.new}|{b.new}", confidence=1 - pval,
+                              evidence={"old": r_old, "new": r_new, "p_value": pval,
                                         "measure": "spearman" if ka == kb == NUMERIC else "cramers_v/eta"}))
     return out
 
@@ -460,7 +468,7 @@ def detect_distribution(ctx: Context) -> list[Change]:
             if m.old in ctx.relabeled:
                 a = a.map(lambda v: ctx.relabeled[m.old].get(v, v))
             if m.old in ctx.representation:
-                a, b = a.map(_norm_repr), b.map(_norm_repr)
+                a, b = a.map(normalize_value), b.map(normalize_value)
             fa, fb = a.value_counts(normalize=True), b.value_counts(normalize=True)
             fa, fb = fa.align(fb, fill_value=0)
             distance = float(0.5 * np.abs(fa - fb).sum())
@@ -477,11 +485,19 @@ DETECTORS = (detect_column_set, detect_kinds, detect_values, detect_order, detec
              detect_correlation, detect_distribution)
 
 
-def find_identifiers(old: Table, rows: RowAlignment, cols: ColumnAlignment) -> set[str]:
-    """Columnes clau o amb nom d'identificador i valors únics: no són variables."""
-    ids = set(rows.key_columns)
-    for m in cols.matches:
-        s = old.values[m.old]
-        if is_identifier_like(m.old) and s.notna().all() and s.is_unique:
-            ids.add(m.old)
-    return ids
+def find_identifiers(ctx: Context) -> None:
+    """
+    Columnes que identifiquen files, no variables: la clau, les que tenen nom
+    d'identificador i valors únics, els números de fila i les seqüències
+    (`episode_index`). No entren a C520 ni C530. Els números de fila tampoc a
+    C322: es renumeren com a conseqüència de C421/C422.
+    """
+    ctx.identifiers = set(ctx.rows.key_columns)
+    for m in ctx.cols.matches:
+        s = ctx.old.values[m.old]
+        if is_row_number(ctx.old, m.old) and is_row_number(ctx.new, m.new):
+            ctx.row_numbers.add(m.old)
+            ctx.identifiers.add(m.old)
+        elif (is_identifier_like(m.old) and s.notna().all() and s.is_unique) or \
+                (is_sequence(ctx.old, m.old) and is_sequence(ctx.new, m.new)):
+            ctx.identifiers.add(m.old)

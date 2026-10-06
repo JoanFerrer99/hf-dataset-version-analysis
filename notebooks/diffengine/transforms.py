@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from diffengine.load import NULL_TOKEN
+
 
 @dataclass
 class Fit:
@@ -126,35 +128,44 @@ class Mapping:
     mapping: dict = field(default_factory=dict)
 
 
-def _norm_repr(v: str) -> str:
+def normalize_value(v) -> str:
+    """Forma canònica d'una categoria per a canvis de representació: sense espais extra, en minúscules."""
     return re.sub(r"\s+", " ", str(v).strip()).lower()
+
+
+def _dominant_maps(a: np.ndarray, b: np.ndarray) -> tuple[pd.Series, pd.Series, np.ndarray, np.ndarray]:
+    """
+    Valor dominant de cada costat: `fwd[x]` és el valor nou més freqüent per a
+    l'antic `x`, i `bwd` al revés. `*_hit[i]` diu si la fila `i` segueix el mapa.
+    """
+    df = pd.DataFrame({"a": a, "b": b})
+    fwd = df.groupby("a")["b"].agg(lambda s: s.value_counts().index[0])
+    bwd = df.groupby("b")["a"].agg(lambda s: s.value_counts().index[0])
+    return fwd, bwd, df["a"].map(fwd).to_numpy() == b, df["b"].map(bwd).to_numpy() == a
 
 
 def analyze_mapping(old: pd.Series, new: pd.Series, min_validity: float, min_group_rows: int) -> Mapping:
     """
     Com es corresponen els valors vells i nous en files aparellades (tots
     dos no nuls). `old`/`new` són text.
+
+    Un mapa (reetiquetatge, fusió, divisió) ha d'explicar la majoria de files
+    I de files canviades: en una edició de cel·les, el valor dominant d'una
+    categoria és ella mateixa, i no n'explica cap.
     """
     mask = old.notna().to_numpy() & new.notna().to_numpy()
     a = old[mask].astype(str).to_numpy()
     b = new[mask].astype(str).to_numpy()
     n = len(a)
-    changed = int(np.sum(a != b))
+    diff = a != b
+    changed = int(diff.sum())
     if n == 0 or changed == 0:
         return Mapping("identity", 1.0, 0)
 
-    if all(_norm_repr(x) == _norm_repr(y) for x, y in zip(a[a != b], b[a != b])):
+    if all(normalize_value(x) == normalize_value(y) for x, y in zip(a[diff], b[diff])):
         return Mapping("representation", 1.0, changed)
 
-    df = pd.DataFrame({"a": a, "b": b})
-    # Valor dominant de cada costat; `*_valid`: proporció de files que explica;
-    # `*_expl`: proporció de les files CANVIADES que explica. En una edició de
-    # cel·les el valor dominant és el mateix valor, i no n'explica cap.
-    fwd = df.groupby("a")["b"].agg(lambda s: s.value_counts().index[0])
-    bwd = df.groupby("b")["a"].agg(lambda s: s.value_counts().index[0])
-    fwd_hit = df["a"].map(fwd).to_numpy() == b
-    bwd_hit = df["b"].map(bwd).to_numpy() == a
-    diff = a != b
+    fwd, bwd, fwd_hit, bwd_hit = _dominant_maps(a, b)
     fwd_ok = fwd_hit.mean() >= min_validity and fwd_hit[diff].mean() >= min_validity
     bwd_ok = bwd_hit.mean() >= min_validity and bwd_hit[diff].mean() >= min_validity
 
@@ -172,12 +183,10 @@ def analyze_mapping(old: pd.Series, new: pd.Series, min_validity: float, min_gro
 
 def is_bijection(old: pd.Series, new: pd.Series, min_validity: float) -> tuple[bool, float]:
     """Dependència funcional en tots dos sentits (Explain-Da-V §4.6), amb nuls aparellats."""
-    a = old.astype(object).where(old.notna(), "\x00null").astype(str).to_numpy()
-    b = new.astype(object).where(new.notna(), "\x00null").astype(str).to_numpy()
+    a = old.astype(object).where(old.notna(), NULL_TOKEN).astype(str).to_numpy()
+    b = new.astype(object).where(new.notna(), NULL_TOKEN).astype(str).to_numpy()
     if not len(a):
         return False, 0.0
-    df = pd.DataFrame({"a": a, "b": b})
-    fwd = df.groupby("a")["b"].agg(lambda s: s.value_counts().index[0])
-    bwd = df.groupby("b")["a"].agg(lambda s: s.value_counts().index[0])
-    validity = min(float(np.mean(df["a"].map(fwd).to_numpy() == b)), float(np.mean(df["b"].map(bwd).to_numpy() == a)))
+    fwd, _, fwd_hit, bwd_hit = _dominant_maps(a, b)
+    validity = float(min(fwd_hit.mean(), bwd_hit.mean()))
     return validity >= min_validity and fwd.nunique() == len(fwd), validity

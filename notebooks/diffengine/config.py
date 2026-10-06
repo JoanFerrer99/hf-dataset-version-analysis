@@ -1,14 +1,13 @@
 """
 Configuració del motor: tots els llindars i decisions provisionals en un sol
 lloc, amb el valor per defecte documentat. Les decisions P* i U* es
-descriuen a `docs/open_decisions.md`.
-
-Es pot sobreescriure amb un YAML: `EngineConfig.from_yaml(path)`.
+descriuen a `docs/open_decisions.md`. Per provar uns altres valors:
+`dataclasses.replace(DEFAULT_CONFIG, alpha=0.05)`.
 """
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass
 
 
 @dataclass(frozen=True)
@@ -73,20 +72,6 @@ class EngineConfig:
         """Hash curt de la configuració, per guardar-lo amb cada resultat."""
         payload = json.dumps(asdict(self), sort_keys=True, default=list).encode()
         return hashlib.sha256(payload).hexdigest()[:12]
-
-    @classmethod
-    def from_yaml(cls, path: str) -> "EngineConfig":
-        import yaml
-
-        with open(path, encoding="utf-8") as f:
-            values = yaml.safe_load(f) or {}
-        known = {f.name for f in fields(cls)}
-        unknown = set(values) - known
-        if unknown:
-            raise ValueError(f"Opcions desconegudes a {path}: {sorted(unknown)}")
-        if "missing_tokens" in values:
-            values["missing_tokens"] = tuple(values["missing_tokens"])
-        return cls(**values)
 
 
 DEFAULT_CONFIG = EngineConfig()

@@ -20,7 +20,7 @@ from scipy.optimize import linear_sum_assignment
 
 from diffengine.config import EngineConfig
 from diffengine.load import NUMERIC, OPAQUE, Table
-from diffengine.rows import RowAlignment, cell_tokens
+from diffengine.rows import RowAlignment, cell_tokens, paired_values, value_overlap
 from diffengine.transforms import fit_numeric, is_bijection
 
 
@@ -76,10 +76,6 @@ def align_by_name(old: Table, new: Table) -> ColumnAlignment:
     return ColumnAlignment(matches, removed, added)
 
 
-def _paired(table: Table, column: str, rows: np.ndarray) -> pd.Series:
-    return table.values[column].iloc[rows].reset_index(drop=True)
-
-
 def _score(old: Table, new: Table, o: str, n: str, rows: RowAlignment, config: EngineConfig) -> tuple[float, str, dict]:
     if old.columns[o].kind == OPAQUE or new.columns[n].kind == OPAQUE:
         return 0.0, "", {}
@@ -87,19 +83,16 @@ def _score(old: Table, new: Table, o: str, n: str, rows: RowAlignment, config: E
     if min(ta_all.nunique(), tb_all.nunique()) >= 20:
         # Molts valors distints i el mateix multiconjunt: és la mateixa columna,
         # encara que les files no s'hagin pogut aparellar bé.
-        shared = ta_all.value_counts().align(tb_all.value_counts(), fill_value=0)
-        overlap = float(np.minimum(*shared).sum() / max(min(len(ta_all), len(tb_all)), 1))
+        overlap = value_overlap(ta_all, tb_all)
         if overlap >= config.column_match_min_validity:
             return overlap, "identical", {"by": "value_multiset"}
     reliable = rows.reliable_pairs
     if len(reliable) >= 10:
         a_idx, b_idx = reliable[:, 0], reliable[:, 1]
-        ta = cell_tokens(old, o).iloc[a_idx].to_numpy()
-        tb = cell_tokens(new, n).iloc[b_idx].to_numpy()
-        same = float(np.mean(ta == tb))
+        same = float(np.mean(ta_all.iloc[a_idx].to_numpy() == tb_all.iloc[b_idx].to_numpy()))
         if same >= config.column_match_min_validity:
             return same, "identical", {}
-        x, y = _paired(old, o, a_idx), _paired(new, n, b_idx)
+        x, y = paired_values(old, o, a_idx), paired_values(new, n, b_idx)
         if old.columns[o].kind == NUMERIC and new.columns[n].kind == NUMERIC:
             fit = fit_numeric(x.to_numpy(float), y.to_numpy(float), config.column_match_min_validity)
             if fit is not None:
@@ -134,7 +127,7 @@ def _find_one_hot(old: Table, new: Table, ca: ColumnAlignment, rows: RowAlignmen
     for o in list(ca.removed):
         if old.columns[o].kind == NUMERIC or old.columns[o].kind == OPAQUE:
             continue
-        values = _paired(old, o, a_idx)
+        values = paired_values(old, o, a_idx)
         categories = values.dropna().unique()
         if not 2 <= len(categories) <= 50:
             continue

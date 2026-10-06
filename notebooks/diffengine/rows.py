@@ -12,6 +12,10 @@ L4: aparellar les files de dues versions.
 3. Les files que queden soles s'aparellen si difereixen en una sola
    columna estable (hash sense aquella columna), sempre que coincideixin
    en prou columnes (P2).
+
+Els números de fila i les seqüències (`index`, `episode_index`) no són ni
+clau ni part del hash: només diuen la posició, i una inserció al mig els
+renumera a totes les files següents.
 """
 
 from dataclasses import dataclass, field
@@ -20,7 +24,7 @@ import numpy as np
 import pandas as pd
 
 from diffengine.config import EngineConfig
-from diffengine.load import NUMERIC, OPAQUE, Table
+from diffengine.load import NULL_TOKEN, NUMERIC, OPAQUE, Table, is_missing
 
 _ID_NAMES = ("id", "_id", "uuid", "key", "index", "idx")
 
@@ -65,8 +69,13 @@ def cell_tokens(table: Table, column: str) -> pd.Series:
     """Valor normalitzat d'una columna com a text, per comparar i fer hash."""
     s = table.values[column]
     if table.columns[column].kind == NUMERIC:
-        return s.map(lambda v: "\x00null" if pd.isna(v) else format(float(v), ".10g"))
-    return s.map(lambda v: "\x00null" if v is None or (isinstance(v, float) and v != v) else str(v))
+        return s.map(lambda v: NULL_TOKEN if pd.isna(v) else format(float(v), ".10g"))
+    return s.map(lambda v: NULL_TOKEN if is_missing(v) else str(v))
+
+
+def paired_values(table: Table, column: str, rows: np.ndarray) -> pd.Series:
+    """Valors d'una columna a les files `rows`, reindexats 0..n (per comparar files aparellades)."""
+    return table.values[column].iloc[rows].reset_index(drop=True)
 
 
 def _column_hash(tokens: pd.Series, column_id: int) -> np.ndarray:
@@ -101,14 +110,37 @@ def is_identifier_like(name: str) -> bool:
     return lower in _ID_NAMES or lower.endswith(("_id", "-id", " id", "id_"))
 
 
+def is_row_number(table: Table, column: str) -> bool:
+    """La columna és la posició de la fila (0..n-1 o 1..n, en ordre), p.e. `index` de LeRobot."""
+    if table.columns[column].kind != NUMERIC or not table.n_rows:
+        return False
+    x = table.values[column].to_numpy(float)
+    return x[0] in (0.0, 1.0) and bool(np.array_equal(x, x[0] + np.arange(len(x))))
+
+
+def is_sequence(table: Table, column: str) -> bool:
+    """
+    Enter no decreixent al llarg de les files (`index`, `episode_index`...):
+    diu on és la fila, no quina és, i es renumera quan s'insereixen files.
+    """
+    if table.columns[column].kind != NUMERIC or table.n_rows < 2:
+        return False
+    x = table.values[column].to_numpy(float)
+    return bool(not np.isnan(x).any() and table.columns[column].integer and np.all(np.diff(x) >= 0) and x[0] != x[-1])
+
+
 def infer_key(old: Table, new: Table, matches: list[tuple[str, str]], config: EngineConfig) -> tuple[str, str] | None:
-    """Una columna aparellada única, no nul·la i compartida a les dues versions."""
+    """
+    Una columna aparellada única, no nul·la i compartida a les dues versions.
+    Un número de fila a totes dues no és una clau: només diu la posició, i es
+    renumera quan s'afegeixen o s'eliminen files.
+    """
     candidates = []
     for o, n in matches:
-        if old.columns[o].kind == OPAQUE:
+        if old.columns[o].kind == OPAQUE or (is_row_number(old, o) and is_row_number(new, n)):
             continue
         a, b = cell_tokens(old, o), cell_tokens(new, n)
-        if a.str.startswith("\x00null").any() or b.str.startswith("\x00null").any():
+        if (a == NULL_TOKEN).any() or (b == NULL_TOKEN).any():
             continue
         if not (a.is_unique and b.is_unique):
             continue
@@ -128,16 +160,14 @@ def _with_occurrence(h: np.ndarray) -> pd.DataFrame:
     return df
 
 
-def align_rows(old: Table, new: Table, matches: list[tuple[str, str]], config: EngineConfig,
-               exclude: set[str] = frozenset()) -> RowAlignment:
+def align_rows(old: Table, new: Table, matches: list[tuple[str, str]], config: EngineConfig) -> RowAlignment:
     """
     Aparella les files de `old` i `new`.
 
     :param matches: columnes aparellades `(nom antic, nom nou)`.
-    :param exclude: columnes (noms antics) que no han d'entrar al hash.
     """
     n_old, n_new = old.n_rows, new.n_rows
-    key = infer_key(old, new, [m for m in matches if m[0] not in exclude], config)
+    key = infer_key(old, new, matches, config)
     if key is not None:
         a = pd.Series(np.arange(n_old), index=cell_tokens(old, key[0]).values)
         b = pd.Series(np.arange(n_new), index=cell_tokens(new, key[1]).values)
@@ -148,7 +178,12 @@ def align_rows(old: Table, new: Table, matches: list[tuple[str, str]], config: E
             unmatched_new=np.setdiff1d(np.arange(n_new), pairs[:, 1]), method="key", key_columns=[key[0]],
         )
 
-    tokens = {o: (cell_tokens(old, o), cell_tokens(new, n)) for o, n in matches if o not in exclude}
+    # Les seqüències (vegeu `is_sequence`) queden fora del hash si en queden prou d'altres:
+    # una inserció al mig les renumera a totes les files següents.
+    positional = {o for o, n in matches if is_sequence(old, o) and is_sequence(new, n)}
+    if len(matches) - len(positional) < 2:
+        positional = set()
+    tokens = {o: (cell_tokens(old, o), cell_tokens(new, n)) for o, n in matches if o not in positional}
     stable = [o for o, (a, b) in tokens.items() if value_overlap(a, b) >= 0.5]
     if not stable:
         return RowAlignment(np.empty((0, 2), int), np.arange(n_old), np.arange(n_new), "none")
@@ -223,6 +258,26 @@ def align_rows(old: Table, new: Table, matches: list[tuple[str, str]], config: E
                 with np.errstate(over="ignore"):
                     match(row_old - cell_old[c1] - cell_old[c2], row_new - cell_new[c1] - cell_new[c2],
                           require_agreement=True)
+
+    # Una parella ambigua (feta per ordre dins d'un grup de files iguals en les
+    # columnes del hash) es descarta si no coincideix en una columna opaca fora
+    # del hash (vector, imatge): cap transformació no ho pot explicar, així que
+    # les columnes del hash no identificaven la fila (p.e. només `timestamp` i
+    # `frame_index`, que es repeteixen a cada episodi). Una diferència en una
+    # columna escalar sí que pot ser una transformació, i es manté.
+    unstable = [c for c in tokens if c not in stable and old.columns[c].kind == OPAQUE]
+    contested = [(a, b) for a, b, d in pairs if d]
+    if unstable and contested:
+        ia, ib = np.array(contested).T
+        agree = np.ones(len(contested), dtype=bool)
+        for c in unstable:
+            agree &= tokens[c][0].to_numpy()[ia] == tokens[c][1].to_numpy()[ib]
+        rejected = {p for p, ok in zip(contested, agree) if not ok}
+        if rejected:
+            pairs = [p for p in pairs if (p[0], p[1]) not in rejected]
+            ambiguous -= len(rejected)
+            free_old = np.union1d(free_old, [a for a, _ in rejected]).astype(int)
+            free_new = np.union1d(free_new, [b for _, b in rejected]).astype(int)
 
     pairs.sort()
     pairs_arr = np.array([(a, b) for a, b, _ in pairs], dtype=int) if pairs else np.empty((0, 2), int)

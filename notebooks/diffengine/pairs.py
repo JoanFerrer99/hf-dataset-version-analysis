@@ -11,19 +11,30 @@ comparar-les.
 - Si el contingut és idèntic (hash LFS o blob de git) no es descarrega res.
 - Cada parell acaba amb un estat; una fallada de descàrrega o de lectura
   MAI es converteix en codis de canvi.
+
+Les crides al Hub passen per `call(fn, *args, **kwargs)`, que dona qui fa
+servir el motor (p.e. amb reintents). El paquet no depèn del pipeline.
 """
 
 import os
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import pandas as pd
+from huggingface_hub import hf_hub_download, list_repo_tree
 
-import errors
 from diffengine.config import DEFAULT_CONFIG, EngineConfig
 from diffengine.engine import diff_tables
 from diffengine.load import ParseError, Table, load_table
-from diffengine.output import DiffResult
+from diffengine.output import ENGINE_VERSION, DiffResult, changes_frame, status_frame
 from diffengine.units import RepoLayout, resolve_units
+
+Call = Callable[..., object]
+
+
+def direct_call(fn, *args, **kwargs):
+    """`call` per defecte: sense reintents."""
+    return fn(*args, **kwargs)
 
 
 @dataclass
@@ -39,8 +50,9 @@ class UnitPair:
     """
     :ivar key: `subset/split` per a taules, o la ruta per a fitxers sols.
     :ivar status: `pending` fins que es compara; després `ok`, `identical_content`,
-        `absent_old`, `absent_new`, `download_failed`, `parse_failed` o
-        `too_large_profile_only`.
+        `absent_old`, `absent_new`, `download_failed`, `parse_failed`,
+        `too_large_profile_only` o `excluded` (fitxer tabular canviat que no és
+        cap taula; el motiu és a `info["reason"]`).
     """
 
     key: str
@@ -51,22 +63,18 @@ class UnitPair:
     info: dict = field(default_factory=dict)
 
 
-def list_revision(repo_id: str, revision: str, token: str | None, retry_config: dict) -> Revision:
+def list_revision(repo_id: str, revision: str, token: str | None, call: Call = direct_call) -> Revision:
     """Llista fitxers (amb mida i hash de contingut) i resol les taules d'una revisió."""
-    from huggingface_hub import hf_hub_download, list_repo_tree
-
-    entries = errors.with_retry(
-        lambda: list(list_repo_tree(repo_id, repo_type="dataset", revision=revision, recursive=True, token=token)),
-        **retry_config,
-    )
+    entries = call(
+        lambda: list(list_repo_tree(repo_id, repo_type="dataset", revision=revision, recursive=True, token=token)))
     files = [e for e in entries if getattr(e, "size", None) is not None]
     sizes = {e.path: e.size for e in files}
     content_ids = {e.path: (e.lfs.sha256 if getattr(e, "lfs", None) else e.blob_id) for e in files}
     readme = None
     if "README.md" in sizes:
         try:
-            local = errors.with_retry(hf_hub_download, repo_id=repo_id, repo_type="dataset", filename="README.md",
-                                      revision=revision, token=token, **retry_config)
+            local = call(hf_hub_download, repo_id=repo_id, repo_type="dataset", filename="README.md",
+                         revision=revision, token=token)
             with open(local, encoding="utf-8", errors="replace") as f:
                 readme = f.read()
         except Exception:
@@ -134,6 +142,15 @@ def pair_units(old: Revision, new: Revision, config: EngineConfig = DEFAULT_CONF
             p.status = "absent_new"
         elif [old.content_ids[f] for f in p.old_files] == [new.content_ids[f] for f in p.new_files]:
             p.status = "identical_content"
+
+    # Fitxers tabulars exclosos (decisió U1/U3): no es comparen, però si han
+    # canviat queden registrats amb el motiu.
+    in_pairs = {f for p in pairs for f in p.old_files + p.new_files}
+    excluded = {**old.layout.excluded, **new.layout.excluded}
+    for path in sorted(set(excluded) - in_pairs):
+        if old.content_ids.get(path) != new.content_ids.get(path):
+            pairs.append(UnitPair(path, (path,) if path in old.sizes else (), (path,) if path in new.sizes else (),
+                                  status="excluded", info={"reason": excluded[path]}))
     return pairs
 
 
@@ -149,13 +166,12 @@ def _concat(tables: list[Table]) -> Table:
     return Table(first.fmt, values, columns, raw=raw, dialect=first.dialect)
 
 
-def _load_files(repo_id, revision, files, token, retry_config, config) -> Table:
-    from huggingface_hub import hf_hub_download
-
+def _load_files(repo_id: str, revision: str, files: tuple[str, ...], token: str | None, call: Call,
+                config: EngineConfig) -> Table:
     tables = []
     for path in files:
-        local = errors.with_retry(hf_hub_download, repo_id=repo_id, repo_type="dataset", filename=path,
-                                  revision=revision, token=token, **retry_config)
+        local = call(hf_hub_download, repo_id=repo_id, repo_type="dataset", filename=path,
+                     revision=revision, token=token)
         with open(local, "rb") as f:
             tables.append(load_table(f.read(), os.path.splitext(path)[1], config))
     return tables[0] if len(tables) == 1 else _concat(tables)
@@ -166,7 +182,7 @@ class DownloadFailed(Exception):
 
 
 def compare_pair(repo_id: str, pair: UnitPair, old: Revision, new: Revision, token: str | None,
-                 retry_config: dict, config: EngineConfig = DEFAULT_CONFIG) -> UnitPair:
+                 call: Call = direct_call, config: EngineConfig = DEFAULT_CONFIG) -> UnitPair:
     """Descarrega i compara un parell `pending`. Omple `status` i `result`."""
     if pair.status != "pending":
         return pair
@@ -177,8 +193,8 @@ def compare_pair(repo_id: str, pair: UnitPair, old: Revision, new: Revision, tok
         return pair
     try:
         try:
-            old_table = _load_files(repo_id, old.revision, pair.old_files, token, retry_config, config)
-            new_table = _load_files(repo_id, new.revision, pair.new_files, token, retry_config, config)
+            old_table = _load_files(repo_id, old.revision, pair.old_files, token, call, config)
+            new_table = _load_files(repo_id, new.revision, pair.new_files, token, call, config)
         except ParseError:
             raise
         except Exception as exc:
@@ -202,9 +218,6 @@ def revision_rows(repo_id: str, old_rev: str, new_rev: str, pairs: list[UnitPair
     :return: `(canvis, estats)`: una fila per canvi detectat (format llarg de
         `output.changes_frame`) i una fila d'estat per parell.
     """
-    from diffengine import ENGINE_VERSION
-    from diffengine.output import DiffResult, changes_frame, status_frame
-
     changes, statuses = [], []
     for p in pairs:
         key = {"repo_id": repo_id, "old_rev": old_rev, "new_rev": new_rev,
@@ -218,12 +231,12 @@ def revision_rows(repo_id: str, old_rev: str, new_rev: str, pairs: list[UnitPair
     return changes, statuses
 
 
-def compare_revisions(repo_id: str, old_rev: str, new_rev: str, token: str | None, retry_config: dict,
+def compare_revisions(repo_id: str, old_rev: str, new_rev: str, token: str | None, call: Call = direct_call,
                       config: EngineConfig = DEFAULT_CONFIG) -> list[UnitPair]:
     """Compara totes les taules de dues revisions (les de contingut idèntic no es descarreguen)."""
-    old = list_revision(repo_id, old_rev, token, retry_config)
-    new = list_revision(repo_id, new_rev, token, retry_config)
+    old = list_revision(repo_id, old_rev, token, call)
+    new = list_revision(repo_id, new_rev, token, call)
     pairs = pair_units(old, new, config)
     for pair in pairs:
-        compare_pair(repo_id, pair, old, new, token, retry_config, config)
+        compare_pair(repo_id, pair, old, new, token, call, config)
     return pairs

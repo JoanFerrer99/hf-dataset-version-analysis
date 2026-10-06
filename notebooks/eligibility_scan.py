@@ -18,6 +18,7 @@ Output:
   data/failures.csv
 """
 
+import functools
 import os
 import sys
 import json
@@ -476,7 +477,8 @@ def classify_commit_tabular_changes(
     """
     if not any(units.is_tabular_path(p) for p in changed_paths):
         return [], []
-    compared = pairs.compare_revisions(dataset_id, version_from, version_to, hf_token, retry_config)
+    retry = functools.partial(errors.with_retry, **retry_config)
+    compared = pairs.compare_revisions(dataset_id, version_from, version_to, hf_token, call=retry)
     return pairs.revision_rows(dataset_id, version_from, version_to, compared)
 
 

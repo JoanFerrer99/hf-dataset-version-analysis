@@ -26,6 +26,9 @@ CATEGORICAL = "categorical"
 TEXT = "text"
 OPAQUE = "opaque"
 
+NULL_TOKEN = "\x00null"
+"""Representació d'un nul quan una columna es compara o es fa hash com a text."""
+
 
 @dataclass
 class Column:
@@ -72,16 +75,6 @@ class ParseError(Exception):
     pass
 
 
-def _serialize(value) -> str | None:
-    if value is None or (isinstance(value, float) and np.isnan(value)):
-        return None
-    if isinstance(value, (bytes, bytearray)):
-        return "sha1:" + hashlib.sha1(bytes(value)).hexdigest()
-    if isinstance(value, np.ndarray):
-        value = value.tolist()
-    return json.dumps(value, sort_keys=True, default=_json_default)
-
-
 def _json_default(value):
     if isinstance(value, (bytes, bytearray)):
         return "sha1:" + hashlib.sha1(bytes(value)).hexdigest()
@@ -92,11 +85,29 @@ def _json_default(value):
     return repr(value)
 
 
-def _is_missing(value) -> bool:
+def _serialize(value) -> str | None:
+    """Cel·la no hashable (imatge, àudio, llista) → text determinista."""
+    if is_missing(value):
+        return None
+    if isinstance(value, (bytes, bytearray)):
+        return _json_default(value)
+    return json.dumps(value, sort_keys=True, default=_json_default)
+
+
+def is_missing(value) -> bool:
+    """Nul escalar (None, NaN, pd.NA). Una llista o un array no ho és mai."""
     try:
         return value is None or bool(pd.isna(value))
     except (TypeError, ValueError):
         return False
+
+
+def _unwrap_singletons(series: pd.Series) -> pd.Series | None:
+    """Columna de llistes/arrays d'un sol element (LeRobot desa així els escalars) → escalars."""
+    present = series[~series.map(is_missing)]
+    if present.empty or not present.map(lambda v: isinstance(v, (list, tuple, np.ndarray)) and len(v) == 1).all():
+        return None
+    return series.map(lambda v: None if is_missing(v) else (v[0].item() if isinstance(v[0], np.generic) else v[0]))
 
 
 def _is_opaque(series: pd.Series) -> bool:
@@ -130,18 +141,23 @@ def _from_typed(df: pd.DataFrame, fmt: str, config: EngineConfig) -> Table:
         s = df[name]
         raw_dtype = str(s.dtype)
         if _is_opaque(s):
+            unwrapped = _unwrap_singletons(s)
+            if unwrapped is not None:
+                s = unwrapped.infer_objects()
+                raw_dtype = f"{raw_dtype}[1]"
+        if _is_opaque(s):
             values[name] = s.map(_serialize).astype(object)
             columns[name] = Column(name, OPAQUE, raw_dtype=raw_dtype)
         elif pd.api.types.is_bool_dtype(s):
-            values[name] = s.astype(object).map(lambda v: None if _is_missing(v) else str(bool(v))).astype(object)
+            values[name] = s.astype(object).map(lambda v: None if is_missing(v) else str(bool(v))).astype(object)
             columns[name] = Column(name, CATEGORICAL, raw_dtype=raw_dtype)
         elif pd.api.types.is_numeric_dtype(s):
             values[name] = pd.to_numeric(s, errors="coerce").astype("float64")
             columns[name] = Column(name, NUMERIC, integer=_integral(values[name]), raw_dtype=raw_dtype)
         else:
-            v = s.astype(object).map(lambda x: None if _is_missing(x) else str(x)).astype(object)
+            v = s.astype(object).map(lambda x: None if is_missing(x) else str(x)).astype(object)
             tokens = set(config.missing_tokens)
-            is_token = v.map(lambda x: not _is_missing(x) and x.strip() in tokens).astype(bool)
+            is_token = v.map(lambda x: not is_missing(x) and x.strip() in tokens).astype(bool)
             found = frozenset(x.strip() for x in v[is_token]) if is_token.any() else frozenset()
             v = v.where(~is_token, None).astype(object)
             values[name] = v

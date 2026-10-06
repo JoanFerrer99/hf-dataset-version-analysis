@@ -1,5 +1,6 @@
 """Tests de `diffengine.units`: resolució de taules (subset, split) sense xarxa."""
 
+from diffengine import units
 from diffengine.units import classify_naming, resolve_units
 
 
@@ -66,6 +67,35 @@ class TestResolveUnits:
         layout = resolve_units(["data/a.parquet"], readme)
         assert layout.error is None
         assert _tables(layout) == {("default", "train"): ["data/a.parquet"]}
+
+
+    def test_tables_of_a_media_repo_are_resolved_on_their_own(self):
+        """LeRobot: més vídeos que parquet; `datasets` el veu com a `videofolder`."""
+        layout = resolve_units(
+            [f"videos/chunk-000/cam/episode_{i:06d}.mp4" for i in range(6)]
+            + [f"data/chunk-000/episode_{i:06d}.parquet" for i in range(3)]
+            + ["meta/info.json", "meta/tasks.jsonl"]
+        )
+        assert layout.builder == "videofolder"
+        assert _tables(layout) == {("default", "train"): [f"data/chunk-000/episode_{i:06d}.parquet" for i in range(3)]}
+        assert layout.units[0].naming == "numbered"
+        assert layout.excluded == {"meta/tasks.jsonl": "other_format"}
+
+    def test_hub_metadata_json_is_not_a_table(self):
+        layout = resolve_units(["data.csv", "dataset_infos.json"])
+        assert _tables(layout) == {("default", "train"): ["data.csv"]}
+        assert layout.excluded == {}
+
+    def test_unresolvable_repo_falls_back_to_one_table_per_file(self, monkeypatch):
+        import datasets.load
+
+        def fail(self):
+            raise ValueError("no es pot resoldre")
+
+        monkeypatch.setattr(datasets.load.LocalDatasetModuleFactory, "get_module", fail)
+        layout = units.resolve_units(["a.parquet", "b/c.csv", "README.md"])
+        assert layout.error.startswith("ValueError")
+        assert _tables(layout) == {("default", "a.parquet"): ["a.parquet"], ("default", "b/c.csv"): ["b/c.csv"]}
 
 
 class TestClassifyNaming:

@@ -23,6 +23,18 @@ PAIRED_DETECTORS = {detect_values, detect_order, detect_rows}
 ROW_DETECTORS = {detect_order, detect_rows}
 
 
+def _row_confidence(change, old: Table, new: Table, rows) -> float:
+    """
+    Proporció de parelles no ambigües; però la diferència de recompte de files
+    és segura: si la taula perd 100 files, almenys 100 són C422.
+    """
+    unambiguous = 1 - rows.ambiguous_share
+    surplus = {"C421": new.n_rows - old.n_rows, "C422": old.n_rows - new.n_rows}.get(change.code, 0)
+    if surplus > 0 and change.n_affected:
+        return max(unambiguous, min(1.0, surplus / change.n_affected))
+    return unambiguous
+
+
 def diff_tables(old: Table, new: Table, config: EngineConfig = DEFAULT_CONFIG) -> DiffResult:
     cols = align_by_name(old, new)
     rows = align_rows(old, new, cols.pairs(), config)
@@ -35,7 +47,7 @@ def diff_tables(old: Table, new: Table, config: EngineConfig = DEFAULT_CONFIG) -
     classify_leftovers(old, new, cols, config)
 
     ctx = Context(old, new, cols, rows, config)
-    ctx.identifiers = find_identifiers(old, rows, cols)
+    find_identifiers(ctx)
     alignment = {"row_alignment": rows.method, "key_columns": rows.key_columns,
                  "matched_row_share": round(rows.matched_share, 4), "ambiguous_share": round(rows.ambiguous_share, 4)}
     changes = []
@@ -45,7 +57,7 @@ def diff_tables(old: Table, new: Table, config: EngineConfig = DEFAULT_CONFIG) -
             if detector in PAIRED_DETECTORS:
                 c.evidence = {**alignment, **c.evidence}
             if detector in ROW_DETECTORS:
-                c.confidence = min(c.confidence, 1 - rows.ambiguous_share)
+                c.confidence = min(c.confidence, _row_confidence(c, old, new, rows))
         changes += found
 
     info = {**alignment, "stable_columns": rows.stable_columns, "format_old": old.fmt, "format_new": new.fmt,

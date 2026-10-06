@@ -177,3 +177,56 @@ def test_20_new_categories_around_cardinality_threshold_is_not_a_type_change(bas
     got = codes(csv_bytes(old), csv_bytes(new))
     assert not {"C311", "C321"} & got
     assert "C312" in got
+
+
+def test_21_renumbered_row_index_is_not_a_key_nor_a_value_change():
+    """LeRobot: `index` és la posició global del frame; inserir un episodi al mig el renumera."""
+    rng = np.random.default_rng(1)
+
+    def episode(ep):
+        return pd.DataFrame({"episode_index": ep, "frame_index": np.arange(30),
+                             "state": np.round(rng.normal(size=30), 4)})
+
+    old = pd.concat([episode(e) for e in range(4)], ignore_index=True)
+    new = pd.concat([old.iloc[:60], episode(9), old.iloc[60:]], ignore_index=True)
+    old.insert(0, "index", np.arange(len(old)))
+    new.insert(0, "index", np.arange(len(new)))
+    got = labels(parquet_bytes(old), parquet_bytes(new), ".parquet", ".parquet")
+    assert ("C421", "new") in got
+    # Sense C322 (index renumerat), C410 ni C422 (files mal aparellades). C530 a
+    # `episode_index` sí que hi és: apareix un episodi nou.
+    assert {c for c, _ in got} <= {"C421", "C530"}
+
+
+def _lerobot(episodes: list[int], lengths: list[int], seed: int) -> pd.DataFrame:
+    """Taula tipus LeRobot: vectors opacs (`state`) i comptadors de posició."""
+    rng = np.random.default_rng(seed)
+    parts = []
+    for ep, n in zip(episodes, lengths):
+        parts.append(pd.DataFrame({
+            "state": [rng.normal(size=3).round(4) for _ in range(n)],
+            "timestamp": np.arange(n) / 10, "frame_index": np.arange(n), "episode_index": ep,
+        }))
+    df = pd.concat(parts, ignore_index=True)
+    df["index"] = np.arange(len(df))
+    return df
+
+
+def test_22_episode_inserted_in_the_middle_renumbers_counters_but_rows_are_paired():
+    """Cas real `stlee601/cube_pick1`: s'insereix un episodi i es renumeren `index` i `episode_index`."""
+    old = _lerobot([0, 1, 2, 3], [40, 40, 40, 40], seed=0)
+    inserted = _lerobot([0], [25], seed=9)
+    new = pd.concat([old.iloc[:80], inserted, old.iloc[80:]], ignore_index=True)
+    new["episode_index"] = np.repeat([0, 1, 2, 3, 4], [40, 40, 25, 40, 40])
+    new["index"] = np.arange(len(new))
+    got = labels(parquet_bytes(old), parquet_bytes(new), ".parquet", ".parquet")
+    assert got == {("C421", "new"), ("C322", "renumbered")}
+
+
+def test_23_re_recorded_table_is_not_paired_by_repeated_counters():
+    """Cas real `nuoyihan/eval_lerobot-pick-red-pen`: mateixos comptadors, vectors nous."""
+    old = _lerobot(list(range(6)), [50] * 6, seed=0)
+    new = _lerobot(list(range(4)), [45] * 4, seed=1)
+    got = labels(parquet_bytes(old), parquet_bytes(new), ".parquet", ".parquet")
+    assert ("C422", "all_rows") in got and ("C421", "new") in got
+    assert not {"C322", "C410"} & {c for c, _ in got}
