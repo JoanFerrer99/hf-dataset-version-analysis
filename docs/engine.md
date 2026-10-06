@@ -19,12 +19,23 @@ result.status        # "ok", "identical_content", "parse_failed"
 result.changes       # [Change(code="C223", column="is_male", old_column="sex", ...), ...]
 
 from diffengine import pairs                      # dues revisions d'un repositori
-compared = pairs.compare_revisions(repo_id, old_sha, new_sha, token, retry_config)
+compared = pairs.compare_revisions(repo_id, old_sha, new_sha, token, call=retry)
 changes, statuses = pairs.revision_rows(repo_id, old_sha, new_sha, compared)
 ```
 
 A la Fase 2 del pipeline, `eligibility_scan.classify_commit_tabular_changes`
 fa la segona crida per a cada unitat de canvi.
+
+**El paquet no depèn del pipeline.** Les crides al Hub passen per
+`call(fn, *args, **kwargs)`; el pipeline hi passa la seva política de
+reintents (`functools.partial(errors.with_retry, **retry_config)`), i per
+defecte la crida és directa. Les dependències internes només van cap avall:
+
+```
+pairs ─→ engine ─→ detectors ─→ columns ─→ transforms ─→ load ─→ config
+  │                    │            └────→ rows ────────↗
+  └─→ units            └─→ output
+```
 
 ## 2. Capes i mòduls
 
@@ -54,7 +65,16 @@ README, i crida `LocalDatasetModuleFactory`. Així:
 - si un split té fitxers amb noms no relacionats (`distinct`), cada fitxer
   és una taula;
 - queden fora, amb motiu: fitxers fora de cap split, d'un altre format que
-  el majoritari, `metadata.csv` de repositoris de media.
+  el majoritari, `metadata.csv` de repositoris de media, i fitxers JSON de
+  metadades (`dataset_infos.json`, `meta/info.json` de LeRobot...).
+
+Dos casos on les regles de `datasets` no n'hi ha prou:
+
+- **Repositori de media amb taules** (LeRobot té més vídeos que parquet, i
+  `datasets` el veu com a `videofolder`): els fitxers tabulars que la media
+  no fa servir es resolen sols, amb les mateixes regles.
+- **Repositori que `datasets` no pot resoldre**: cada fitxer tabular és
+  una taula (`RepoLayout.error` en guarda el motiu). Abans no es comparava.
 
 `pairs.pair_units` aparella per clau `subset/split`. Una taula d'un sol
 fitxer que no troba parella cau a l'aparellament per fitxer: ruta igual →
@@ -72,6 +92,7 @@ en codis):
 | `download_failed` | Error de xarxa o del Hub després dels reintents |
 | `parse_failed` | No es pot llegir, o els shards no comparteixen esquema |
 | `too_large_profile_only` | Mida conjunta > `max_unit_bytes`; no es compara |
+| `excluded` | Fitxer tabular que ha canviat però no forma part de cap taula (fora de cap split, un altre format, metadades); el motiu és a `detail` |
 
 ### L1 — Càrrega
 
@@ -84,7 +105,8 @@ d'absent, estil numèric) i el dialecte CSV.
   dialecte, no dades). Els tokens de `missing_tokens` (`?`, `NA`, buit…)
   passen a nul i es guarden per detectar canvis de token.
 - **Parquet/JSON**: tipus natius; les columnes de text també passen pels
-  tokens d'absent.
+  tokens d'absent. Una columna d'arrays d'un sol element (LeRobot desa així
+  els escalars, p.e. `gripper_width`) es llegeix com a escalar.
 - **Tipus lògic** (dels valors, no del dtype): `numeric` si tots els
   valors no nuls es poden llegir com a nombre; `text` si és text lliure
   (P6); `opaque` per a cel·les dict/list/bytes (imatges, àudio), que es
@@ -97,7 +119,15 @@ d'absent, estil numèric) i el dialecte CSV.
 `rows.align_rows` decideix quina fila nova correspon a quina d'antiga:
 
 1. **Clau inferida**: columna única, sense nuls i amb valors compartits
-   (`key_min_overlap`); es prefereixen noms tipus `id`.
+   (`key_min_overlap`); es prefereixen noms tipus `id`. Un **número de
+   fila** (0..n-1 o 1..n en ordre a les dues versions, p.e. `index` de
+   LeRobot) no és clau: només diu la posició i es renumera quan s'afegeixen
+   o s'eliminen files. Tampoc es compara com a valor (C322).
+   Més en general, les **seqüències** (enters no decreixents al llarg de
+   les files a totes dues versions: `index`, `episode_index`,
+   `episode_data_index_from`) queden fora del hash del pas 2, perquè una
+   inserció al mig les renumera a totes les files següents. Si canvien,
+   surten com a C322 `renumbered`, i no entren a C520/C530.
 2. Si no n'hi ha: **hash de fila** sobre les columnes "estables" (les que
    comparteixen ≥50% dels valors), amb un índex d'ocurrència per a les
    files repetides. Aparella les files idèntiques.
@@ -108,8 +138,12 @@ d'absent, estil numèric) i el dialecte CSV.
    la taxa de col·lisió de la clau). Les files aparellades per ordre
    d'aparició dins d'un grup repetit es marquen com a **ambigües** i no
    s'usen per comparar contingut.
+4. Una parella ambigua es **descarta** si no coincideix en una columna
+   opaca que ha quedat fora del hash (vector, imatge): cap transformació
+   no ho pot explicar, així que el hash no identificava la fila (p.e. una
+   taula regravada on només `timestamp` i `frame_index` coincideixen).
 
-Les files sense parella són C421/C422.
+Les files sense parella són C421/C422 (`all_rows` si no en queda cap).
 
 ### L3 — Aparellar columnes
 
@@ -160,12 +194,14 @@ files aparellades no ambigües.
 | `detect_order` | C410 | Les files aparellades no ambigües canvien d'ordre: subsqüència creixent més llarga i tau de Kendall; `sorted_by:<col>` si la nova està ordenada per una columna |
 | `detect_rows` | C421, C422 | Files sense parella. C421 `duplicate_of_existing`/`new`. C422 `duplicate_removed`, `had_nulls`, `outlier`, `predicate` (arbre de decisió de profunditat 2) o `unexplained` |
 | `detect_missing` | C510 | Proporció de nuls de la columna: prova de dues proporcions + efecte ≥ `c510_min_rate_delta`; canvi de token d'absent → `representation` |
-| `detect_correlation` | C520 | Spearman (num-num), V de Cramér corregida (cat-cat, categories rares agrupades), raó de correlació (num-cat); \|Δ\| ≥ `c520_min_delta` |
+| `detect_correlation` | C520 | Spearman (num-num), V de Cramér corregida (cat-cat, categories rares agrupades; no es calcula si no compleix la regla de Cochran), raó de correlació (num-cat); \|Δ\| ≥ `c520_min_delta` i prova de Fisher z p < `alpha` per a totes les mesures |
 | `detect_distribution` | C530 | KS (numèriques) o variació total (categòriques) ≥ `c530_min_distance` i p < `alpha`. Salta identificadors, columnes amb canvi de tipus, text i columnes explicades per una transformació (P8); compara després d'aplicar el reetiquetatge |
 
 **Confiança**: validesa de l'explicació (proporció de files que reprodueix)
 o 1 − p de la prova; 1.0 per a fets deterministes (una columna que no hi
-és). Per a C410/C421/C422 es limita per la proporció de parells no ambigus.
+és). Per a C410/C421/C422 es limita per la proporció de parells no ambigus,
+excepte la part segura d'un C421/C422: si la taula perd 100 files, almenys
+100 són C422.
 **Evidència**: el mapatge, la fórmula ajustada, els estadístics; els
 codis que depenen de files aparellades hi afegeixen com s'han aparellat
 (mètode, clau, proporció aparellada). Els tests de regressió comproven que
@@ -178,7 +214,7 @@ Per a cada execució de la Fase 2 (`eligibility_scan.run_classification`):
 | Fitxer | Una fila per | Columnes |
 |---|---|---|
 | `changes_<k>.csv` / `.parquet` | canvi | `repo_id, old_rev, new_rev, file_path, old_file_path, code, column, old_column, subtype, n_affected, share_affected, confidence, evidence_json, engine_version, config_hash` |
-| `change_pairs_<k>.csv` | parell de taules comparat | `repo_id, old_rev, new_rev, file_path, old_file_path, unit, status, alignment_method, key_columns, matched_row_share, format_old, format_new` |
+| `change_pairs_<k>.csv` | parell de taules comparat | `repo_id, old_rev, new_rev, file_path, old_file_path, unit, status, alignment_method, key_columns, matched_row_share, format_old, format_new, detail` (`detail`: motiu d'exclusió o error) |
 | `change_classification_<k>.csv` | codi per fitxer i unitat de canvi | format antic (`dataset_id, version_from, version_to, file_path, code, description, is_breaking`), derivat de `changes` |
 
 `engine_version` i `config_hash` permeten saber amb quin motor i quins
@@ -187,9 +223,10 @@ llindars s'ha produït cada fila.
 ## 3. Configuració
 
 Tots els llindars són a `config.EngineConfig` (dataclass immutable), amb el
-valor per defecte i el perquè al docstring de cada camp. Es pot
-sobreescriure amb `EngineConfig.from_yaml(path)` (rebutja claus
-desconegudes). Les decisions provisionals són interruptors:
+valor per defecte i el perquè al docstring de cada camp. Per provar uns
+altres valors: `dataclasses.replace(DEFAULT_CONFIG, alpha=0.05)`; el
+`config_hash` de la sortida ho registra. Les decisions provisionals són
+interruptors:
 `null_transition_is_c510` (P1), `kind_change_by_old_kind` (P3),
 `report_representation` (P5), `transformation_suppresses_c530` (P8).
 
@@ -271,4 +308,10 @@ descarreguen, i les que passen de `max_unit_bytes` no es comparen.
 - **Renoms sense relació de contingut** (nom i valors canvien sense cap
   mapatge reconeixible): C221 + C222.
 - **C520** només considera les primeres `c520_max_columns` columnes.
+- **Columnes opaques** (vectors, imatges, àudio) participen a
+  l'aparellament de files però no es comparen: un canvi dins d'un vector
+  (p.e. un component d'`observation.state` que passa de NaN a valor) no
+  surt com a codi.
+- **Taula regravada només amb columnes escalars**: si cap columna opaca no
+  desmenteix una parella ambigua, es manté (pot ser una transformació).
 - **No es detecta** el canvi de patró de co-absència entre columnes.

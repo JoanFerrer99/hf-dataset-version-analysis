@@ -77,6 +77,8 @@ per a les taules massa grans.
 | **P6** | Les columnes de text lliure (moltes categories, textos llargs) es tracten com a categòriques, però només amb comparacions de resum (diferència de domini, taxa de nuls). | Comparar-ne la distribució |
 | **P8** | Si el canvi d'una columna queda explicat per una transformació ajustada (C322: factor, log, min-max, estandardització...), **no** s'emet C530 per a la mateixa columna: el canvi de distribució n'és conseqüència. | Emetre també C530 |
 | **P9** | C312 només surt de canvis en files **aparellades** (o de representació). Si una categoria apareix o desapareix només perquè s'han afegit o eliminat files, el canvi és C421/C422, no C312. | Comptar també la diferència de domini de tota la columna |
+| **P10** | Els comptadors de posició (enters no decreixents al llarg de les files a totes dues versions: `index`, `episode_index` de LeRobot) no són atributs: no són clau, no entren al hash de fila ni a C520/C530, i si es renumeren surten com a C322 `renumbered`. Trobat a l'execució real (`stlee601/cube_pick1`). | Tractar-los com qualsevol columna numèrica |
+| **P11** | En un repositori de media (més vídeos que parquet, p.e. LeRobot), els fitxers tabulars que la media no fa servir es resolen com a taules pròpies i es comparen. La regla estricta de `datasets` (un sol format per repositori) els deixaria fora. | Seguir `datasets` al peu de la lletra |
 
 Decisions del prompt original que **no s'apliquen**, per decisió de Joan:
 - **D2 / P4** (C530 només per a la variable objectiu): C530 és un canvi

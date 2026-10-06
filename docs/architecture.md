@@ -423,7 +423,8 @@ mostra baixaria centenars de GB).
    - la resta es descarrega, es llegeix i es compara.
 4. Cada parell de taules acaba amb un **estat** (`ok`,
    `identical_content`, `absent_old`/`absent_new`, `download_failed`,
-   `parse_failed`, `too_large_profile_only`). Una fallada de descàrrega
+   `parse_failed`, `too_large_profile_only`, i `excluded` per als fitxers
+   tabulars canviats que no són cap taula). Una fallada de descàrrega
    no es converteix mai en codis.
 
 ### 9.2 El motor (`diffengine/`)
@@ -525,7 +526,7 @@ Límits fixos: 50 commits per dataset (`MAX_COMMITS`), 500 MB per taula,
 
 ### 13.1 Tests
 
-`tests/` té un fitxer per mòdul (202 tests). L'API de HF sempre se
+`tests/` té un fitxer per mòdul (210 tests). L'API de HF sempre se
 simula amb `monkeypatch`: els tests no necessiten xarxa ni token real.
 `tests/conftest.py` afegeix `notebooks/` al `sys.path`.
 
@@ -582,6 +583,7 @@ servir.
 | `docs/decisions_tfg.txt` | Totes les decisions amb el seu perquè |
 | `docs/taxonomy.md` | La taxonomia completa i concepte `is_breaking` explicat|
 | `docs/engine.md` | El motor de detecció de canvis: capes, criteris, sortida, avaluació |
+| `docs/engine_changes.md` | Què ha canviat respecte al motor anterior, i execució real comparada |
 | `docs/open_decisions.md` | Decisions provisionals del motor, pendents de confirmar |
 | `docs/engine_audit.md` | Auditoria del motor anterior (per què es va reescriure) |
 | `eval/report.md` | Precisió/recall per codi, motor antic vs nou, sobre casos generats |
