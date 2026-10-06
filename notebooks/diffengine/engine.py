@@ -9,11 +9,14 @@ iteracions com a màxim).
 """
 
 import hashlib
+from dataclasses import replace
+
+import pandas as pd
 
 from diffengine.columns import align_by_content, align_by_name, classify_leftovers
 from diffengine.config import DEFAULT_CONFIG, EngineConfig
 from diffengine.detectors import DETECTORS, Context, detect_order, detect_rows, detect_values, find_identifiers
-from diffengine.load import ParseError, Table, load_table
+from diffengine.load import NUMERIC, ParseError, Table, load_table
 from diffengine.output import DiffResult
 from diffengine.rows import align_rows
 
@@ -35,6 +38,22 @@ def _row_confidence(change, old: Table, new: Table, rows) -> float:
     return unambiguous
 
 
+def _adopt_kind_of_empty_columns(old: Table, new: Table, pairs: list[tuple[str, str]]) -> None:
+    """
+    Una columna sense cap valor no té tipus: pren el de la columna aparellada.
+    Així, una columna buida que s'omple és C510 (valors nous), no C311/C321.
+    """
+    for o, n in pairs:
+        for empty, ec, full, fc in ((old, o, new, n), (new, n, old, o)):
+            if empty.values[ec].isna().all() and not full.values[fc].isna().all():
+                kind = full.columns[fc].kind
+                empty.columns[ec] = replace(empty.columns[ec], kind=kind, integer=full.columns[fc].integer)
+                if kind == NUMERIC:
+                    empty.values[ec] = pd.Series(float("nan"), index=empty.values.index)
+                else:
+                    empty.values[ec] = pd.Series(None, index=empty.values.index, dtype=object)
+
+
 def diff_tables(old: Table, new: Table, config: EngineConfig = DEFAULT_CONFIG) -> DiffResult:
     cols = align_by_name(old, new)
     rows = align_rows(old, new, cols.pairs(), config)
@@ -45,6 +64,7 @@ def diff_tables(old: Table, new: Table, config: EngineConfig = DEFAULT_CONFIG) -
             break
         rows = align_rows(old, new, cols.pairs(), config)
     classify_leftovers(old, new, cols, config)
+    _adopt_kind_of_empty_columns(old, new, cols.pairs())
 
     ctx = Context(old, new, cols, rows, config)
     find_identifiers(ctx)

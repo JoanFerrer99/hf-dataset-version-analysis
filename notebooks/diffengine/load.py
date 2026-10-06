@@ -104,10 +104,10 @@ def is_missing(value) -> bool:
 
 def _unwrap_singletons(series: pd.Series) -> pd.Series | None:
     """Columna de llistes/arrays d'un sol element (LeRobot desa així els escalars) → escalars."""
-    present = series[~series.map(is_missing)]
+    present = series[series.map(lambda v: v is not None)]  # `[nan]` també compta: és un escalar absent
     if present.empty or not present.map(lambda v: isinstance(v, (list, tuple, np.ndarray)) and len(v) == 1).all():
         return None
-    return series.map(lambda v: None if is_missing(v) else (v[0].item() if isinstance(v[0], np.generic) else v[0]))
+    return series.map(lambda v: None if v is None else (v[0].item() if isinstance(v[0], np.generic) else v[0]))
 
 
 def _is_opaque(series: pd.Series) -> bool:

@@ -468,7 +468,8 @@ def remove_rows_with_nulls(old, new, seed, rng, mag):
     old.df[col] = old.df[col].astype(float)
     old.df.loc[nulls, col] = np.nan
     new.df = old.df.dropna(subset=[col]).reset_index(drop=True)
-    return Effect({("C422", "had_nulls"), ("C510", None)}, allowed={"C312"}, touched={col})
+    # P12: la proporció de nuls baixa només perquè s'eliminen files; C510 es permet però no s'exigeix.
+    return Effect({("C422", "had_nulls")}, allowed={"C312", "C510"}, touched={col})
 
 
 @mutation("remove_outliers", "row")
@@ -658,6 +659,8 @@ def _compatible(names: list[str]) -> bool:
     kinds = [MUTATIONS[n][1] for n in names]
     if "negative" in kinds:
         return len(names) == 1
+    if sum(n in SETUP_FIRST for n in names) > 1:
+        return False  # totes dues reconstruirien la versió nova: la segona esborraria la primera
     return kinds.count("order") <= 1 and len(set(names)) == len(names)
 
 

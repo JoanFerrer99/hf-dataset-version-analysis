@@ -16,7 +16,7 @@ from diffengine.config import EngineConfig
 from diffengine.load import NULL_TOKEN, NUMERIC, OPAQUE, TEXT, Table
 from diffengine.output import Change
 from diffengine.rows import RowAlignment, cell_tokens, is_identifier_like, is_row_number, is_sequence, paired_values
-from diffengine.transforms import analyze_mapping, fit_numeric, is_perturbation, normalize_value
+from diffengine.transforms import analyze_mapping, distribution_distance, fit_numeric, is_perturbation, normalize_value
 
 # Ajustos que són un subtipus de C322 (`identity` no és un canvi; `round` és C321).
 _C322_FITS = {"factor", "linear", "minmax", "standardization", "normalization", "log", "sqrt", "reciprocal", "exp"}
@@ -224,7 +224,9 @@ def _sorted_by(table: Table, columns: list[str]) -> str | None:
 
 
 def detect_order(ctx: Context) -> list[Change]:
-    pairs = ctx.rows.reliable_pairs  # l'ordre entre còpies idèntiques no es pot saber
+    # L'ordre es jutja només amb parelles segures: ni còpies idèntiques (no se sap
+    # quina és quina) ni files editades (la parella és probable, no segura).
+    pairs = ctx.rows.certain_pairs
     if len(pairs) < 2:
         return []
     order = pairs[np.argsort(pairs[:, 0], kind="stable")]
@@ -355,6 +357,9 @@ def detect_missing(ctx: Context) -> list[Change]:
                                evidence={"old_tokens": sorted(ko.missing_tokens), "new_tokens": sorted(kn.missing_tokens)}))
         if m.old in ctx.c510_columns:
             continue
+        rows_changed = len(ctx.rows.unmatched_old) or len(ctx.rows.unmatched_new)
+        if cfg.row_change_suppresses_c510 and len(ctx.rows.pairs) and rows_changed:
+            continue  # P12: cap cel·la aparellada no ha canviat; el canvi de proporció ve de les files
         p1, p2, n1, n2 = o_null.mean(), n_null.mean(), len(o_null), len(n_null)
         if abs(p1 - p2) < cfg.c510_min_rate_delta or not n1 or not n2:
             continue
@@ -461,20 +466,12 @@ def detect_distribution(ctx: Context) -> list[Change]:
         a, b = ctx.old.values[m.old].dropna(), ctx.new.values[m.new].dropna()
         if len(a) < 20 or len(b) < 20:
             continue
-        if ko.kind == NUMERIC:
-            res = stats.ks_2samp(a.to_numpy(float), b.to_numpy(float), method="asymp")
-            distance, pval, measure = float(res.statistic), float(res.pvalue), "ks"
-        else:
+        if ko.kind != NUMERIC:
             if m.old in ctx.relabeled:
                 a = a.map(lambda v: ctx.relabeled[m.old].get(v, v))
             if m.old in ctx.representation:
                 a, b = a.map(normalize_value), b.map(normalize_value)
-            fa, fb = a.value_counts(normalize=True), b.value_counts(normalize=True)
-            fa, fb = fa.align(fb, fill_value=0)
-            distance = float(0.5 * np.abs(fa - fb).sum())
-            counts = pd.concat([a.value_counts(), b.value_counts()], axis=1).fillna(0)
-            pval = float(stats.chi2_contingency(counts.to_numpy())[1]) if counts.shape[0] > 1 else 1.0
-            measure = "total_variation"
+        distance, pval, measure = distribution_distance(a, b, ko.kind == NUMERIC)
         if distance >= cfg.c530_min_distance and pval < cfg.alpha:
             out.append(_change("C530", m, confidence=1 - pval,
                                evidence={"measure": measure, "distance": distance, "p_value": pval}))

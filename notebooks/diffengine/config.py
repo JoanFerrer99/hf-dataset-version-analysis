@@ -34,6 +34,9 @@ class EngineConfig:
     min_explained_rows: int = 5
     """Files canviades mínimes per atribuir un canvi de valors a una transformació (C322) o a una divisió de
     categoria (C312 `split`); per sota, són edicions de cel·les."""
+    same_column_min_shared_values: float = 0.5
+    """Renom sobre una altra mostra de files: proporció mínima dels valors distints nous que ja hi eren
+    (columna amb ≥ 20 valors distints), a més de no canviar de distribució (`c530_min_distance`)."""
     mostly_null_share: float = 0.8
     """C222 `mostly_null`: proporció de nuls a la columna eliminada."""
 
@@ -56,6 +59,9 @@ class EngineConfig:
     """P5: els canvis de representació es reporten amb subtipus `representation`."""
     transformation_suppresses_c530: bool = True
     """P8: una columna explicada per una transformació (C322) no genera C530."""
+    row_change_suppresses_c510: bool = True
+    """P12: si la proporció de nuls només canvia perquè s'afegeixen o s'eliminen files (cap cel·la aparellada
+    no passa de nul a valor o al revés), no és C510 sinó conseqüència de C421/C422 (criteri del paper)."""
 
     c510_min_rate_delta: float = 0.01
     """C510: diferència mínima de proporció de nuls (efecte), a més de la prova estadística."""

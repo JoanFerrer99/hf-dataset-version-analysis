@@ -41,6 +41,8 @@ class RowAlignment:
     :ivar ambiguous_share: proporció de files aparellades per ordre d'ocurrència.
     :ivar ambiguous: per a cada parella de `pairs`, si s'ha fet per ordre
         d'ocurrència dins d'un grup de files iguals (pot ser incorrecta).
+    :ivar partial: per a cada parella, si s'ha fet sense totes les columnes
+        (fila editada): la identitat és probable, no segura.
     """
 
     pairs: np.ndarray
@@ -51,13 +53,21 @@ class RowAlignment:
     stable_columns: list[str] = field(default_factory=list)
     ambiguous_share: float = 0.0
     ambiguous: np.ndarray | None = None
+    partial: np.ndarray | None = None
 
     @property
     def reliable_pairs(self) -> np.ndarray:
-        """Parelles que no depenen de l'ordre d'ocurrència."""
+        """Parelles que no depenen de l'ordre d'ocurrència (per comparar valors)."""
         if self.ambiguous is None:
             return self.pairs
         return self.pairs[~self.ambiguous]
+
+    @property
+    def certain_pairs(self) -> np.ndarray:
+        """Parelles no ambigües i fetes amb totes les columnes (per jutjar l'ordre)."""
+        if self.partial is None:
+            return self.reliable_pairs
+        return self.pairs[~self.ambiguous & ~self.partial]
 
     @property
     def matched_share(self) -> float:
@@ -195,7 +205,7 @@ def align_rows(old: Table, new: Table, matches: list[tuple[str, str]], config: E
         row_old = np.sum(np.vstack(list(cell_old.values())), axis=0, dtype=np.uint64)
         row_new = np.sum(np.vstack(list(cell_new.values())), axis=0, dtype=np.uint64)
 
-    pairs: list[tuple[int, int, bool]] = []
+    pairs: list[tuple[int, int, bool, bool]] = []
     ambiguous = 0
     free_old, free_new = np.arange(n_old), np.arange(n_new)
 
@@ -227,7 +237,8 @@ def align_rows(old: Table, new: Table, matches: list[tuple[str, str]], config: E
             return
         dup = (joined["dup_o"] | joined["dup_n"]).to_numpy()
         ambiguous += int(dup.sum())
-        pairs.extend(zip(joined["row_o"].tolist(), joined["row_n"].tolist(), dup.tolist()))
+        partial = [require_agreement] * len(joined)
+        pairs.extend(zip(joined["row_o"].tolist(), joined["row_n"].tolist(), dup.tolist(), partial))
         free_old = np.setdiff1d(free_old, joined["row_o"].to_numpy())
         free_new = np.setdiff1d(free_new, joined["row_n"].to_numpy())
 
@@ -266,7 +277,7 @@ def align_rows(old: Table, new: Table, matches: list[tuple[str, str]], config: E
     # `frame_index`, que es repeteixen a cada episodi). Una diferència en una
     # columna escalar sí que pot ser una transformació, i es manté.
     unstable = [c for c in tokens if c not in stable and old.columns[c].kind == OPAQUE]
-    contested = [(a, b) for a, b, d in pairs if d]
+    contested = [(a, b) for a, b, d, _ in pairs if d]
     if unstable and contested:
         ia, ib = np.array(contested).T
         agree = np.ones(len(contested), dtype=bool)
@@ -280,9 +291,10 @@ def align_rows(old: Table, new: Table, matches: list[tuple[str, str]], config: E
             free_new = np.union1d(free_new, [b for _, b in rejected]).astype(int)
 
     pairs.sort()
-    pairs_arr = np.array([(a, b) for a, b, _ in pairs], dtype=int) if pairs else np.empty((0, 2), int)
+    pairs_arr = np.array([(a, b) for a, b, _, _ in pairs], dtype=int) if pairs else np.empty((0, 2), int)
     return RowAlignment(
         pairs=pairs_arr, unmatched_old=np.sort(free_old), unmatched_new=np.sort(free_new), method="hash",
         stable_columns=stable, ambiguous_share=ambiguous / max(len(pairs), 1),
-        ambiguous=np.array([d for _, _, d in pairs], dtype=bool),
+        ambiguous=np.array([d for _, _, d, _ in pairs], dtype=bool),
+        partial=np.array([p for _, _, _, p in pairs], dtype=bool),
     )

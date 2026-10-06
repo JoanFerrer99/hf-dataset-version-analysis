@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass, field
 
 import pandas as pd
 
-ENGINE_VERSION = "2.1.0"
+ENGINE_VERSION = "2.2.0"
 """Es desa a cada fila de sortida, amb el hash de la configuració."""
 
 # Els 14 codis tabulars de la taxonomia (C100, metadades, és fora d'abast).

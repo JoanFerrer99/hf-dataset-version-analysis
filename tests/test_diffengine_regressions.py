@@ -230,3 +230,29 @@ def test_23_re_recorded_table_is_not_paired_by_repeated_counters():
     got = labels(parquet_bytes(old), parquet_bytes(new), ".parquet", ".parquet")
     assert ("C422", "all_rows") in got and ("C421", "new") in got
     assert not {"C322", "C410"} & {c for c, _ in got}
+
+
+def test_24_rename_on_another_sample_of_rows_is_c223():
+    """Census D3: `fnlwgt` → `final_weight` en una altra mostra de files (part noves)."""
+    rng = np.random.default_rng(3)
+
+    def people(n):
+        return pd.DataFrame({"age": rng.integers(18, 80, n), "sex": rng.choice(["Male", "Female"], n),
+                             "fnlwgt": rng.integers(10_000, 30_000, n)})
+
+    old = people(3000)
+    new = pd.concat([old.sample(1500, random_state=1), people(700)], ignore_index=True)
+    new = new.rename(columns={"fnlwgt": "final_weight"})
+    got = labels(csv_bytes(old), csv_bytes(new))
+    assert ("C223", None) in got
+    assert not {"C221", "C222"} & {c for c, _ in got}
+
+
+def test_25_null_rate_change_caused_only_by_removed_rows_is_not_c510(base):
+    """P12 (criteri del paper, Census D7): s'eliminen les files amb nuls; cap cel·la no canvia."""
+    old = base.copy()
+    old.loc[old.index[::10], "workclass"] = None
+    new = old.dropna(subset=["workclass"]).reset_index(drop=True)
+    got = labels(csv_bytes(old), csv_bytes(new))
+    assert ("C422", "had_nulls") in got
+    assert "C510" not in {c for c, _ in got}

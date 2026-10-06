@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
+from scipy import stats
 
 from diffengine.load import NULL_TOKEN
 
@@ -96,6 +97,22 @@ def fit_numeric(x: np.ndarray, y: np.ndarray, min_validity: float, explain_chang
         if fit:
             return fit
     return None
+
+
+def distribution_distance(a: pd.Series, b: pd.Series, numeric: bool) -> tuple[float, float, str]:
+    """
+    Distància entre les distribucions de dues columnes (sense nuls) i el p-valor:
+    KS per a numèriques, variació total (amb khi quadrat) per a categòriques.
+
+    :return: `(distància, p_valor, mesura)`.
+    """
+    if numeric:
+        res = stats.ks_2samp(a.to_numpy(float), b.to_numpy(float), method="asymp")
+        return float(res.statistic), float(res.pvalue), "ks"
+    fa, fb = a.value_counts(normalize=True).align(b.value_counts(normalize=True), fill_value=0)
+    counts = pd.concat([a.value_counts(), b.value_counts()], axis=1).fillna(0)
+    pval = float(stats.chi2_contingency(counts.to_numpy())[1]) if counts.shape[0] > 1 else 1.0
+    return float(0.5 * np.abs(fa - fb).sum()), pval, "total_variation"
 
 
 def is_perturbation(x: np.ndarray, y: np.ndarray, max_rel_noise: float = 0.25, min_changed: float = 0.5) -> bool:

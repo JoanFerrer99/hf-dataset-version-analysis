@@ -67,3 +67,13 @@ def test_single_element_arrays_are_read_as_scalars():
     assert table.columns["gripper_width"].kind == NUMERIC
     assert table.values["gripper_width"].isna().tolist() == [False, True, False]
     assert table.columns["state"].kind == OPAQUE
+
+
+def test_single_element_arrays_that_are_all_nan_are_a_numeric_null_column():
+    """`stlee601/cube_pick1`: `gripper_width` és `[nan]` a totes les files de la versió antiga."""
+    df = pd.DataFrame({"gripper_width": [np.array([np.nan])] * 3})
+    buf = io.BytesIO()
+    df.to_parquet(buf, index=False)
+    table = load_table(buf.getvalue(), ".parquet")
+    assert table.columns["gripper_width"].kind == NUMERIC
+    assert table.values["gripper_width"].isna().all()

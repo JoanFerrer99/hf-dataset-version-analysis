@@ -21,7 +21,7 @@ from scipy.optimize import linear_sum_assignment
 from diffengine.config import EngineConfig
 from diffengine.load import NUMERIC, OPAQUE, Table
 from diffengine.rows import RowAlignment, cell_tokens, paired_values, value_overlap
-from diffengine.transforms import fit_numeric, is_bijection
+from diffengine.transforms import distribution_distance, fit_numeric, is_bijection
 
 
 @dataclass
@@ -80,12 +80,31 @@ def _score(old: Table, new: Table, o: str, n: str, rows: RowAlignment, config: E
     if old.columns[o].kind == OPAQUE or new.columns[n].kind == OPAQUE:
         return 0.0, "", {}
     ta_all, tb_all = cell_tokens(old, o), cell_tokens(new, n)
-    if min(ta_all.nunique(), tb_all.nunique()) >= 20:
+    many_values = min(ta_all.nunique(), tb_all.nunique()) >= 20
+    if many_values:
         # Molts valors distints i el mateix multiconjunt: és la mateixa columna,
         # encara que les files no s'hagin pogut aparellar bé.
         overlap = value_overlap(ta_all, tb_all)
         if overlap >= config.column_match_min_validity:
             return overlap, "identical", {"by": "value_multiset"}
+    found = _score_on_pairs(old, new, o, n, rows, config, ta_all, tb_all)
+    if found[0] or not many_values:
+        return found
+    # Una altra mostra de files (p.e. Census D3): la majoria de valors distints
+    # nous ja hi eren i la distribució no canvia segons el criteri de C530.
+    shared = len(set(ta_all) & set(tb_all)) / tb_all.nunique()
+    same_kind = (old.columns[o].kind == NUMERIC) == (new.columns[n].kind == NUMERIC)
+    if same_kind and shared >= config.same_column_min_shared_values:
+        distance, _, measure = distribution_distance(old.values[o].dropna(), new.values[n].dropna(),
+                                                     old.columns[o].kind == NUMERIC)
+        if distance < config.c530_min_distance:
+            return shared, "same_distribution", {"shared_values": shared, measure: distance}
+    return 0.0, "", {}
+
+
+def _score_on_pairs(old: Table, new: Table, o: str, n: str, rows: RowAlignment, config: EngineConfig,
+                    ta_all: pd.Series, tb_all: pd.Series) -> tuple[float, str, dict]:
+    """Identitat, transformació o bijecció sobre les files aparellades; sense files, perfil de freqüències."""
     reliable = rows.reliable_pairs
     if len(reliable) >= 10:
         a_idx, b_idx = reliable[:, 0], reliable[:, 1]
