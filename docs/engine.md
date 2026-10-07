@@ -195,11 +195,11 @@ files aparellades no ambigües.
 | Detector | Codis | Criteri |
 |---|---|---|
 | `detect_column_set` | C210, C221, C222, C223, C311 `one_hot` | Ordre relatiu de les columnes aparellades; columnes sobrants; renoms |
-| `detect_kinds` | C311, C321 | Canvi de família numèric ↔ categòric, codificat pel tipus antic (P3). C321 `real_to_integer` només si l'ajust és un arrodoniment |
+| `detect_kinds` | C311, C321, C312 `recoded` | Canvi de família numèric ↔ categòric, codificat pel tipus antic (P3); si és una bijecció entre valors (codificar categories), també C312 `recoded` (P13). C321 `real_to_integer` només si l'ajust és un arrodoniment |
 | `detect_values` | C312, C322, C510 | Cel·les de files aparellades. Valor ↔ nul és C510 (P1: `imputed_constant:<mean\|median\|mode\|value>`, `masking`). Numèriques: subtipus de l'ajust, `perturbation`, `representation` (notació científica, coma decimal) o `cell_edits`. Categòriques: el tipus de mapatge (P9) |
 | `detect_order` | C410 | Les files aparellades **segures** (no ambigües i fetes amb totes les columnes, no editades) canvien d'ordre: subsqüència creixent més llarga i tau de Kendall; `sorted_by:<col>` si la nova està ordenada per una columna |
 | `detect_rows` | C421, C422 | Files sense parella. C421 `duplicate_of_existing`/`new`. C422 `duplicate_removed`, `had_nulls`, `outlier`, `predicate` (arbre de decisió de profunditat 2) o `unexplained` |
-| `detect_missing` | C510 | Proporció de nuls de la columna: prova de dues proporcions + efecte ≥ `c510_min_rate_delta`, excepte si el canvi només ve de files afegides o eliminades (P12); canvi de token d'absent → `representation` |
+| `detect_missing` | C510 | Proporció de nuls de la columna: prova de dues proporcions + efecte ≥ `c510_min_rate_delta`, també quan el canvi ve de files afegides o eliminades (paper §4); canvi de token d'absent → `representation` |
 | `detect_correlation` | C520 | Spearman (num-num), V de Cramér corregida (cat-cat, categories rares agrupades; no es calcula si no compleix la regla de Cochran), raó de correlació (num-cat); \|Δ\| ≥ `c520_min_delta` i prova de Fisher z p < `alpha` per a totes les mesures |
 | `detect_distribution` | C530 | KS (numèriques) o variació total (categòriques) ≥ `c530_min_distance` i p < `alpha`. Salta identificadors, columnes amb canvi de tipus, text i columnes explicades per una transformació (P8); compara després d'aplicar el reetiquetatge |
 
@@ -234,8 +234,7 @@ altres valors: `dataclasses.replace(DEFAULT_CONFIG, alpha=0.05)`; el
 `config_hash` de la sortida ho registra. Les decisions provisionals són
 interruptors:
 `null_transition_is_c510` (P1), `kind_change_by_old_kind` (P3),
-`report_representation` (P5), `transformation_suppresses_c530` (P8),
-`row_change_suppresses_c510` (P12).
+`report_representation` (P5), `transformation_suppresses_c530` (P8).
 
 ## 4. Avaluació
 

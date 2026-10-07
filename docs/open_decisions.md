@@ -75,11 +75,12 @@ per a les taules massa grans.
 | **P3** | Una conversió entre tipus (numèric ↔ categòric, one-hot) es codifica pel tipus de la columna **antiga**: C311 si era categòrica, C321 si era numèrica. | Segons el tipus nou |
 | **P5** | Els canvis només de representació es reporten, mai s'amaguen: espais o majúscules en categories → C312 `representation`; separador decimal o notació científica → C322 `representation`; token d'absent (`?` → buit) → C510 `representation`. | No reportar-los |
 | **P6** | Les columnes de text lliure (moltes categories, textos llargs) es tracten com a categòriques, però només amb comparacions de resum (diferència de domini, taxa de nuls). | Comparar-ne la distribució |
-| **P8** | Si el canvi d'una columna queda explicat per una transformació ajustada (C322: factor, log, min-max, estandardització...), **no** s'emet C530 per a la mateixa columna: el canvi de distribució n'és conseqüència. | Emetre també C530 |
+| **P8** | Si el canvi d'una columna queda explicat per una transformació ajustada (C322: factor, log, min-max, estandardització...), **no** s'emet C530 per a la mateixa columna: el canvi de distribució n'és conseqüència. El text del paper (§4, canvis elementals que poden aparèixer junts) suggereix l'alternativa; cap cas de la Taula 1 ho resol. | Emetre també C530 |
 | **P9** | C312 només surt de canvis en files **aparellades** (o de representació). Si una categoria apareix o desapareix només perquè s'han afegit o eliminat files, el canvi és C421/C422, no C312. | Comptar també la diferència de domini de tota la columna |
 | **P10** | Els comptadors de posició (enters no decreixents al llarg de les files a totes dues versions: `index`, `episode_index` de LeRobot) no són atributs: no són clau, no entren al hash de fila ni a C520/C530, i si es renumeren surten com a C322 `renumbered`. Trobat a l'execució real (`stlee601/cube_pick1`). | Tractar-los com qualsevol columna numèrica |
 | **P11** | En un repositori de media (més vídeos que parquet, p.e. LeRobot), els fitxers tabulars que la media no fa servir es resolen com a taules pròpies i es comparen. La regla estricta de `datasets` (un sol format per repositori) els deixaria fora. | Seguir `datasets` al peu de la lletra |
-| **P12** | Si la proporció de nuls d'una columna només canvia perquè s'afegeixen o s'eliminen files (cap cel·la aparellada passa de nul a valor o al revés), no és C510: és conseqüència de C421/C422. Criteri del paper a Census D6/D7. | C510 sempre que canviï la proporció |
+| ~~P12~~ | **Retirada.** Ometia C510 quan la proporció de nuls només canviava per files afegides o eliminades, per coincidir amb la Taula 1 (D6/D7). El text del paper (§4) diu el contrari: "we consider them separately". | — |
+| **P13** | Un canvi de tipus que és una bijecció entre valors (codificar categories com a enters, o al revés) és C311/C321 **i** C312 `recoded`: canvien el tipus i els valors del domini (paper §4; Taula 1 a D3/D4). Un canvi només de format ("1" → 1) no és C312. | Només C311/C321 (P3) |
 
 Decisions del prompt original que **no s'apliquen**, per decisió de Joan:
 - **D2 / P4** (C530 només per a la variable objectiu): C530 és un canvi
@@ -90,28 +91,26 @@ Decisions del prompt original que **no s'apliquen**, per decisió de Joan:
 
 ## Preguntes amb evidència de Census Income (Taula 1 del paper)
 
-Resultat actual: precisió 71,4%, recall 96,2% (25 TP, 10 FP, 1 FN;
-`data/census_income/census_income_paper_comparison_by_code_7.csv`). Cada
-fals positiu s'ha comprovat obrint les dades:
+Estudi complet a `docs/census_income_paper_method.md`. Resultat: precisió
+75,8%, recall 96,2% (25 TP, 8 FP, 1 FN;
+`data/census_income/census_income_paper_comparison_by_code_8.csv`), amb
+cada versió comparada amb la publicació de la UCI de la qual surten les
+seves files.
 
-| Versió | Codi del motor que el paper no marca | Què hi ha a les dades | Tipus |
-|---|---|---|---|
-| D3, D4 | C421 | 3.534 files (29%) amb una combinació (edat, `fnlwgt`, guanys, pèrdues) que no existeix a D0: vénen d'`adult.test` | Canvi real |
-| D6 | C421 | Una altra mostra de files, part noves | Canvi real |
-| D3 | C222 `education-num` | La columna `education` passa a ser numèrica (C311, que el paper sí marca) i `education-num` desapareix | Canvi real; el paper hi és incoherent |
-| D6 | C222 `fnlwgt` | `fnlwgt` no hi és | Canvi real |
-| D4, D6 | C410 | Ordre de files aleatori respecte a D0 (tau de Kendall ≈ 0). D3 ve del mateix repositori i el paper sí que hi marca C410 | Canvi real |
-| D7 | C422 `had_nulls` | S'eliminen les 2.385 files amb `?` | Canvi real |
-| D7 | C311 (i C312 no detectat) | Totes les categòriques passen a codis enters. Amb P3 és C311; el paper hi marca C312, però a D3/D4 marca C311 per al mateix tipus de canvi | Criteri (P3); el paper no és coherent |
-| D7 | C410 | 14 files de D0 amb un nul s'aparellen amb files d'`adult.test` idèntiques en totes les altres columnes; D7 conserva l'ordre de D0 | Error del motor, indecidible amb les dades |
+**Preguntes per a Alberto:**
 
-Ja resolts: el renom `fnlwgt` → `final_weight` sobre una altra mostra de
-files (D3/D4, abans C221 + C222), i el C510 de D6/D7, que ara segueix el
-criteri del paper (P12).
-
-**Preguntes per a Alberto:** amb quin criteri el paper no marca C421 quan
-la versió nova té files que no eren a l'original (D3, D4, D6), ni C422 a
-D7? I la codificació de categòriques com a enters, és C311 o C312?
+- **D0.** D1, D2 i D5 són còpies d'`adult.data`, però D3, D4, D6 i D7 són
+  mostres d'`adult.data` + `adult.test`. Es va comparar cada versió amb
+  "la UCI" sense fixar un fitxer? Amb `adult.data`, D7 té files noves
+  (C421, a la taula); amb totes dues, no.
+- **Canvis no documentats.** La taula no marca canvis que hi són però que
+  la targeta no esmenta: `fnlwgt` eliminada a D6, `education-num`
+  eliminada a D3, files en ordre aleatori a D4/D6, files amb `?`
+  eliminades a D7 (C422 i C510). Era intenció etiquetar només el que es
+  veu a la targeta?
+- **Mateix canvi, codis diferents.** D3 i D4 tenen el mateix origen, però
+  només D3 té C410. Codificar categories com a enters és C311 + C312 a
+  D3/D4 i només C312 a D7.
 
 ## Preguntes d'etiquetatge trobades en construir l'avaluació
 

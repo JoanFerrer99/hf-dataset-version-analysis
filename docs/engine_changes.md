@@ -151,37 +151,35 @@ conjunt reservat no s'ha fet servir mai per ajustar. Detall a
 |---|---|---|---|
 | Motor anterior | 64,5% | 76,9% | 70,2% |
 | Motor nou, primera versió | 61,0% | 96,2% | 74,6% |
-| **Motor nou, actual** | **71,4%** | **96,2%** | **82,0%** |
+| Motor nou, després de revisar els FP | 71,4% | 96,2% | 82,0% |
+| **Motor nou, amb les dades del paper** | **75,8%** | **96,2%** | **84,7%** |
 
-De 61,0% a 71,4% de precisió: s'han revisat a mà tots els FP, obrint les
-dades, i se n'han tret els que eren errors del motor o criteris que el
-paper aplica de manera coherent:
+Detall complet: `docs/census_income_paper_method.md`. En resum:
 
-1. **Renom sobre una altra mostra de files** (D3/D4: `fnlwgt` →
-   `final_weight`, amb un 29% de files noves): sortia com a columna
-   eliminada + afegida. Ara una columna amb molts valors distints és la
-   mateixa si en comparteix la majoria i la distribució no canvia (criteri
-   de C530). En aparellar-la, millora l'aparellament de files i desapareixen
-   també el C410 i el C530 falsos de D3.
-2. **L'ordre de files (C410) es jutja només amb parelles segures** (no
-   ambigües i no editades).
-3. **P12**: si la proporció de nuls canvia només perquè s'eliminen o
-   s'afegeixen files (D6, D7 eliminen les files amb `?`), és conseqüència de
-   C422/C421 i no C510, com fa el paper. És una decisió provisional,
-   configurable.
+1. **Les dades.** El paper no diu quin fitxer, revisió ni part de la UCI
+   va fer servir. Un experiment (`eval/census_variants.py`) ho ha provat
+   tot i ha mirat d'on surten les files: D1, D2 i D5 són còpies
+   d'`adult.data`; D3, D4, D6 i D7 són mostres d'`adult.data` +
+   `adult.test`. Cada versió es compara ara amb la publicació de la qual
+   surt.
+2. **El mètode del paper.** Les etiquetes vénen de la targeta de cada
+   repositori i d'una inspecció manual; els canvis que la targeta no
+   documenta no hi són.
+3. **Canvis al motor**, tots justificats pel text del paper (§4), no per la
+   taula:
+   - renom sobre una altra mostra de files (`fnlwgt` → `final_weight`);
+   - l'ordre (C410) només es jutja amb parelles de files segures;
+   - un canvi de tipus que és una bijecció entre valors (codificar
+     categories com a enters) també és C312 `recoded`;
+   - **no** s'oculta C510 quan els nuls canvien per files eliminades: el
+     text diu que es reporta (la decisió P12, que ho ometia per coincidir
+     amb la taula, s'ha retirat).
 
-Els 10 FP que queden: 8 són canvis reals que el paper no etiqueta
-(comprovats: files noves a D3/D4/D6, columnes eliminades, ordre aleatori a
-D4/D6, files eliminades a D7), 1 és el criteri P3 (codificar categòriques
-com a enters: el paper hi marca C311 a D3/D4 i C312 a D7) i 1 és un error
-del motor a D7 indecidible amb les dades. Treure'n més voldria dir ocultar
-canvis reals; el detall és a `docs/open_decisions.md`.
+Els 9 desacords que queden (8 FP, 1 FN) són canvis reals que la targeta no
+documenta o casos on la taula no aplica el mateix criteri a versions
+equivalents; cap no és un error del motor.
 
-Census Income ha passat de referència externa a conjunt d'ajust: les
-correccions 1–2 són generals (tenen test i milloren o mantenen
-l'avaluació), però la 3 s'ha triat per coincidir amb el paper.
-
-### 6.3 Execució real: `run_10` (motor nou, 2.2.0) contra `run_8` (motor anterior)
+### 6.3 Execució real: `run_11` (motor nou, 2.3.0) contra `run_8` (motor anterior)
 
 Mateixa entrada (`data/run_8/eligibility_report_2000_8.csv`, 11 datasets
 elegibles) i mateixes versions (els dos `versions_*.csv` són idèntics).
@@ -189,16 +187,17 @@ Ordre: `python notebooks/run_pipeline.py --input-csv
 data/run_8/eligibility_report_2000_8.csv`. Un minut i mig amb la caché de
 Hugging Face plena (uns 2,5 minuts la primera vegada).
 
-| | `run_8` (anterior) | `run_10` (nou) |
+| | `run_8` (anterior) | `run_11` (nou) |
 |---|---|---|
 | Datasets amb algun resultat | 3 | 7 amb parells de taules, 3 amb canvis |
 | Què es compara | Fins a 5 fitxers per unitat de canvi | 78 parells: 10 comparats (`ok`), 33 sense canvis (`identical_content`, sense descarregar), 14 taules que apareixen o desapareixen, 21 fitxers exclosos amb motiu |
-| Canvis | 30 etiquetes | 33 canvis amb subtipus i evidència (21 files al CSV en format antic) |
+| Canvis | 30 etiquetes | 35 canvis amb subtipus i evidència (23 files al CSV en format antic) |
 
-`data/run_9` és la mateixa execució amb la versió 2.1.0 del motor, abans de
-P12 i de la correcció de columnes buides: hi sortien a més un C321 fals
-(`ckwolfe`, una columna buida que s'omple) i dos C510 causats només per
-files afegides; el de `gripper_width` hi era com a `rate` i ara és `imputed`.
+Execucions anteriors amb la mateixa entrada: `data/run_9` (motor 2.1.0) i
+`data/run_10` (2.2.0). Respecte a `run_9` desapareix un C321 fals
+(`ckwolfe`, una columna buida que s'omple) i el C510 de `gripper_width` passa
+de `rate` a `imputed`. `run_10` ometia dos C510 de `ckwolfe` (P12, ja
+retirada).
 
 Unitat de canvi per unitat de canvi (només les que tenen alguna diferència;
 les comprovacions s'han fet obrint els fitxers):
@@ -209,7 +208,7 @@ les comprovacions s'han fet obrint els fitxers):
 | `nuoyihan/eval_lerobot-pick-red-pen` | c304fd4→01f8557 | C210, C221, C322×2, C422×2, C520, C530×2 | C422 `all_rows` (13.930); C421 `new` (1.011); C530 × 2 | **Taula regravada**: 70 episodis de 199 frames passen a 6 episodis de ~169 frames, amb vectors nous. La taula de dades té les mateixes columnes a totes dues versions (comprovat), així que el C210 i el C221 de l'anterior havien de venir d'un altre fitxer del commit, probablement les metadades (`meta/*.parquet`), que al nou surten com a `excluded` |
 | `nuoyihan/...` | 3 unitats més | C421×8, C422×5 | `absent_old` / `absent_new` | Conversió de format LeRobot: es treuen tots els episodis en un commit i s'afegeix un fitxer únic en un altre. Són taules senceres, no files (U2) |
 | `Ray0v0/cl-piper-single-stack-bowls` | a1d4e69→f81ff5e | C421×5 | `absent_old` (taula de 500 episodis) | La primera versió és un repositori buit. L'anterior en veia 5 fitxers (el límit); el nou hi veu una taula nova sencera |
-| `ckwolfe/benchmarks-viz-tiles` | 7 unitats | — | C421 × 5, C422, C510 × 2, C520 × 13, C530 × 2, C221 | Taules de resultats de benchmark en `.jsonl`, que el motor anterior no llegia. Les files afegides i els canvis de nuls són directes de verificar; **els C520 no s'han revisat un per un** |
+| `ckwolfe/benchmarks-viz-tiles` | 7 unitats | — | C421 × 5, C422, C510 × 4, C520 × 13, C530 × 2, C221 | Taules de resultats de benchmark en `.jsonl`, que el motor anterior no llegia. Les files afegides i els canvis de nuls són directes de verificar; **els C520 no s'han revisat un per un** |
 | `phospho-app/grasp_red_50_bboxes` | cda949d→8a4c6e4 | — | `ok`, cap canvi | Fitxers tornats a pujar (hash diferent) amb les mateixes files: 100% aparellades |
 | `kimyg119/...`, `younghyopark/...` | 4 unitats | — | `absent_*`, `identical_content`, `excluded` | Conversió LeRobot (com `nuoyihan`) i re-pujades sense canvis |
 
@@ -232,17 +231,18 @@ que no compara.
 - **C410 amb files duplicades i editades alhora**, i **C422 `predicate`**
   quan s'elimina una sola fila: vegeu `docs/engine.md` §8.
 - Decisions noves que cal confirmar: **P10** (comptadors de posició),
-  **P11** (taules dins de repositoris de media) i **P12** (nuls que canvien
-  només per files afegides o eliminades), a `docs/open_decisions.md`.
+  **P11** (taules dins de repositoris de media) i **P13** (C312 `recoded`
+  en codificar categories), a `docs/open_decisions.md`.
 
 ## 8. Com reproduir-ho
 
 ```bash
-pytest                                            # 212 tests, sense xarxa
+pytest                                            # 214 tests, sense xarxa
 python eval/run_eval.py                           # eval/report.md (reservat, antic vs nou)
 python notebooks/validate_census_income.py        # Census Income
+python eval/census_variants.py                    # quines dades va fer servir el paper
 python notebooks/run_pipeline.py --input-csv data/run_8/eligibility_report_2000_8.csv
 ```
 
-Cada fila de `changes_<k>.csv` porta `engine_version` (2.2.0) i
+Cada fila de `changes_<k>.csv` porta `engine_version` (2.3.0) i
 `config_hash`, per saber amb quin motor i quins llindars s'ha generat.

@@ -526,7 +526,7 @@ Límits fixos: 50 commits per dataset (`MAX_COMMITS`), 500 MB per taula,
 
 ### 13.1 Tests
 
-`tests/` té un fitxer per mòdul (213 tests). L'API de HF sempre se
+`tests/` té un fitxer per mòdul (215 tests). L'API de HF sempre se
 simula amb `monkeypatch`: els tests no necessiten xarxa ni token real.
 `tests/conftest.py` afegeix `notebooks/` al `sys.path`.
 
@@ -538,23 +538,25 @@ paper, codi per codi, sense C100 (decisió T-14). Per a cada versió i
 codi: vertader positiu (TP) si el paper i el motor el marquen, fals
 negatiu (FN) si només el paper, fals positiu (FP) si només el motor.
 
-Resultat actual (`data/census_income/census_income_paper_comparison_by_code_7.csv`):
-**precisió 71,4%, recall 96,2%, F1 82,0%** (motor anterior, `_5`:
+Cada versió es compara amb la publicació de la UCI de la qual surten les
+seves files (D1, D2, D5: `adult.data`; D3, D4, D6, D7: `adult.data` +
+`adult.test`), a una revisió fixada; com es va determinar, a
+`docs/census_income_paper_method.md`.
+
+Resultat actual (`data/census_income/census_income_paper_comparison_by_code_8.csv`):
+**precisió 75,8%, recall 96,2%, F1 84,7%** (motor anterior, `_5`:
 64,5% / 76,9% / 70,2%).
 
 | Codi | TP | FN | FP | Lectura |
 |---|---|---|---|---|
-| C210, C221, C223, C530 | 2, 1, 7, 1 | 0 | 0 | Encert total, inclosos els renoms semàntics i el renom sobre una altra mostra de files (`fnlwgt` → `final_weight`) |
-| C312 | 2 | 1 | 0 | L'FN és D7: el paper marca C312 per codificar categòriques com a enters, el motor C311 (decisió P3) |
-| C410 | 4 | 0 | 3 | D4 i D6 tenen l'ordre de files aleatori (real); D7, 14 files mal aparellades (error del motor) |
-| C421 | 1 | 0 | 3 | D3, D4 i D6 tenen files que no eren a D0 (comprovat) |
-| C222, C311, C422 | 2, 2, 3 | 0 | 2, 1, 1 | Columnes eliminades i files eliminades que hi són de debò; el C311 de D7 és la decisió P3 |
+| C210, C221, C223, C312, C530 | 2, 1, 7, 3, 1 | 0 | 0 | Encert total |
+| C410 | 4 | 0 | 2 | D4 i D6 tenen l'ordre de files aleatori; la taula ho marca a D3 però no a D4, del mateix origen |
+| C421 | 0 | 1 | 0 | D7: respecte a la UCI completa no hi ha files noves |
+| C222, C311, C422, C510 | 2, 2, 3, 0 | 0 | 2, 1, 1, 2 | Canvis reals que la targeta no documenta (columnes i files eliminades, nuls que desapareixen) i el C311 de D7 |
 
-D1, D2 i D5 coincideixen exactament amb el paper. Dels 10 FP, 8 són canvis
-reals que el paper no etiqueta, 1 és una decisió de criteri (P3) i 1 és
-un error del motor; el detall, amb la comprovació de cada cas, és a
-`docs/open_decisions.md`. D6 té una ambigüitat: el repositori té tres
-fitxers candidats i el paper no diu quin va fer servir.
+D1, D2 i D5 coincideixen exactament amb el paper. Cap dels 9 desacords no
+és un error del motor: són canvis reals no documentats a la targeta o casos
+on la taula no aplica el mateix criteri a dues versions equivalents.
 
 ---
 
@@ -581,6 +583,7 @@ fitxers candidats i el paper no diu quin va fer servir.
 | `docs/taxonomy.md` | La taxonomia completa i concepte `is_breaking` explicat|
 | `docs/engine.md` | El motor de detecció de canvis: capes, criteris, sortida, avaluació |
 | `docs/engine_changes.md` | Què ha canviat respecte al motor anterior, i execució real comparada |
+| `docs/census_income_paper_method.md` | Amb quines dades i quin criteri es va fer la Taula 1 del paper |
 | `docs/open_decisions.md` | Decisions provisionals del motor, pendents de confirmar |
 | `docs/engine_audit.md` | Auditoria del motor anterior (per què es va reescriure) |
 | `eval/report.md` | Precisió/recall per codi, motor antic vs nou, sobre casos generats |
