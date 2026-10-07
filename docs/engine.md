@@ -1,11 +1,11 @@
 # Motor de detecció de canvis (v2)
 
-Paquet `notebooks/diffengine/`. Rep dues revisions d'un repositori de
+Paquet `src/diffengine/`. Rep dues revisions d'un repositori de
 Hugging Face (o dos fitxers) i retorna, per a cada taula, un **estat** i una
 llista de **canvis** de la taxonomia (`docs/taxonomy.md`), cadascun amb
 subtipus, columna, files afectades, confiança i evidència.
 
-Substitueix `change_diff.py` (retirat). Per què calia: `docs/engine_audit.md`.
+Substitueix `change_diff.py` (retirat). Per què calia: `docs/historic/engine_audit.md`.
 Decisions provisionals (P*, U*): `docs/open_decisions.md`.
 
 ---
@@ -45,7 +45,7 @@ pairs ─→ engine ─→ detectors ─→ columns ─→ transforms ─→ loa
 | L1 | `load.py` | Llegeix un fitxer i en dedueix el tipus lògic de cada columna |
 | L3 | `columns.py`, `transforms.py` | Aparella columnes: per nom i per contingut |
 | L4 | `rows.py` | Aparella files |
-| L5 | `detectors.py` | Un detector per família de codis |
+| L5 | `detectors/` | Un fitxer per perspectiva de la taxonomia: `columns_set.py` (C2xx), `column_kind.py` (C3xx), `rows_set.py` (C4xx), `data.py` (C5xx) |
 | L6 | `output.py` | Taules de sortida |
 | — | `engine.py` | Orquestra L1 → L3 ↔ L4 → L5 per a un parell de taules |
 | — | `config.py` | Tots els llindars i decisions provisionals |
@@ -190,18 +190,19 @@ de files canviades (`min_explained_rows`); per sota, és `cell_edits`.
 
 Cada detector rep un `Context` (taules, aparellaments, config) i retorna
 `Change`s. Comparen només columnes aparellades i, per a valors, només
-files aparellades no ambigües.
+files aparellades no ambigües. Estan agrupats com les perspectives de la
+taxonomia del paper (§4), un fitxer per perspectiva:
 
-| Detector | Codis | Criteri |
-|---|---|---|
-| `detect_column_set` | C210, C221, C222, C223, C311 `one_hot` | Ordre relatiu de les columnes aparellades; columnes sobrants; renoms |
-| `detect_kinds` | C311, C321, C312 `recoded` | Canvi de família numèric ↔ categòric, codificat pel tipus antic (P3); si és una bijecció entre valors (codificar categories), també C312 `recoded` (P13). C321 `real_to_integer` només si l'ajust és un arrodoniment |
-| `detect_values` | C312, C322, C510 | Cel·les de files aparellades. Valor ↔ nul és C510 (P1: `imputed_constant:<mean\|median\|mode\|value>`, `masking`). Numèriques: subtipus de l'ajust, `perturbation`, `representation` (notació científica, coma decimal) o `cell_edits`. Categòriques: el tipus de mapatge (P9) |
-| `detect_order` | C410 | Les files aparellades **segures** (no ambigües i fetes amb totes les columnes, no editades) canvien d'ordre: subsqüència creixent més llarga i tau de Kendall; `sorted_by:<col>` si la nova està ordenada per una columna |
-| `detect_rows` | C421, C422 | Files sense parella. C421 `duplicate_of_existing`/`new`. C422 `duplicate_removed`, `had_nulls`, `outlier`, `predicate` (arbre de decisió de profunditat 2) o `unexplained` |
-| `detect_missing` | C510 | Proporció de nuls de la columna: prova de dues proporcions + efecte ≥ `c510_min_rate_delta`, també quan el canvi ve de files afegides o eliminades (paper §4); canvi de token d'absent → `representation` |
-| `detect_correlation` | C520 | Spearman (num-num), V de Cramér corregida (cat-cat, categories rares agrupades; no es calcula si no compleix la regla de Cochran), raó de correlació (num-cat); \|Δ\| ≥ `c520_min_delta` i prova de Fisher z p < `alpha` per a totes les mesures |
-| `detect_distribution` | C530 | KS (numèriques) o variació total (categòriques) ≥ `c530_min_distance` i p < `alpha`. Salta identificadors, columnes amb canvi de tipus, text i columnes explicades per una transformació (P8); compara després d'aplicar el reetiquetatge |
+| Detector | Fitxer | Codis | Criteri |
+|---|---|---|---|
+| `detect_column_set` | `columns_set.py` | C210, C221, C222, C223, C311 `one_hot` | Ordre relatiu de les columnes aparellades; columnes sobrants; renoms |
+| `detect_kinds` | `column_kind.py` | C311, C321, C312 `recoded` | Canvi de família numèric ↔ categòric, codificat pel tipus antic (P3); si és una bijecció entre valors (codificar categories), també C312 `recoded` (P13). C321 `real_to_integer` només si l'ajust és un arrodoniment |
+| `detect_values` | `column_kind.py` | C312, C322 | Cel·les no nul·les de files aparellades. Numèriques: subtipus de l'ajust, `perturbation`, `representation` (notació científica, coma decimal) o `cell_edits`. Categòriques: el tipus de mapatge (P9) |
+| `detect_order` | `rows_set.py` | C410 | Les files aparellades **segures** (no ambigües i fetes amb totes les columnes, no editades) canvien d'ordre: subsqüència creixent més llarga i tau de Kendall; `sorted_by:<col>` si la nova està ordenada per una columna |
+| `detect_rows` | `rows_set.py` | C421, C422 | Files sense parella. C421 `duplicate_of_existing`/`new`. C422 `duplicate_removed`, `had_nulls`, `outlier`, `predicate` (arbre de decisió de profunditat 2) o `unexplained` |
+| `detect_missing` | `data.py` | C510 | Cel·les de files aparellades que passen de nul a valor o al revés (P1: `imputed_constant:<mean\|median\|mode\|value>`, `masking`); si no n'hi ha, proporció de nuls de la columna: prova de dues proporcions + efecte ≥ `c510_min_rate_delta`, també quan el canvi ve de files afegides o eliminades (paper §4); canvi de token d'absent → `representation` |
+| `detect_correlation` | `data.py` | C520 | Spearman (num-num), V de Cramér corregida (cat-cat, categories rares agrupades; no es calcula si no compleix la regla de Cochran), raó de correlació (num-cat); \|Δ\| ≥ `c520_min_delta` i prova de Fisher z p < `alpha` per a totes les mesures |
+| `detect_distribution` | `data.py` | C530 | KS (numèriques) o variació total (categòriques) ≥ `c530_min_distance` i p < `alpha`. Salta identificadors, columnes amb canvi de tipus, text i columnes explicades per una transformació (P8); compara després d'aplicar el reetiquetatge |
 
 **Confiança**: validesa de l'explicació (proporció de files que reprodueix)
 o 1 − p de la prova; 1.0 per a fets deterministes (una columna que no hi
@@ -238,20 +239,20 @@ interruptors:
 
 ## 4. Avaluació
 
-`eval/` mesura el motor amb casos generats per mutació, abans i després
+`experiments/` mesura el motor amb casos generats per mutació, abans i després
 de cada canvi:
 
-- `eval/mutations.py`: 47 mutacions etiquetades (codi + subtipus requerits,
+- `experiments/mutations.py`: 47 mutacions etiquetades (codi + subtipus requerits,
   codis permesos com a efecte secundari), aplicades soles o combinades
   (1–3) sobre una taula sintètica i sobre UCI Adult, en CSV i parquet.
   Dos conjunts amb llavors disjuntes: **calibratge** (per ajustar) i
   **reservat** (per informar).
-- `eval/run_eval.py`: precisió/recall per codi a nivell de cas, encerts per
-  mutació i subtipus, confusions. Escriu `eval/report.md` (conjunt
+- `experiments/run_eval.py`: precisió/recall per codi a nivell de cas, encerts per
+  mutació i subtipus, confusions. Escriu `experiments/report.md` (conjunt
   reservat, motor antic vs nou). Els resultats del motor antic són a
-  `eval/baseline_old_engine.json`, desats abans de retirar-lo.
+  `experiments/baseline_old_engine.json`, desats abans de retirar-lo.
 
-Resultats al conjunt reservat (379 casos, `eval/report.md`):
+Resultats al conjunt reservat (379 casos, `experiments/report.md`):
 
 | | C221/C222 P | C223 R | C321 P | C410 R | C421 R | C510 P | C530 P | Pitjor F1 |
 |---|---|---|---|---|---|---|---|---|
@@ -266,7 +267,7 @@ regenerat el conjunt reservat perquè la línia base del motor antic es va
 calcular sobre aquests mateixos casos.
 
 **Census Income** (referència externa, mai usada per ajustar):
-`notebooks/validate_census_income.py` compara D1–D7 amb D0 contra la
+`src/validate_census_income.py` compara D1–D7 amb D0 contra la
 Taula 1 del paper (`tests/fixtures/census_income_labels.csv`). Resultat a
 l'apartat 13.2 de `docs/architecture.md`; les discrepàncies que són
 preguntes d'etiquetatge, a `docs/open_decisions.md`.
@@ -294,9 +295,10 @@ descarreguen, i les que passen de `max_unit_bytes` no es comparen.
 ## 7. Afegir un codi o canviar un llindar
 
 - **Llindar**: només a `config.py`. El `config_hash` de la sortida canvia.
-- **Detector nou**: una funció `detect_x(ctx) -> list[Change]` a
-  `detectors.py`, afegida a `DETECTORS`; una mutació a `eval/mutations.py`
-  amb la seva etiqueta; tornar a executar `python eval/run_eval.py --split
+- **Detector nou**: una funció `detect_x(ctx) -> list[Change]` al fitxer
+  de `detectors/` de la seva perspectiva, afegida a `DETECTORS`
+  (`detectors/__init__.py`); una mutació a `experiments/mutations.py`
+  amb la seva etiqueta; tornar a executar `python experiments/run_eval.py --split
   calibration` i, al final, el reservat.
 
 ## 8. Límits coneguts

@@ -56,7 +56,7 @@ toca cadascun) **sense descarregar cap byte de dades**. Després, `git
 show --name-status <commit>` sobre aquest clon local diu quins fitxers
 ha modificat un commit, sense cap crida de xarxa. L'API de HF no exposa
 aquesta informació, i per això cal clonar (històries d'usuari US-301 i US-302,
-consultar `docs/taiga/taiga_user_stories.md`). 
+consultar `docs/historic/taiga/taiga_user_stories.md`). 
 
 Requereix `git` instal·lat al sistema.
 
@@ -89,7 +89,7 @@ consumeix sencer (`list(...)`) dins de la funció de reintent (vegeu 2.4).
   web) o privat. És permanent: no es reintenta. Aquests datasets
   s'exclouen dels càlculs de proporcions però es compten a part.
 
-Tota la lògica és a `notebooks/errors.py`; la justificació completa, a
+Tota la lògica és a `src/errors.py`; la justificació completa, a
 `docs/decisions_tfg.txt` (T-02).
 
 ### 2.5 La taxonomia de canvis
@@ -169,7 +169,7 @@ Termes que defineix aquest codi:
   Els missatges de log "FASE 1/2/3" dins de `run_sampling` són passos
   interns de la Fase 0 (mostreig, classificació, escriptura).
 - **US-xxx**: històries d'usuari de la planificació a Taiga
-  (`docs/taiga/taiga_user_stories.md`). P.e. US-302 = detecció real de
+  (`docs/historic/taiga/taiga_user_stories.md`). P.e. US-302 = detecció real de
   fitxers modificats.
 - **M-xx, T-xx, A-xx**: decisions metodològiques, tècniques i d'abast,
   a `docs/decisions_tfg.txt`.
@@ -185,12 +185,12 @@ python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 echo "HF_TOKEN=hf_..." > .env          # token de HF amb rol "Read"
 
-python notebooks/run_pipeline.py --sample-size 50 --threads 4 --seed 42 --max-scanned 5000  # prova ràpida
-python notebooks/run_pipeline.py --sample-size 2000 --threads 4 --seed 42                    # execució real
+python src/run_pipeline.py --sample-size 50 --threads 4 --seed 42 --max-scanned 5000  # prova ràpida
+python src/run_pipeline.py --sample-size 2000 --threads 4 --seed 42                    # execució real
 
 pytest                                 # tests (no fan cap crida de xarxa)
-ruff check notebooks tests eval        # lint
-python eval/run_eval.py                # avaluació del motor (eval/report.md)
+ruff check src tests experiments       # lint
+python experiments/run_eval.py                # avaluació del motor (experiments/report.md)
 ```
 
 - Cal `git` al sistema (la imatge Docker ja l'inclou).
@@ -204,25 +204,49 @@ python eval/run_eval.py                # avaluació del motor (eval/report.md)
 ## 5. Estructura del repositori
 
 ```
-notebooks/      Codi del pipeline (scripts Python, no és un paquet)
+src/            Codi del pipeline (scripts Python)
+  diffengine/   Motor de detecció de canvis (paquet; docs/engine.md)
+experiments/    Experiments del treball: avaluació del motor i estudi de Census Income
 tests/          Tests pytest, un fitxer per mòdul; l'API sempre simulada
 data/           Resultats de les execucions (vegeu secció 10)
-docs/           Documentació (vegeu secció 15)
+docs/           Documentació (índex i ordre de lectura: docs/README.md)
 Dockerfile, docker-compose.yml, requirements.txt, ruff.toml
 .github/workflows/  CI: lint + tests + build de la imatge
 ```
 
-Mòduls de `notebooks/`:
+Scripts de `src/`, en l'ordre en què s'executen:
 
 | Fitxer | Què fa |
-|---|---|---|
-| `run_pipeline.py` | **Orquestrador**: executa Fase 0 → 1 → 2 i desa tot en una carpeta per execució 
+|---|---|
+| `run_pipeline.py` | **Orquestrador**: executa Fase 0 → 1 → 2 i desa tot en una carpeta per execució |
 | `eligibility_scan.py` | Fase 0 (mostreig i elegibilitat) i Fase 2 (classificació de canvis) |
 | `version_extractor.py` | Fase 1 (extreu les metadades de la seqüència de versions) |
-| `diffengine/` | Motor que compara dues revisions taula a taula i en treu els codis (`docs/engine.md`) |
+| `diffengine/` | Motor que compara dues revisions taula a taula i en treu els codis |
 | `errors.py` | Reintents, classificació d'errors, registre de fallades |
-| `extension_report.py` | Recompte d'extensions de fitxer dels elegibles, no cridat per l'orquestrador |
-| `validate_census_income.py` | Valida el motor contra Census Income, també executable aÏllat de l'orquestrador |
+| `validate_census_income.py` | Valida el motor contra la Taula 1 del paper (Census Income); s'executa a part |
+| `extension_report.py` | Recompte d'extensions de fitxer dels elegibles; s'executa a part |
+
+Mòduls de `src/diffengine/`, en l'ordre en què treballen (capes de
+`docs/engine.md`):
+
+| Mòdul | Capa | Què fa |
+|---|---|---|
+| `units.py`, `pairs.py` | L0 | Quines taules té cada revisió i com s'aparellen entre revisions |
+| `load.py` | L1 | Llegeix un fitxer i dedueix el tipus de cada columna |
+| `columns.py`, `transforms.py` | L3 | Aparella columnes (nom i contingut) |
+| `rows.py` | L4 | Aparella files |
+| `detectors/` | L5 | Un fitxer per perspectiva de la taxonomia: `columns_set.py` (C2xx), `column_kind.py` (C3xx), `rows_set.py` (C4xx), `data.py` (C5xx) |
+| `output.py` | L6 | Taules de sortida |
+| `engine.py` | — | Encadena les capes per a un parell de taules |
+| `config.py` | — | Tots els llindars i decisions provisionals |
+
+Scripts d'`experiments/` (no formen part del pipeline):
+
+| Fitxer | Què fa |
+|---|---|
+| `run_eval.py` (+ `mutations.py`, `adapters.py`) | Avalua el motor amb casos generats per mutació; escriu `experiments/report.md` |
+| `census_variants.py` | Quines dades va comparar el paper a la Taula 1 (`experiments/census_variants/`) |
+| `survey_units.py` | Enquesta de com es reparteixen les taules en fitxers als repositoris elegibles |
 
 Puntualitzacions:
 
@@ -323,7 +347,7 @@ Observacions:
   criteri comptava commits, i una validació manual de 13 elegibles va
   donar només un 38.5% de precisió. Les eines de pujada generen molts
   commits seguits que no són versions diferents (decisió M-02,
-  `docs/us108_validation_report.md`). Amb sessions, la mateixa revisió
+  `docs/historic/us108_validation_report.md`). Amb sessions, la mateixa revisió
   va donar 11/11.
 
 ### 7.3 Què és un fitxer substantiu (`is_substantive_path`)
@@ -398,7 +422,7 @@ de cada repositori (`fetch_tree_paths`), no l'historial.
 ## 9. Fase 2 — Classificació de canvis
 
 Codi: `eligibility_scan.run_classification` → `classify_dataset(...,
-classify_changes=True)`, i el motor `notebooks/diffengine/`
+classify_changes=True)`, i el motor `src/diffengine/`
 (**`docs/engine.md`**). És l'única fase que **descarrega contingut real**,
 i per això només s'aplica als elegibles (la classificació de tota la
 mostra baixaria centenars de GB).
@@ -528,7 +552,7 @@ Límits fixos: 50 commits per dataset (`MAX_COMMITS`), 500 MB per taula,
 
 `tests/` té un fitxer per mòdul (215 tests). L'API de HF sempre se
 simula amb `monkeypatch`: els tests no necessiten xarxa ni token real.
-`tests/conftest.py` afegeix `notebooks/` al `sys.path`.
+`tests/conftest.py` afegeix `src/` al `sys.path`.
 
 ### 13.2 Validació del motor amb Census Income
 
@@ -576,19 +600,5 @@ on la taula no aplica el mateix criteri a dues versions equivalents.
   fallades van sempre a `failures.csv`.
 
 ### Documents
-| Document | Què hi trobaràs |
-|---|---|
-| `README.md` | Instal·lació, token, Docker, ordres |
-| `docs/decisions_tfg.txt` | Totes les decisions amb el seu perquè |
-| `docs/taxonomy.md` | La taxonomia completa i concepte `is_breaking` explicat|
-| `docs/engine.md` | El motor de detecció de canvis: capes, criteris, sortida, avaluació |
-| `docs/engine_changes.md` | Què ha canviat respecte al motor anterior, i execució real comparada |
-| `docs/census_income_paper_method.md` | Amb quines dades i quin criteri es va fer la Taula 1 del paper |
-| `docs/open_decisions.md` | Decisions provisionals del motor, pendents de confirmar |
-| `docs/engine_audit.md` | Auditoria del motor anterior (per què es va reescriure) |
-| `eval/report.md` | Precisió/recall per codi, motor antic vs nou, sobre casos generats |
-| `docs/taiga/taiga_user_stories.md` | Històries d'usuari (US-xxx) |
-| `docs/us108_validation_report.md` | Validació manual del criteri d'elegibilitat |
-| `docs/multi_file_repos_investigation.md` | Notes sobre repositoris amb diversos fitxers tabulars |
-| `docs/paper_techniques_ml_models_change.md` | Notes sobre l'estudi de referència de canvis en models |
-| `docs/GIT_FLOW.md` | Model de branques |
+
+Índex amb l'ordre de lectura recomanat: `docs/README.md`.

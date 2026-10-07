@@ -67,7 +67,7 @@ versió (un cop, reutilitzat entre parells) suma **151.4 GB**, amb
 anterior d'aquesta secció ("ja no és inviable").
 
 **Hipòtesi provada i descartada**: exclusió de datasets amb >500 commits
-(Castaño et al. 2025, `docs/paper_techniques_ml_models_change.md` §3) com
+(Castaño et al. 2025, `docs/historic/paper_techniques_ml_models_change.md` §3) com
 a manera de descartar els datasets més "esbiaixats"/pesats. Comptat el
 nombre REAL de commits (no el comptador capat a 50 de `classify_dataset`)
 dels 11 elegibles: màxim 25 commits (`QFIN/FCMBench-Data`) — cap s'acosta
@@ -116,7 +116,7 @@ menys freqüents (el dataset base és majoritàriament categòric).
 
 ## Com es detecta cada codi
 
-El motor és `notebooks/diffengine/` i n'explica les capes `docs/engine.md`.
+El motor és `src/diffengine/` i n'explica les capes `docs/engine.md`.
 Detecta els 14 codis tabulars (C100 és fora d'abast), i cada canvi porta
 el subtipus, l'evidència i una confiança. Les decisions d'etiquetatge que
 encara són provisionals són a `docs/open_decisions.md`.

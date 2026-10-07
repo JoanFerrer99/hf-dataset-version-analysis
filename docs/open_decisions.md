@@ -1,7 +1,7 @@
 # Decisions obertes del motor de detecció v2
 
 Decisions que el motor pren amb un valor per defecte però que cal
-confirmar amb el director. Cada una té una opció a `notebooks/diffengine/
+confirmar amb el director. Cada una té una opció a `src/diffengine/
 config.py`; canviar-la no requereix tocar codi. Les decisions ja tancades
 són a `docs/decisions_tfg.txt`.
 
@@ -21,7 +21,7 @@ registrats.
 
 **Per què no "un fitxer = un dataset":** enquesta sobre els 69
 repositoris elegibles de totes les execucions (151 revisions; detall a
-`eval/survey/summary.md`, script `eval/survey_units.py`):
+`experiments/survey/summary.md`, script `experiments/survey_units.py`):
 
 - **24 dels 50** repositoris amb dades tabulars tenen almenys una taula
   repartida en diversos fitxers: 13 taules d'episodis numerats (LeRobot),
@@ -40,14 +40,15 @@ repositoris elegibles de totes les execucions (151 revisions; detall a
 C422 a una taula i C421 a l'altra. Un canvi de partició és C100, que és
 fora d'abast.
 
-**Pregunta per a Alberto:** és correcte considerar els shards d'un mateix
-(subset, split) com un sol dataset?
+**Confirmat:** els shards d'un mateix (subset, split) són un sol dataset.
 
 ## U2. Fitxer absent en una de les dues revisions
 
 **Per defecte:** estat `absent_old`/`absent_new`, sense codi. Abans
 s'emetia C421/C422. Una taula nova sencera no és "afegir files" a una
-taula existent.
+taula existent. **Confirmat.** El FN de C421 a Census D7 no ve d'aquí: la
+validació de Census compara fitxers directament, sense aparellar taules
+(vegeu `docs/falsos_positius.md`).
 
 ## U3. Fitxers tabulars que no són dades
 
@@ -62,7 +63,9 @@ de bytes per taula (`max_unit_bytes`, la suma de les dues versions); per
 sobre, estat `too_large_profile_only` i **cap codi**. Les taules amb el
 mateix contingut a les dues revisions (hash LFS o blob de git) no es
 descarreguen. Encara no hi ha perfil en caché per fitxer ni codis de perfil
-per a les taules massa grans.
+per a les taules massa grans. Aquest límit només s'aplica al pipeline: la
+validació de Census Income descarrega i compara sempre els fitxers sencers
+(el més gran fa 4,1 MB).
 
 ---
 
@@ -91,26 +94,8 @@ Decisions del prompt original que **no s'apliquen**, per decisió de Joan:
 
 ## Preguntes amb evidència de Census Income (Taula 1 del paper)
 
-Estudi complet a `docs/census_income_paper_method.md`. Resultat: precisió
-75,8%, recall 96,2% (25 TP, 8 FP, 1 FN;
-`data/census_income/census_income_paper_comparison_by_code_8.csv`), amb
-cada versió comparada amb la publicació de la UCI de la qual surten les
-seves files.
-
-**Preguntes per a Alberto:**
-
-- **D0.** D1, D2 i D5 són còpies d'`adult.data`, però D3, D4, D6 i D7 són
-  mostres d'`adult.data` + `adult.test`. Es va comparar cada versió amb
-  "la UCI" sense fixar un fitxer? Amb `adult.data`, D7 té files noves
-  (C421, a la taula); amb totes dues, no.
-- **Canvis no documentats.** La taula no marca canvis que hi són però que
-  la targeta no esmenta: `fnlwgt` eliminada a D6, `education-num`
-  eliminada a D3, files en ordre aleatori a D4/D6, files amb `?`
-  eliminades a D7 (C422 i C510). Era intenció etiquetar només el que es
-  veu a la targeta?
-- **Mateix canvi, codis diferents.** D3 i D4 tenen el mateix origen, però
-  només D3 té C410. Codificar categories com a enters és C311 + C312 a
-  D3/D4 i només C312 a D7.
+Totes les preguntes sobre els desacords amb la Taula 1, cadascuna
+comprovada amb les dades, són a `docs/falsos_positius.md`.
 
 ## Preguntes d'etiquetatge trobades en construir l'avaluació
 

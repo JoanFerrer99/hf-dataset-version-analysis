@@ -11,14 +11,14 @@ decisions encara provisionals, a `docs/open_decisions.md`.
 ## 1. En una frase
 
 El motor anterior (`change_diff.py`) comparava **fitxers** pel **nom de
-les columnes** i el **recompte de files**. El nou (`notebooks/diffengine/`)
+les columnes** i el **recompte de files**. El nou (`src/diffengine/`)
 compara **taules** aparellant **columnes i files pel contingut**, i explica
 cada canvi amb un subtipus, una evidència i una confiança. En casos
 generats, el pitjor F1 per codi passa de 0.34 a 0.98.
 
 ## 2. Per què calia canviar d'estratègia
 
-L'auditoria del motor anterior (`docs/engine_audit.md`) va mostrar que els
+L'auditoria del motor anterior (`docs/historic/engine_audit.md`) va mostrar que els
 errors no eren de llindars mal triats, sinó de com estava plantejat:
 
 | Problema del motor anterior | Conseqüència |
@@ -49,7 +49,7 @@ existeix), sinó un estat `absent_old`/`absent_new` (decisió U2).
 
 ## 4. El motor com a paquet únic
 
-Tot el motor és `notebooks/diffengine/` (11 mòduls, uns 2.100 línies). En
+Tot el motor és `src/diffengine/` (11 mòduls, uns 2.100 línies). En
 aquesta última iteració s'ha unificat:
 
 **Sense dependències d'entrada i sortida.** Abans, `diffengine/pairs.py`
@@ -74,8 +74,8 @@ pairs ─→ engine ─→ detectors ─→ columns ─→ transforms ─→ loa
 | Mapa de valors dominants (endavant/enrere) a `analyze_mapping` i `is_bijection` | `transforms._dominant_maps` |
 | Tres maneres de detectar un nul, i el token `"\x00null"` repetit | `load.is_missing`, `load.NULL_TOKEN` |
 | Llista de columnes de sortida a `eligibility_scan` i a `output` | `output.CHANGE_COLUMNS` |
-| Llista de codis a `eval/run_eval.py` | `output.TABULAR_CODES` |
-| Llistar una revisió del Hub a `eval/survey_units.py` | `pairs.list_revision` |
+| Llista de codis a `experiments/run_eval.py` | `output.TABULAR_CODES` |
+| Llistar una revisió del Hub a `experiments/survey_units.py` | `pairs.list_revision` |
 | Funció privada (`_norm_repr`) importada des d'un altre mòdul | `transforms.normalize_value`, pública |
 | Diccionari identitat `_FIT_SUBTYPE` | un conjunt |
 
@@ -131,7 +131,7 @@ detecta i no hi és; fals negatiu (FN) si hi és i no el detecta.
 
 Mutacions etiquetades aplicades a una taula sintètica i a UCI Adult; el
 conjunt reservat no s'ha fet servir mai per ajustar. Detall a
-`eval/report.md`.
+`experiments/report.md`.
 
 | Codi | Motor anterior F1 | Motor nou F1 |
 |---|---|---|
@@ -157,7 +157,7 @@ conjunt reservat no s'ha fet servir mai per ajustar. Detall a
 Detall complet: `docs/census_income_paper_method.md`. En resum:
 
 1. **Les dades.** El paper no diu quin fitxer, revisió ni part de la UCI
-   va fer servir. Un experiment (`eval/census_variants.py`) ho ha provat
+   va fer servir. Un experiment (`experiments/census_variants.py`) ho ha provat
    tot i ha mirat d'on surten les files: D1, D2 i D5 són còpies
    d'`adult.data`; D3, D4, D6 i D7 són mostres d'`adult.data` +
    `adult.test`. Cada versió es compara ara amb la publicació de la qual
@@ -183,7 +183,7 @@ equivalents; cap no és un error del motor.
 
 Mateixa entrada (`data/run_8/eligibility_report_2000_8.csv`, 11 datasets
 elegibles) i mateixes versions (els dos `versions_*.csv` són idèntics).
-Ordre: `python notebooks/run_pipeline.py --input-csv
+Ordre: `python src/run_pipeline.py --input-csv
 data/run_8/eligibility_report_2000_8.csv`. Un minut i mig amb la caché de
 Hugging Face plena (uns 2,5 minuts la primera vegada).
 
@@ -238,10 +238,10 @@ que no compara.
 
 ```bash
 pytest                                            # 214 tests, sense xarxa
-python eval/run_eval.py                           # eval/report.md (reservat, antic vs nou)
-python notebooks/validate_census_income.py        # Census Income
-python eval/census_variants.py                    # quines dades va fer servir el paper
-python notebooks/run_pipeline.py --input-csv data/run_8/eligibility_report_2000_8.csv
+python experiments/run_eval.py                           # experiments/report.md (reservat, antic vs nou)
+python src/validate_census_income.py        # Census Income
+python experiments/census_variants.py                    # quines dades va fer servir el paper
+python src/run_pipeline.py --input-csv data/run_8/eligibility_report_2000_8.csv
 ```
 
 Cada fila de `changes_<k>.csv` porta `engine_version` (2.3.0) i

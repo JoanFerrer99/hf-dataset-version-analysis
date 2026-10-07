@@ -2,6 +2,16 @@
 
 Aquest treball té com a objectiu analitzar com canvien els datasets allotjats al repositori de codi obert Hugging Face entre les seves versions successives. Per assolir aquest objectiu, es dissenyarà i implementarà un pipeline automatitzat que, mitjançant l'API pública de HF, permeti identificar els datasets amb múltiples versions, extreure'n les diferències rellevants entre versions consecutives i classificar el tipus de canvi produït.
 
+## Estructura
+
+| Carpeta | Contingut |
+|---|---|
+| `src/` | El pipeline: `run_pipeline.py` (orquestrador), les fases i el motor de detecció de canvis (`src/diffengine/`) |
+| `experiments/` | Experiments del treball: avaluació del motor (`run_eval.py`) i estudi de Census Income (`census_variants.py`) |
+| `tests/` | Tests (`pytest`), sense xarxa |
+| `data/` | Resultats de cada execució (`data/run_<id>/`) i de la validació de Census Income |
+| `docs/` | Documentació. **Ordre de lectura: `docs/README.md`** |
+
 ## Configuració
 
 1. Crea i activa l'entorn virtual, i instal·la les dependències:

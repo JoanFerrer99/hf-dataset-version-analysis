@@ -2,8 +2,8 @@
 
 Anàlisi de la Taula 1 del paper (`paper.pdf`, PROFES 2026, §5) per saber
 amb quines dades es va fer i amb quin criteri, i per què el motor no hi
-coincideix del tot. Experiment: `eval/census_variants.py` (resultats a
-`eval/census_variants/`). Validació: `notebooks/validate_census_income.py`.
+coincideix del tot. Experiment: `experiments/census_variants.py` (resultats a
+`experiments/census_variants/`). Validació: `src/validate_census_income.py`.
 
 ---
 
@@ -115,7 +115,7 @@ dues versions.
 ## 5. Canvis fets al motor i a la validació
 
 - **D0 segons la procedència**, revisions fixades i D6 com a concatenació
-  (`notebooks/validate_census_income.py`).
+  (`src/validate_census_income.py`).
 - **Retirada de P12.** Ometia C510 quan els nuls canviaven només per files
   eliminades, per coincidir amb la taula; el text del paper diu el
   contrari.
