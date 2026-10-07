@@ -53,12 +53,12 @@ completa sense nuls.
 
 **Conclusions:**
 
-1. **No hi ha una sola D0.** D1, D2 i D5 són còpies d'`adult.data`; D3, D4,
-   D6 i D7 són mostres de **les dues publicacions juntes** (48.842 files).
-   Comparades amb una D0 fixa, unes o altres surten amb C421/C422 que el
-   paper no marca. La Taula 1 és coherent si cada versió es compara amb la
-   publicació de la qual surt; això és el que fa ara la validació
-   (`CENSUS_INCOME_SOURCES[...]["d0"]`).
+1. **D0 és `adult.data`, i el paper decideix les files comptant-les.** D1,
+   D2 i D5 són còpies d'`adult.data`; D3, D4, D6 i D7 barregen files
+   d'`adult.data` i d'`adult.test`. La Taula 1 marca C422 a les versions
+   amb menys files que `adult.data` (D3, D4, D6) i C421 a la que en té més
+   (D7), sense mirar quines files són. La validació compara totes les
+   versions amb `adult.data`.
 2. **D3/D4:** el `income/train.csv` actual (des del 2025-10-08) té les
    mateixes 12.211 files que l'antic `adult_ts.csv`, una partició aleatòria
    de les 48.842. Abans, un script (`adult.py`) construïa les
@@ -70,9 +70,10 @@ completa sense nuls.
    fitxers; els tres donen el mateix resultat, i es fa servir la
    concatenació.
 
-Precisió contra la Taula 1 segons la D0 (amb la millor variant de cada
-versió): només `adult.data` 0,676; totes dues juntes 0,686; **segons la
-procedència 0,758**.
+Una alternativa provada va ser comparar cada versió amb la publicació de la
+qual surten les seves files (`adult.data` + `adult.test` per a D3, D4, D6 i
+D7). Dona més precisió (75,8%), però perd el C421 de D7 (recall 96,2%) i no
+és el que fa el paper.
 
 ## 3. Com es va etiquetar: targeta + inspecció
 
@@ -92,30 +93,21 @@ hi són, encara que siguin a les dades.
 
 ## 4. Resultat i desacords que queden
 
-`data/census_income/census_income_paper_comparison_by_code_8.csv`:
-**precisió 75,8%, recall 96,2%, F1 84,7%** (25 TP, 8 FP, 1 FN). Abans
-d'aquest estudi: 71,4% / 96,2% / 82,0%; motor anterior: 64,5% / 76,9% /
-70,2%.
+`data/census_income/census_income_paper_comparison_by_code_9.csv`:
+**precisió 68,4%, recall 100%, F1 81,3%** (26 TP, 12 FP, 0 FN). El motor
+troba tots els codis del paper. Els 12 FP, un per un, amb què hi ha a les
+dades, són a `docs/falsos_positius.md`: 11 són canvis reals que la targeta
+no documenta o que comptar files no deixa veure, i 1 és un error del motor
+(C410 a D7).
 
-| Versió | Desacord | Què hi ha a les dades | Per què el paper no hi coincideix |
-|---|---|---|---|
-| D3 | C222 (`education-num`) | L'script de l'autor esborra `education` i en deixa la versió numèrica amb el mateix nom | El paper ho llegeix com a canvi de tipus (C311), igual que el motor, però no marca la columna que desapareix |
-| D4 | C410 | Files en ordre aleatori (tau de Kendall ≈ 0) | Mateix procés que D3, on sí que hi ha C410: incoherència de la taula |
-| D6 | C222 (`fnlwgt`) | La columna no hi és (la targeta tampoc no la llista) | No documentat |
-| D6 | C410 | Ordre aleatori | No documentat |
-| D6, D7 | C510 | Les files amb `?` s'han eliminat: la proporció de nuls passa de ~7% a 0% | El text (§4) diu que es reporta; la taula no ho fa |
-| D7 | C422 | S'eliminen les 3.620 files amb `?` | No documentat |
-| D7 | C311 | Totes les categòriques passen a enters | La taula hi marca només C312; a D3/D4 marca C311 + C312 pel mateix canvi |
-| D7 | C421 no detectat | Respecte a les dues publicacions juntes no hi ha cap fila nova | Només té sentit comparant amb `adult.data` (les files de test serien noves); a D3, amb el mateix tipus de files, no es marca |
-
-Cap d'aquests desacords és un error del motor: són canvis reals que la
-targeta no documenta, o casos on la taula no aplica el mateix criteri a
-dues versions.
+Amb les mateixes dades, el motor anterior (diferències simples de noms de
+columna, recompte de files i estadístics) treu 72,0% / 69,2% / 70,6%: perd
+8 dels 26 codis del paper.
 
 ## 5. Canvis fets al motor i a la validació
 
-- **D0 segons la procedència**, revisions fixades i D6 com a concatenació
-  (`src/validate_census_income.py`).
+- **D0 = `adult.data`** per a totes les versions, revisions fixades i D6
+  com a concatenació (`src/validate_census_income.py`).
 - **Retirada de P12.** Ometia C510 quan els nuls canviaven només per files
   eliminades, per coincidir amb la taula; el text del paper diu el
   contrari.

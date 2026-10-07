@@ -562,25 +562,22 @@ paper, codi per codi, sense C100 (decisió T-14). Per a cada versió i
 codi: vertader positiu (TP) si el paper i el motor el marquen, fals
 negatiu (FN) si només el paper, fals positiu (FP) si només el motor.
 
-Cada versió es compara amb la publicació de la UCI de la qual surten les
-seves files (D1, D2, D5: `adult.data`; D3, D4, D6, D7: `adult.data` +
-`adult.test`), a una revisió fixada; com es va determinar, a
-`docs/census_income_paper_method.md`.
+Cada versió es compara amb `adult.data` de la UCI (D0), a una revisió
+fixada; com es va determinar, a `docs/census_income_paper_method.md`.
 
-Resultat actual (`data/census_income/census_income_paper_comparison_by_code_8.csv`):
-**precisió 75,8%, recall 96,2%, F1 84,7%** (motor anterior, `_5`:
-64,5% / 76,9% / 70,2%).
+Resultat actual (`data/census_income/census_income_paper_comparison_by_code_9.csv`):
+**precisió 68,4%, recall 100%, F1 81,3%**. El motor anterior, amb les
+mateixes dades: 72,0% / 69,2% / 70,6%.
 
 | Codi | TP | FN | FP | Lectura |
 |---|---|---|---|---|
 | C210, C221, C223, C312, C530 | 2, 1, 7, 3, 1 | 0 | 0 | Encert total |
-| C410 | 4 | 0 | 2 | D4 i D6 tenen l'ordre de files aleatori; la taula ho marca a D3 però no a D4, del mateix origen |
-| C421 | 0 | 1 | 0 | D7: respecte a la UCI completa no hi ha files noves |
-| C222, C311, C422, C510 | 2, 2, 3, 0 | 0 | 2, 1, 1, 2 | Canvis reals que la targeta no documenta (columnes i files eliminades, nuls que desapareixen) i el C311 de D7 |
+| C421 | 1 | 0 | 3 | D3, D4 i D6 tenen files d'`adult.test`; el paper compta files i no les veu |
+| C410 | 4 | 0 | 3 | D4 i D6, ordre aleatori real; D7, 14 files mal aparellades (error del motor) |
+| C222, C311, C422, C510 | 2, 2, 3, 0 | 0 | 2, 1, 1, 2 | Canvis reals que la targeta no documenta i el C311 de D7 |
 
-D1, D2 i D5 coincideixen exactament amb el paper. Cap dels 9 desacords no
-és un error del motor: són canvis reals no documentats a la targeta o casos
-on la taula no aplica el mateix criteri a dues versions equivalents.
+El motor troba tots els codis del paper. Cada fals positiu, explicat, a
+`docs/falsos_positius.md`.
 
 ---
 

@@ -152,16 +152,17 @@ conjunt reservat no s'ha fet servir mai per ajustar. Detall a
 | Motor anterior | 64,5% | 76,9% | 70,2% |
 | Motor nou, primera versió | 61,0% | 96,2% | 74,6% |
 | Motor nou, després de revisar els FP | 71,4% | 96,2% | 82,0% |
-| **Motor nou, amb les dades del paper** | **75,8%** | **96,2%** | **84,7%** |
+| Motor nou, D0 segons la procedència de les files | 75,8% | 96,2% | 84,7% |
+| **Motor nou, D0 = `adult.data` (com el paper)** | **68,4%** | **100%** | **81,3%** |
+| Motor anterior amb les mateixes dades i D0 | 72,0% | 69,2% | 70,6% |
 
 Detall complet: `docs/census_income_paper_method.md`. En resum:
 
 1. **Les dades.** El paper no diu quin fitxer, revisió ni part de la UCI
-   va fer servir. Un experiment (`experiments/census_variants.py`) ho ha provat
-   tot i ha mirat d'on surten les files: D1, D2 i D5 són còpies
-   d'`adult.data`; D3, D4, D6 i D7 són mostres d'`adult.data` +
-   `adult.test`. Cada versió es compara ara amb la publicació de la qual
-   surt.
+   va fer servir. Un experiment (`experiments/census_variants.py`) ho ha
+   provat tot i ha mirat d'on surten les files. La Taula 1 quadra amb
+   comparar amb `adult.data` i decidir C421/C422 pel nombre de files; ara
+   totes les versions es comparen amb `adult.data`.
 2. **El mètode del paper.** Les etiquetes vénen de la targeta de cada
    repositori i d'una inspecció manual; els canvis que la targeta no
    documenta no hi són.
@@ -175,9 +176,10 @@ Detall complet: `docs/census_income_paper_method.md`. En resum:
      text diu que es reporta (la decisió P12, que ho ometia per coincidir
      amb la taula, s'ha retirat).
 
-Els 9 desacords que queden (8 FP, 1 FN) són canvis reals que la targeta no
-documenta o casos on la taula no aplica el mateix criteri a versions
-equivalents; cap no és un error del motor.
+El motor troba els 26 codis del paper. Dels 12 FP, 11 són canvis reals que
+la targeta no documenta o que comptar files no deixa veure, i 1 és un error
+del motor (`docs/falsos_positius.md`). Amb les mateixes dades, el motor
+anterior en troba 18 de 26.
 
 ### 6.3 Execució real: `run_11` (motor nou, 2.3.0) contra `run_8` (motor anterior)
 

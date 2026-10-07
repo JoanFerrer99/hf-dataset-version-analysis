@@ -35,12 +35,11 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 UCI_ADULT_BASE_URL = "https://archive.ics.uci.edu/ml/machine-learning-databases/adult/"
 
-# D0. El paper només cita la pàgina de la UCI, que publica `adult.data` (32.561
-# files) i `adult.test` (16.281, etiquetes amb punt final). Cada versió es compara
-# amb la publicació de la qual surten les seves files (`experiments/census_variants/`,
-# procedència): D1, D2 i D5 són `adult.data`; D3, D4, D6 i D7 barregen totes dues.
+# D0 = `adult.data` (32.561 files), el fitxer de la UCI amb què compara el paper:
+# la Taula 1 marca C421 o C422 segons si la versió té més o menys files que aquest
+# (vegeu `docs/census_income_paper_method.md`). La UCI també publica `adult.test`
+# (16.281 files), que D3, D4, D6 i D7 barregen amb `adult.data`.
 D0_FILES: tuple[str, ...] = ("adult.data",)
-D0_FULL: tuple[str, ...] = ("adult.data", "adult.test")
 D0_STRIP_LABEL_DOT = True
 
 CENSUS_INCOME_COLUMN_NAMES = [
@@ -50,24 +49,24 @@ CENSUS_INCOME_COLUMN_NAMES = [
 ]
 
 # Fitxer i revisió de cada versió (la més recent abans del paper; vegeu
-# `experiments/census_variants/`). `d0`: fitxers de la UCI amb què es compara.
+# `experiments/census_variants/`).
 CENSUS_INCOME_SOURCES = {
     "D1": {"repo_id": "scikit-learn/adult-census-income", "filename": "adult.csv",
-           "revision": "2a7ff8e6a6cd74fa596ed6622937081c52255fcb", "d0": D0_FILES},
+           "revision": "2a7ff8e6a6cd74fa596ed6622937081c52255fcb"},
     "D2": {"repo_id": "AiresPucrs/adult-census-income",
            "filename": "data/train-00000-of-00001-7e70ed54d8cbb057.parquet",
-           "revision": "c791a7936d9689a53efca18b97502a4a2a3946ad", "d0": D0_FILES},
+           "revision": "c791a7936d9689a53efca18b97502a4a2a3946ad"},
     "D3": {"repo_id": "mstz/adult", "filename": "income/train.csv",
-           "revision": "76f821640149ebd31ed2df3828a621fd4a914125", "d0": D0_FULL},
+           "revision": "76f821640149ebd31ed2df3828a621fd4a914125"},
     "D4": {"repo_id": "mstz/adult", "filename": "income-no race/train.csv",
-           "revision": "76f821640149ebd31ed2df3828a621fd4a914125", "d0": D0_FULL},
+           "revision": "76f821640149ebd31ed2df3828a621fd4a914125"},
     "D5": {"repo_id": "Databoost/optimized_adult_census", "filename": "optimized_adult_census.csv",
-           "revision": "afc71c89a14e07c1a2b12ca2b32a5dcf87d0abba", "d0": D0_FILES},
+           "revision": "afc71c89a14e07c1a2b12ca2b32a5dcf87d0abba"},
     # La targeta diu que és un sol dataset equilibrat partit en tres fitxers: es concatenen.
     "D6": {"repo_id": "ETdanR/adult_income", "filename": ("train_data.csv", "validation_data.csv", "experiment_data.csv"),
-           "revision": "780110a9f38d16ea82392c2fd3a34c4a96441586", "d0": D0_FULL},
+           "revision": "780110a9f38d16ea82392c2fd3a34c4a96441586"},
     "D7": {"repo_id": "kuldeepbishnoi29/adult-fairness", "filename": "adult_processed.csv",
-           "revision": "58b25012704e7369b422e20c0d6933856ac78a17", "d0": D0_FULL},
+           "revision": "58b25012704e7369b422e20c0d6933856ac78a17"},
 }
 
 # Taula 1 del paper, transcrita a mà (inclou C100, que el motor no detecta).
@@ -137,14 +136,14 @@ def run_validation(hf_token: str | None) -> tuple[pd.DataFrame, pd.DataFrame]:
         booleà per codi, i una fila per canvi detectat.
     """
     log.info("Descarregant D0 (baseline UCI)...")
-    baselines = {files: download_uci_adult(files) for files in {s["d0"] for s in CENSUS_INCOME_SOURCES.values()}}
+    baseline = download_uci_adult()
 
     detectability_rows = []
     all_labels = []
-    for version, source in CENSUS_INCOME_SOURCES.items():
+    for version in CENSUS_INCOME_SOURCES:
         log.info(f"Descarregant i comparant {version}...")
         data, ext = download_census_income_version(version, hf_token)
-        result = diff_bytes(baselines[source["d0"]], ".csv", data, ext)
+        result = diff_bytes(baseline, ".csv", data, ext)
 
         row = {
             "version": version, "codes_detected": len(result.codes),
