@@ -33,7 +33,15 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "..", "data")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-UCI_ADULT_DATA_URL = "https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data"
+UCI_ADULT_BASE_URL = "https://archive.ics.uci.edu/ml/machine-learning-databases/adult/"
+
+# D0. El paper només cita la pàgina de la UCI, que publica `adult.data` (32.561
+# files) i `adult.test` (16.281, etiquetes amb punt final). Cada versió es compara
+# amb la publicació de la qual surten les seves files (`eval/census_variants/`,
+# procedència): D1, D2 i D5 són `adult.data`; D3, D4, D6 i D7 barregen totes dues.
+D0_FILES: tuple[str, ...] = ("adult.data",)
+D0_FULL: tuple[str, ...] = ("adult.data", "adult.test")
+D0_STRIP_LABEL_DOT = True
 
 CENSUS_INCOME_COLUMN_NAMES = [
     "age", "workclass", "fnlwgt", "education", "education-num",
@@ -41,15 +49,25 @@ CENSUS_INCOME_COLUMN_NAMES = [
     "capital-gain", "capital-loss", "hours-per-week", "native-country", "income",
 ]
 
+# Fitxer i revisió de cada versió (la més recent abans del paper; vegeu
+# `eval/census_variants/`). `d0`: fitxers de la UCI amb què es compara.
 CENSUS_INCOME_SOURCES = {
-    "D1": {"repo_id": "scikit-learn/adult-census-income", "filename": "adult.csv"},
+    "D1": {"repo_id": "scikit-learn/adult-census-income", "filename": "adult.csv",
+           "revision": "2a7ff8e6a6cd74fa596ed6622937081c52255fcb", "d0": D0_FILES},
     "D2": {"repo_id": "AiresPucrs/adult-census-income",
-           "filename": "data/train-00000-of-00001-7e70ed54d8cbb057.parquet"},
-    "D3": {"repo_id": "mstz/adult", "filename": "income/train.csv"},
-    "D4": {"repo_id": "mstz/adult", "filename": "income-no race/train.csv"},
-    "D5": {"repo_id": "Databoost/optimized_adult_census", "filename": "optimized_adult_census.csv"},
-    "D6": {"repo_id": "ETdanR/adult_income", "filename": "train_data.csv"},
-    "D7": {"repo_id": "kuldeepbishnoi29/adult-fairness", "filename": "adult_processed.csv"},
+           "filename": "data/train-00000-of-00001-7e70ed54d8cbb057.parquet",
+           "revision": "c791a7936d9689a53efca18b97502a4a2a3946ad", "d0": D0_FILES},
+    "D3": {"repo_id": "mstz/adult", "filename": "income/train.csv",
+           "revision": "76f821640149ebd31ed2df3828a621fd4a914125", "d0": D0_FULL},
+    "D4": {"repo_id": "mstz/adult", "filename": "income-no race/train.csv",
+           "revision": "76f821640149ebd31ed2df3828a621fd4a914125", "d0": D0_FULL},
+    "D5": {"repo_id": "Databoost/optimized_adult_census", "filename": "optimized_adult_census.csv",
+           "revision": "afc71c89a14e07c1a2b12ca2b32a5dcf87d0abba", "d0": D0_FILES},
+    # La targeta diu que és un sol dataset equilibrat partit en tres fitxers: es concatenen.
+    "D6": {"repo_id": "ETdanR/adult_income", "filename": ("train_data.csv", "validation_data.csv", "experiment_data.csv"),
+           "revision": "780110a9f38d16ea82392c2fd3a34c4a96441586", "d0": D0_FULL},
+    "D7": {"repo_id": "kuldeepbishnoi29/adult-fairness", "filename": "adult_processed.csv",
+           "revision": "58b25012704e7369b422e20c0d6933856ac78a17", "d0": D0_FULL},
 }
 
 # Taula 1 del paper, transcrita a mà (inclou C100, que el motor no detecta).
@@ -64,30 +82,51 @@ PAPER_GROUND_TRUTH: dict[str, frozenset[str]] = {
 }
 
 
-def download_uci_adult_baseline() -> bytes:
+def download_uci_adult(files: tuple[str, ...] = D0_FILES, strip_label_dot: bool = D0_STRIP_LABEL_DOT) -> bytes:
     """
-    D0: `adult.data` de la UCI tal com es publica, amb una línia de capçalera
-    afegida (no en té) escrita amb el mateix separador `, ` que les dades.
+    D0: fitxers de la UCI concatenats, amb una capçalera (no en tenen) escrita
+    amb el mateix separador `, ` que les dades. Es treu la primera línia
+    d'`adult.test` (`|1x3 Cross validator`) i les línies buides.
+
+    :param strip_label_dot: treu el punt final de les etiquetes d'`adult.test` (`>50K.` → `>50K`).
     """
     import urllib.request
 
-    with urllib.request.urlopen(UCI_ADULT_DATA_URL) as response:
-        raw = response.read()
-    return (", ".join(CENSUS_INCOME_COLUMN_NAMES) + "\n").encode() + raw
+    lines = []
+    for name in files:
+        with urllib.request.urlopen(UCI_ADULT_BASE_URL + name) as response:
+            text = response.read().decode("utf-8")
+        for line in text.splitlines():
+            if not line.strip() or line.startswith("|"):
+                continue
+            lines.append(line[:-1] if strip_label_dot and line.endswith(".") else line)
+    return "\n".join([", ".join(CENSUS_INCOME_COLUMN_NAMES)] + lines).encode() + b"\n"
 
 
-def download_census_income_version(version: str, hf_token: str | None) -> tuple[bytes, str]:
+def download_census_income_version(version: str, hf_token: str | None, filename: str | None = None,
+                                   revision: str | None = None) -> tuple[bytes, str]:
     """
     :param version: clau de `CENSUS_INCOME_SOURCES` (`"D1"`...`"D7"`).
+    :param filename: un altre fitxer del mateix repositori (per defecte, el de la font).
+    :param revision: commit del repositori (per defecte, `main`).
     :return: `(contingut del fitxer, extensió)`.
     """
     source = CENSUS_INCOME_SOURCES[version]
-    local_path = errors.with_retry(
-        hf_hub_download, repo_id=source["repo_id"], repo_type="dataset",
-        filename=source["filename"], token=hf_token, **errors.DEFAULT_RETRY_CONFIG,
-    )
-    with open(local_path, "rb") as f:
-        return f.read(), os.path.splitext(local_path)[1]
+    names = filename or source["filename"]
+    names = (names,) if isinstance(names, str) else names
+    parts = []
+    for name in names:
+        local_path = errors.with_retry(
+            hf_hub_download, repo_id=source["repo_id"], repo_type="dataset", filename=name,
+            revision=revision or source.get("revision"), token=hf_token, **errors.DEFAULT_RETRY_CONFIG,
+        )
+        with open(local_path, "rb") as f:
+            parts.append(f.read())
+    if len(parts) == 1:
+        return parts[0], os.path.splitext(names[0])[1]
+    # Diversos CSV del mateix dataset: es concatenen sense repetir la capçalera.
+    parts = [p if p.endswith(b"\n") else p + b"\n" for p in parts]
+    return parts[0] + b"".join(p.split(b"\n", 1)[1] for p in parts[1:]), os.path.splitext(names[0])[1]
 
 
 def run_validation(hf_token: str | None) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -98,14 +137,14 @@ def run_validation(hf_token: str | None) -> tuple[pd.DataFrame, pd.DataFrame]:
         booleà per codi, i una fila per canvi detectat.
     """
     log.info("Descarregant D0 (baseline UCI)...")
-    baseline = download_uci_adult_baseline()
+    baselines = {files: download_uci_adult(files) for files in {s["d0"] for s in CENSUS_INCOME_SOURCES.values()}}
 
     detectability_rows = []
     all_labels = []
-    for version in CENSUS_INCOME_SOURCES:
+    for version, source in CENSUS_INCOME_SOURCES.items():
         log.info(f"Descarregant i comparant {version}...")
         data, ext = download_census_income_version(version, hf_token)
-        result = diff_bytes(baseline, ".csv", data, ext)
+        result = diff_bytes(baselines[source["d0"]], ".csv", data, ext)
 
         row = {
             "version": version, "codes_detected": len(result.codes),
