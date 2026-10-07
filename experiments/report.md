@@ -1,6 +1,6 @@
 # Avaluació del motor de detecció de canvis
 
-Conjunt: **heldout** (379 casos, generats per `eval/mutations.py`). Mètriques per codi a nivell de cas; un codi permès com a efecte secundari no compta com a FP.
+Conjunt: **heldout** (379 casos, generats per `experiments/mutations.py`). Mètriques per codi a nivell de cas; un codi permès com a efecte secundari no compta com a FP.
 
 ## Precisió / recall / F1 per codi
 

@@ -16,8 +16,8 @@ Per a cada combinació: codis del motor contra `PAPER_GROUND_TRUTH`. Per a
 cada variant de D_i: d'on surten les files (`adult.data`, `adult.test`, cap).
 
 Ús:
-  python eval/census_variants.py
-Sortida: eval/census_variants/{revisions.json, variants.csv, provenance.csv, summary.md}
+  python experiments/census_variants.py
+Sortida: experiments/census_variants/{revisions.json, variants.csv, provenance.csv, summary.md}
 """
 
 import functools
@@ -32,7 +32,7 @@ import pandas as pd
 from dotenv import load_dotenv
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-sys.path.insert(0, os.path.join(ROOT, "notebooks"))
+sys.path.insert(0, os.path.join(ROOT, "src"))
 load_dotenv(os.path.join(ROOT, ".env"))
 
 import errors  # noqa: E402
@@ -42,7 +42,7 @@ from diffengine.engine import diff_bytes  # noqa: E402
 from diffengine.units import is_tabular_path  # noqa: E402
 from huggingface_hub import list_repo_commits  # noqa: E402
 
-OUT = os.path.join(ROOT, "eval", "census_variants")
+OUT = os.path.join(ROOT, "experiments", "census_variants")
 PAPER_DATE = datetime(2026, 7, 4, tzinfo=timezone.utc)  # creació de paper.pdf: cap dada posterior
 RETRY = functools.partial(errors.with_retry, **errors.DEFAULT_RETRY_CONFIG)
 
@@ -187,7 +187,7 @@ def write_summary(variants: pd.DataFrame, prov: pd.DataFrame) -> None:
     per_d0["recall"] = (per_d0.tp / (per_d0.tp + per_d0.fn)).round(3)
     text = [
         "# Quines dades va comparar el paper (Census Income)", "",
-        "Generat per `eval/census_variants.py`. Errors = FP + FN contra la Taula 1 (sense C100).", "",
+        "Generat per `experiments/census_variants.py`. Errors = FP + FN contra la Taula 1 (sense C100).", "",
         "## Millor variant per D0 (la millor revisió/fitxer de cada D_i)", "", md(per_d0), "",
         "## Les 3 millors combinacions per versió", "",
         md(best[["version", "d0", "revision", "date", "file", "rows", "tp", "fp", "fn", "fp_codes", "fn_codes"]]), "",

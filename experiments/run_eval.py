@@ -1,6 +1,6 @@
 """
-Avalua els motors sobre els casos de `eval/mutations.py` i escriu
-`eval/report.md`.
+Avalua els motors sobre els casos de `experiments/mutations.py` i escriu
+`experiments/report.md`.
 
 Mètriques per codi, a nivell de cas: TP si el codi és requerit i detectat,
 FN si és requerit i no detectat, FP si es detecta i no és ni requerit ni
@@ -8,8 +8,8 @@ permès. El report només mostra el conjunt reservat (`heldout`); el de
 calibratge és per ajustar llindars.
 
 Ús:
-  python eval/run_eval.py                       # reservat: motor antic (desat) vs nou
-  python eval/run_eval.py --split calibration   # per ajustar llindars
+  python experiments/run_eval.py                       # reservat: motor antic (desat) vs nou
+  python experiments/run_eval.py --split calibration   # per ajustar llindars
 """
 
 import argparse
@@ -21,8 +21,8 @@ from collections import Counter, defaultdict
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-from eval.adapters import ENGINES  # noqa: E402
-from eval.mutations import CACHE_DIR, MUTATIONS, Case, build_cases  # noqa: E402
+from experiments.adapters import ENGINES  # noqa: E402
+from experiments.mutations import CACHE_DIR, MUTATIONS, Case, build_cases  # noqa: E402
 
 from diffengine.output import TABULAR_CODES as CODES  # noqa: E402
 REPORT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "report.md")
@@ -96,7 +96,7 @@ def write_report(split: str, n_cases: int, results: dict[str, dict]) -> str:
     names = list(results)
     lines = [
         "# Avaluació del motor de detecció de canvis", "",
-        f"Conjunt: **{split}** ({n_cases} casos, generats per `eval/mutations.py`). "
+        f"Conjunt: **{split}** ({n_cases} casos, generats per `experiments/mutations.py`). "
         "Mètriques per codi a nivell de cas; un codi permès com a efecte secundari no compta com a FP.", "",
         "## Precisió / recall / F1 per codi", "",
         "| Codi | Suport | " + " | ".join(f"{n} P | {n} R | {n} F1" for n in names) + " |",

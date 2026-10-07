@@ -465,7 +465,7 @@ def classify_commit_tabular_changes(
     retry_config: dict,
 ) -> tuple[list[dict], list[dict]]:
     """
-    Classifica una unitat de canvi amb el motor v2 (`notebooks/diffengine`):
+    Classifica una unitat de canvi amb el motor v2 (`src/diffengine`):
     compara taula a taula (subset, split) les dues revisions. Si cap fitxer
     tocat és tabular, no es consulta res.
 
@@ -863,7 +863,7 @@ def parse_args() -> argparse.Namespace:
             "ignora --sample-size/--max-scanned/--threads/--seed/--tags-only. "
             "Útil per reclassificar un CSV d'un run previ sense tornar a "
             "mostrejar; per encadenar mostreig+extracció+classificació en una "
-            "sola execució, useu notebooks/run_pipeline.py en lloc d'aquest flag."
+            "sola execució, useu src/run_pipeline.py en lloc d'aquest flag."
         ),
     )
     parser.add_argument(

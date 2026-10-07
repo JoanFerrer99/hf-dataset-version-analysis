@@ -7,7 +7,7 @@ n'hi ha, les revisions de `versions_*.csv` (si no, `main`). Per revisió:
 llista de fitxers + README, sense descarregar dades.
 
 Ús:
-  python eval/survey_units.py            # resultats a eval/survey/
+  python experiments/survey_units.py            # resultats a experiments/survey/
 """
 
 import functools
@@ -20,14 +20,14 @@ from collections import Counter
 import pandas as pd
 from dotenv import load_dotenv
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "notebooks"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 import errors  # noqa: E402
 from diffengine import pairs  # noqa: E402
 
 RETRY = functools.partial(errors.with_retry, **errors.DEFAULT_RETRY_CONFIG)
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-OUT = os.path.join(ROOT, "eval", "survey")
+OUT = os.path.join(ROOT, "experiments", "survey")
 CACHE = os.path.join(OUT, "cache.json")
 
 

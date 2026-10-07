@@ -26,7 +26,7 @@ services:
   run-pipeline:
     build: .
     image: hf-dataset-version-analysis:latest
-    entrypoint: ["python", "notebooks/run_pipeline.py"]
+    entrypoint: ["python", "src/run_pipeline.py"]
     env_file:
       - .env
     volumes:
@@ -35,7 +35,7 @@ services:
   eligibility-scan:
     build: .
     image: hf-dataset-version-analysis:latest
-    entrypoint: ["python", "notebooks/eligibility_scan.py"]
+    entrypoint: ["python", "src/eligibility_scan.py"]
     env_file:
       - .env
     volumes:
@@ -44,7 +44,7 @@ services:
   version-extractor:
     build: .
     image: hf-dataset-version-analysis:latest
-    entrypoint: ["python", "notebooks/version_extractor.py"]
+    entrypoint: ["python", "src/version_extractor.py"]
     env_file:
       - .env
     volumes:

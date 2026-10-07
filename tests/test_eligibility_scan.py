@@ -1,5 +1,5 @@
 """
-Tests unitaris per a `notebooks/eligibility_scan.py`.
+Tests unitaris per a `src/eligibility_scan.py`.
 
 Cobreixen:
   1. `reservoir_sample_dataset_ids` només conserva identificadors (strings),
@@ -874,7 +874,7 @@ class TestRunClassification:
 
 # ---------------------------------------------------------------------------
 # run_sampling -- retorna (csv_path, json_path, summary) perquè un cridant
-# extern (notebooks/run_pipeline.py) pugui encadenar altres fases amb el
+# extern (src/run_pipeline.py) pugui encadenar altres fases amb el
 # mateix CSV sense re-derivar-ne la ruta. NOMÉS fa mostreig/elegibilitat --
 # encadenar la classificació de canvis és responsabilitat de l'orquestrador,
 # no d'aquesta funció (vegeu tests/test_run_pipeline.py).

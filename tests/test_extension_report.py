@@ -1,5 +1,5 @@
 """
-Tests unitaris per a `notebooks/extension_report.py` (feedback del
+Tests unitaris per a `src/extension_report.py` (feedback del
 director: estadístiques agregades per extensió dels fitxers dels
 datasets elegibles, previ a l'exclusió dels binaris de la classificació
 de canvis).

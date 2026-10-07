@@ -1,5 +1,5 @@
 """
-Tests unitaris per a `notebooks/run_pipeline.py`.
+Tests unitaris per a `src/run_pipeline.py`.
 
 Cobreixen `next_pipeline_run_dir` (numeració de carpetes `run_<id>`) i
 `run_full_pipeline`: l'ordre de crides, que el MATEIX `csv_path` flueix de

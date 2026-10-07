@@ -37,7 +37,7 @@ UCI_ADULT_BASE_URL = "https://archive.ics.uci.edu/ml/machine-learning-databases/
 
 # D0. El paper només cita la pàgina de la UCI, que publica `adult.data` (32.561
 # files) i `adult.test` (16.281, etiquetes amb punt final). Cada versió es compara
-# amb la publicació de la qual surten les seves files (`eval/census_variants/`,
+# amb la publicació de la qual surten les seves files (`experiments/census_variants/`,
 # procedència): D1, D2 i D5 són `adult.data`; D3, D4, D6 i D7 barregen totes dues.
 D0_FILES: tuple[str, ...] = ("adult.data",)
 D0_FULL: tuple[str, ...] = ("adult.data", "adult.test")
@@ -50,7 +50,7 @@ CENSUS_INCOME_COLUMN_NAMES = [
 ]
 
 # Fitxer i revisió de cada versió (la més recent abans del paper; vegeu
-# `eval/census_variants/`). `d0`: fitxers de la UCI amb què es compara.
+# `experiments/census_variants/`). `d0`: fitxers de la UCI amb què es compara.
 CENSUS_INCOME_SOURCES = {
     "D1": {"repo_id": "scikit-learn/adult-census-income", "filename": "adult.csv",
            "revision": "2a7ff8e6a6cd74fa596ed6622937081c52255fcb", "d0": D0_FILES},

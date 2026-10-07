@@ -1,5 +1,5 @@
 """
-Tests unitaris per a `notebooks/version_extractor.py` (US-201 + US-202).
+Tests unitaris per a `src/version_extractor.py` (US-201 + US-202).
 
 Cobreixen:
   1. Funcions pures: ordenació cronològica, suma de mides, format d'autors.

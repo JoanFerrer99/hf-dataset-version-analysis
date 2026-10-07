@@ -1,5 +1,5 @@
 """
-Tests unitaris per a `notebooks/validate_census_income.py`.
+Tests unitaris per a `src/validate_census_income.py`.
 
 Cobreixen NOMÉS les funcions PURES de comparació contra el ground truth
 del paper (`compare_detectability_with_paper`/`summarize_agreement_by_

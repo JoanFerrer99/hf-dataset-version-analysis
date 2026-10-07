@@ -1,5 +1,5 @@
 """
-Tests unitaris per a `notebooks/errors.py`.
+Tests unitaris per a `src/errors.py`.
 
 Cobreixen:
   1. `with_retry` reintenta amb backoff davant 429/errors transitoris, però

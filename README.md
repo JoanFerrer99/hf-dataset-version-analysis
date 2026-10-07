@@ -40,7 +40,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 echo "HF_TOKEN=hf_el_teu_token_aqui" > .env
-python notebooks/run_pipeline.py --sample-size 2000 --threads 4 --seed 42 # execucio principal
+python src/run_pipeline.py --sample-size 2000 --threads 4 --seed 42 # execucio principal
 # Resultats a data/eligibility_report_*.csv, data/versions_*.csv, data/change_classification_*.csv
 ```
 
@@ -48,8 +48,8 @@ python notebooks/run_pipeline.py --sample-size 2000 --threads 4 --seed 42 # exec
 
 ```bash
 source venv/bin/activate
-python notebooks/run_pipeline.py --sample-size 50 --threads 4 --seed 42 --max-scanned 5000  # prova rapida
-python notebooks/run_pipeline.py --sample-size 2000 --threads 4 --seed 42                    # execucio principal
+python src/run_pipeline.py --sample-size 50 --threads 4 --seed 42 --max-scanned 5000  # prova rapida
+python src/run_pipeline.py --sample-size 2000 --threads 4 --seed 42                    # execucio principal
 ```
 
 `run_pipeline.py` és l'orquestrador: encadena mostreig+elegibilitat
@@ -66,9 +66,9 @@ Per a proves o depuració d'una sola fase, cada script també s'invoca per
 separat:
 
 ```bash
-python notebooks/eligibility_scan.py --sample-size 50 --threads 4 --seed 42  # només Fase 0-1
-python notebooks/version_extractor.py --input data/eligibility_report_<sample_size>_<run_id>.csv  # només Fase 1b
-python notebooks/eligibility_scan.py --classify-eligible data/eligibility_report_<sample_size>_<run_id>.csv  # només Fase 2
+python src/eligibility_scan.py --sample-size 50 --threads 4 --seed 42  # només Fase 0-1
+python src/version_extractor.py --input data/eligibility_report_<sample_size>_<run_id>.csv  # només Fase 1b
+python src/eligibility_scan.py --classify-eligible data/eligibility_report_<sample_size>_<run_id>.csv  # només Fase 2
 ```
 
 ## Ús amb Docker
@@ -95,10 +95,10 @@ ls data/change_classification_*.csv         # CSV de canvis classificats (nomes 
 containers" a cada crida, no és obligatori per al funcionament.
 
 **Important -- torna a fer `docker compose build` sempre que canviï el
-codi a `notebooks/`** (per exemple, en afegir `version_extractor.py`):
+codi a `src/`** (per exemple, en afegir `version_extractor.py`):
 `docker compose run` NO reconstrueix la imatge automàticament, així que
 reutilitza la que ja tenia en caché. Si veus un error tipus `python: can't
-open file '/app/notebooks/<script>.py': No such file or directory`, és
+open file '/app/src/<script>.py': No such file or directory`, és
 exactament això -- la imatge és anterior a aquell fitxer; `docker compose
 build` (o `docker compose run --build ...`) ho arregla.
 
