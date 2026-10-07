@@ -221,8 +221,7 @@ def classify_leftovers(old: Table, new: Table, ca: ColumnAlignment, config: Engi
 
     kept_old = [m.old for m in ca.matches]
     for o in ca.removed:
-        nulls = old.values[o].isna().mean() if old.columns[o].kind == NUMERIC else old.values[o].isna().mean()
-        if nulls >= config.mostly_null_share:
+        if old.values[o].isna().mean() >= config.mostly_null_share:
             ca.removed_subtypes[o] = "mostly_null"
             continue
         tokens = cell_tokens(old, o)

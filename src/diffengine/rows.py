@@ -172,129 +172,170 @@ def _with_occurrence(h: np.ndarray) -> pd.DataFrame:
 
 def align_rows(old: Table, new: Table, matches: list[tuple[str, str]], config: EngineConfig) -> RowAlignment:
     """
-    Aparella les files de `old` i `new`.
+    Aparella les files de `old` i `new`, per passos:
+
+    1. Clau: una columna única compartida → unió per aquesta columna.
+    2. Files idèntiques en les columnes estables (hash de fila).
+    3. Files que difereixen en una sola columna estable (fila editada).
+    4. Files que difereixen en dues columnes, entre les 6 que més canvien.
+    5. Es descarten les parelles dubtoses que una columna opaca desmenteix.
 
     :param matches: columnes aparellades `(nom antic, nom nou)`.
     """
-    n_old, n_new = old.n_rows, new.n_rows
     key = infer_key(old, new, matches, config)
     if key is not None:
-        a = pd.Series(np.arange(n_old), index=cell_tokens(old, key[0]).values)
-        b = pd.Series(np.arange(n_new), index=cell_tokens(new, key[1]).values)
-        common = a.index.intersection(b.index)
-        pairs = np.column_stack([a[common].values, b[common].values]) if len(common) else np.empty((0, 2), int)
-        return RowAlignment(
-            pairs=pairs, unmatched_old=np.setdiff1d(np.arange(n_old), pairs[:, 0]),
-            unmatched_new=np.setdiff1d(np.arange(n_new), pairs[:, 1]), method="key", key_columns=[key[0]],
-        )
+        return _align_by_key(old, new, key)
+    matcher = _HashMatcher(old, new, matches, config)
+    if not matcher.stable:
+        return RowAlignment(np.empty((0, 2), int), np.arange(old.n_rows), np.arange(new.n_rows), "none")
+    matcher.match_identical()
+    matcher.match_edited_in_one_column()
+    matcher.match_edited_in_two_columns()
+    matcher.reject_contested_pairs()
+    return matcher.result()
 
-    # Les seqüències (vegeu `is_sequence`) queden fora del hash si en queden prou d'altres:
-    # una inserció al mig les renumera a totes les files següents.
-    positional = {o for o, n in matches if is_sequence(old, o) and is_sequence(new, n)}
-    if len(matches) - len(positional) < 2:
-        positional = set()
-    tokens = {o: (cell_tokens(old, o), cell_tokens(new, n)) for o, n in matches if o not in positional}
-    stable = [o for o, (a, b) in tokens.items() if value_overlap(a, b) >= 0.5]
-    if not stable:
-        return RowAlignment(np.empty((0, 2), int), np.arange(n_old), np.arange(n_new), "none")
-    stable = stable[: config.max_pairing_columns]
 
-    cell_old = {c: _column_hash(tokens[c][0], i) for i, c in enumerate(stable)}
-    cell_new = {c: _column_hash(tokens[c][1], i) for i, c in enumerate(stable)}
+def _align_by_key(old: Table, new: Table, key: tuple[str, str]) -> RowAlignment:
+    a = pd.Series(np.arange(old.n_rows), index=cell_tokens(old, key[0]).values)
+    b = pd.Series(np.arange(new.n_rows), index=cell_tokens(new, key[1]).values)
+    common = a.index.intersection(b.index)
+    pairs = np.column_stack([a[common].values, b[common].values]) if len(common) else np.empty((0, 2), int)
+    return RowAlignment(
+        pairs=pairs, unmatched_old=np.setdiff1d(np.arange(old.n_rows), pairs[:, 0]),
+        unmatched_new=np.setdiff1d(np.arange(new.n_rows), pairs[:, 1]), method="key", key_columns=[key[0]],
+    )
+
+
+def _row_hash(cells: dict[str, np.ndarray], n_rows: int) -> np.ndarray:
+    """Suma (mod 2^64) dels hashes de les cel·les de cada fila."""
+    if not cells:
+        return np.zeros(n_rows, dtype=np.uint64)
     with np.errstate(over="ignore"):
-        row_old = np.sum(np.vstack(list(cell_old.values())), axis=0, dtype=np.uint64)
-        row_new = np.sum(np.vstack(list(cell_new.values())), axis=0, dtype=np.uint64)
+        return np.sum(np.vstack(list(cells.values())), axis=0, dtype=np.uint64)
 
-    pairs: list[tuple[int, int, bool, bool]] = []
-    ambiguous = 0
-    free_old, free_new = np.arange(n_old), np.arange(n_new)
 
-    def match(h_old: np.ndarray, h_new: np.ndarray, require_agreement: bool) -> None:
-        nonlocal free_old, free_new, ambiguous
-        a = _with_occurrence(h_old[free_old]).assign(row=free_old)
-        b = _with_occurrence(h_new[free_new]).assign(row=free_new)
-        joined = a.merge(b, on=["h", "occ"], suffixes=("_o", "_n"))
-        if require_agreement and len(joined):
-            # Aparellament parcial només si és coherent a tota la taula: la clau
-            # reduïda és única a les dues versions, o hi apareix el mateix nombre
-            # de cops (una edició in situ no en canvia el recompte).
-            count_old = pd.Series(h_old).value_counts()
-            count_new = pd.Series(h_new).value_counts()
-            co = joined["h"].map(count_old).to_numpy()
-            cn = joined["h"].map(count_new).fillna(0).to_numpy()
-            joined = joined[co == cn]
-            # Hi ha d'haver molts més aparellaments que els esperats per atzar
-            # entre les files lliures, donada la freqüència amb què dues files
-            # de la taula ja comparteixen aquesta clau reduïda.
-            expected = len(free_old) * len(free_new) * _collision_rate(h_old)
-            if len(joined) < max(1, 5 * expected):
-                return
-            agree = np.zeros(len(joined))
-            for c in stable:
-                agree += cell_old[c][joined["row_o"].to_numpy()] == cell_new[c][joined["row_n"].to_numpy()]
-            joined = joined[agree / len(stable) >= config.edited_row_min_agreement]
-        if not len(joined):
+class _HashMatcher:
+    """
+    Aparellament per hash de fila. El hash d'una fila és la suma (mod 2^64) dels
+    hashes de les seves cel·les, així que "la fila sense la columna c" és una resta.
+    """
+
+    def __init__(self, old: Table, new: Table, matches: list[tuple[str, str]], config: EngineConfig):
+        self.old, self.new, self.config = old, new, config
+        # Les seqüències (`index`, `episode_index`) queden fora del hash si en queden prou d'altres:
+        # una inserció al mig les renumera a totes les files següents.
+        positional = {o for o, n in matches if is_sequence(old, o) and is_sequence(new, n)}
+        if len(matches) - len(positional) < 2:
+            positional = set()
+        self.tokens = {o: (cell_tokens(old, o), cell_tokens(new, n)) for o, n in matches if o not in positional}
+        # Estables: columnes que conserven almenys la meitat dels valors (les transformades senceres no).
+        stable = [o for o, (a, b) in self.tokens.items() if value_overlap(a, b) >= 0.5]
+        self.stable = stable[: config.max_pairing_columns]
+        self.cell_old = {c: _column_hash(self.tokens[c][0], i) for i, c in enumerate(self.stable)}
+        self.cell_new = {c: _column_hash(self.tokens[c][1], i) for i, c in enumerate(self.stable)}
+        self.row_old = _row_hash(self.cell_old, old.n_rows)
+        self.row_new = _row_hash(self.cell_new, new.n_rows)
+        self.pairs: list[tuple[int, int, bool, bool]] = []  # (fila antiga, fila nova, ambigua, parcial)
+        self.free_old, self.free_new = np.arange(old.n_rows), np.arange(new.n_rows)
+
+    def _without(self, columns: tuple[str, ...]) -> tuple[np.ndarray, np.ndarray]:
+        h_old, h_new = self.row_old.copy(), self.row_new.copy()
+        with np.errstate(over="ignore"):
+            for c in columns:
+                h_old -= self.cell_old[c]
+                h_new -= self.cell_new[c]
+        return h_old, h_new
+
+    def _done(self) -> bool:
+        return not len(self.free_old) or not len(self.free_new)
+
+    def match_identical(self) -> None:
+        self._match(self.row_old, self.row_new, partial=False)
+
+    def match_edited_in_one_column(self) -> None:
+        if len(self.stable) < 2:
             return
-        dup = (joined["dup_o"] | joined["dup_n"]).to_numpy()
-        ambiguous += int(dup.sum())
-        partial = [require_agreement] * len(joined)
-        pairs.extend(zip(joined["row_o"].tolist(), joined["row_n"].tolist(), dup.tolist(), partial))
-        free_old = np.setdiff1d(free_old, joined["row_o"].to_numpy())
-        free_new = np.setdiff1d(free_new, joined["row_n"].to_numpy())
-
-    match(row_old, row_new, require_agreement=False)
-    if len(stable) >= 2:
-        # Primer la columna amb més parelles candidates: la que ha canviat de
-        # debò en dona centenars; una coincidència casual en una altra, una o dues.
+        # Primer la columna amb més parelles candidates: la que ha canviat de debò
+        # en dona centenars; una coincidència casual en una altra, una o dues.
         def candidates(c: str) -> int:
-            with np.errstate(over="ignore"):
-                a = pd.Index(row_old[free_old] - cell_old[c][free_old])
-                b = pd.Index(row_new[free_new] - cell_new[c][free_new])
-            return int(a.isin(b).sum())
+            h_old, h_new = self._without((c,))
+            return int(pd.Index(h_old[self.free_old]).isin(pd.Index(h_new[self.free_new])).sum())
 
-        for c in sorted(stable, key=candidates, reverse=True):
-            if not len(free_old) or not len(free_new):
-                break
-            with np.errstate(over="ignore"):
-                match(row_old - cell_old[c], row_new - cell_new[c], require_agreement=True)
+        for c in sorted(self.stable, key=candidates, reverse=True):
+            if self._done():
+                return
+            self._match(*self._without((c,)), partial=True)
 
-    if len(stable) >= 4 and len(free_old) and len(free_new):
-        # Files que difereixen en dues columnes: només entre les columnes que més
-        # canvien (menys solapament de valors), per mantenir el cost acotat.
-        changed = sorted(stable, key=lambda c: value_overlap(*tokens[c]))[:6]
+    def match_edited_in_two_columns(self) -> None:
+        if len(self.stable) < 4 or self._done():
+            return
+        # Només entre les 6 columnes que més canvien, per mantenir el cost acotat.
+        changed = sorted(self.stable, key=lambda c: value_overlap(*self.tokens[c]))[:6]
         for i, c1 in enumerate(changed):
             for c2 in changed[i + 1:]:
-                if not len(free_old) or not len(free_new):
-                    break
-                with np.errstate(over="ignore"):
-                    match(row_old - cell_old[c1] - cell_old[c2], row_new - cell_new[c1] - cell_new[c2],
-                          require_agreement=True)
+                if self._done():
+                    return
+                self._match(*self._without((c1, c2)), partial=True)
 
-    # Una parella ambigua (feta per ordre dins d'un grup de files iguals en les
-    # columnes del hash) es descarta si no coincideix en una columna opaca fora
-    # del hash (vector, imatge): cap transformació no ho pot explicar, així que
-    # les columnes del hash no identificaven la fila (p.e. només `timestamp` i
-    # `frame_index`, que es repeteixen a cada episodi). Una diferència en una
-    # columna escalar sí que pot ser una transformació, i es manté.
-    unstable = [c for c in tokens if c not in stable and old.columns[c].kind == OPAQUE]
-    contested = [(a, b) for a, b, d, _ in pairs if d]
-    if unstable and contested:
+    def _match(self, h_old: np.ndarray, h_new: np.ndarray, partial: bool) -> None:
+        """Aparella les files lliures amb el mateix hash (les repetides, per ordre d'aparició)."""
+        a = _with_occurrence(h_old[self.free_old]).assign(row=self.free_old)
+        b = _with_occurrence(h_new[self.free_new]).assign(row=self.free_new)
+        joined = a.merge(b, on=["h", "occ"], suffixes=("_o", "_n"))
+        if partial and len(joined):
+            joined = self._plausible_edits(joined, h_old, h_new)
+        if not len(joined):
+            return
+        ambiguous = (joined["dup_o"] | joined["dup_n"]).tolist()
+        self.pairs.extend(zip(joined["row_o"].tolist(), joined["row_n"].tolist(), ambiguous, [partial] * len(joined)))
+        self.free_old = np.setdiff1d(self.free_old, joined["row_o"].to_numpy())
+        self.free_new = np.setdiff1d(self.free_new, joined["row_n"].to_numpy())
+
+    def _plausible_edits(self, joined: pd.DataFrame, h_old: np.ndarray, h_new: np.ndarray) -> pd.DataFrame:
+        """Un aparellament parcial només s'accepta si no pot ser casualitat."""
+        # La clau reduïda apareix el mateix nombre de cops a les dues taules
+        # (una edició in situ no en canvia el recompte).
+        count_old, count_new = pd.Series(h_old).value_counts(), pd.Series(h_new).value_counts()
+        same_count = joined["h"].map(count_old).to_numpy() == joined["h"].map(count_new).fillna(0).to_numpy()
+        joined = joined[same_count]
+        # Molts més aparellaments que els esperats per atzar entre les files lliures.
+        expected = len(self.free_old) * len(self.free_new) * _collision_rate(h_old)
+        if len(joined) < max(1, 5 * expected):
+            return joined.iloc[0:0]
+        # P2: les dues files coincideixen en prou columnes estables.
+        agree = np.zeros(len(joined))
+        for c in self.stable:
+            agree += self.cell_old[c][joined["row_o"].to_numpy()] == self.cell_new[c][joined["row_n"].to_numpy()]
+        return joined[agree / len(self.stable) >= self.config.edited_row_min_agreement]
+
+    def reject_contested_pairs(self) -> None:
+        """
+        Una parella ambigua es descarta si no coincideix en una columna opaca fora
+        del hash (vector, imatge): cap transformació no ho pot explicar, així que
+        el hash no identificava la fila (p.e. només `timestamp` i `frame_index`,
+        que es repeteixen a cada episodi). Una diferència en una columna escalar
+        sí que pot ser una transformació, i es manté.
+        """
+        unstable = [c for c in self.tokens if c not in self.stable and self.old.columns[c].kind == OPAQUE]
+        contested = [(a, b) for a, b, ambiguous, _ in self.pairs if ambiguous]
+        if not unstable or not contested:
+            return
         ia, ib = np.array(contested).T
         agree = np.ones(len(contested), dtype=bool)
         for c in unstable:
-            agree &= tokens[c][0].to_numpy()[ia] == tokens[c][1].to_numpy()[ib]
+            agree &= self.tokens[c][0].to_numpy()[ia] == self.tokens[c][1].to_numpy()[ib]
         rejected = {p for p, ok in zip(contested, agree) if not ok}
         if rejected:
-            pairs = [p for p in pairs if (p[0], p[1]) not in rejected]
-            ambiguous -= len(rejected)
-            free_old = np.union1d(free_old, [a for a, _ in rejected]).astype(int)
-            free_new = np.union1d(free_new, [b for _, b in rejected]).astype(int)
+            self.pairs = [p for p in self.pairs if (p[0], p[1]) not in rejected]
+            self.free_old = np.union1d(self.free_old, [a for a, _ in rejected]).astype(int)
+            self.free_new = np.union1d(self.free_new, [b for _, b in rejected]).astype(int)
 
-    pairs.sort()
-    pairs_arr = np.array([(a, b) for a, b, _, _ in pairs], dtype=int) if pairs else np.empty((0, 2), int)
-    return RowAlignment(
-        pairs=pairs_arr, unmatched_old=np.sort(free_old), unmatched_new=np.sort(free_new), method="hash",
-        stable_columns=stable, ambiguous_share=ambiguous / max(len(pairs), 1),
-        ambiguous=np.array([d for _, _, d, _ in pairs], dtype=bool),
-        partial=np.array([p for _, _, _, p in pairs], dtype=bool),
-    )
+    def result(self) -> RowAlignment:
+        pairs = sorted(self.pairs)
+        flags = np.array([(ambiguous, partial) for _, _, ambiguous, partial in pairs], dtype=bool).reshape(-1, 2)
+        return RowAlignment(
+            pairs=np.array([(a, b) for a, b, _, _ in pairs], dtype=int).reshape(-1, 2),
+            unmatched_old=np.sort(self.free_old), unmatched_new=np.sort(self.free_new), method="hash",
+            stable_columns=self.stable, ambiguous_share=float(flags[:, 0].sum()) / max(len(pairs), 1),
+            ambiguous=flags[:, 0], partial=flags[:, 1],
+        )

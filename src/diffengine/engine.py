@@ -1,11 +1,11 @@
 """
-Orquestració: de dos fitxers (o dues taules ja carregades) a una llista de
-canvis amb estat.
+Orquestració: de dos fitxers (o dues taules ja carregades) a la llista de canvis.
 
-Les columnes i les files s'aparellen alternant (L3 ↔ L4): primer columnes
-per nom, després files, després columnes per contingut sobre aquestes
-files, i si apareixen renoms nous es tornen a aparellar les files (2
-iteracions com a màxim).
+1. Columnes per nom (L3) i files (L4).
+2. Si queden columnes sense parella, es busquen renoms pel contingut sobre les
+   files aparellades i, si se'n troben, es tornen a aparellar les files
+   (com a màxim 2 vegades: un renom pot millorar l'aparellament de files).
+3. Cada detector (L5) busca els seus codis.
 """
 
 import hashlib
@@ -15,16 +15,10 @@ import pandas as pd
 
 from diffengine.columns import align_by_content, align_by_name, classify_leftovers
 from diffengine.config import DEFAULT_CONFIG, EngineConfig
-from diffengine.detectors import DETECTORS, Context, detect_order, detect_rows, detect_values, find_identifiers
+from diffengine.detectors import DETECTORS, PAIRED_DETECTORS, ROW_DETECTORS, Context, find_identifiers
 from diffengine.load import NUMERIC, ParseError, Table, load_table
 from diffengine.output import DiffResult
 from diffengine.rows import align_rows
-
-# Detectors que depenen de l'aparellament de files: la seva evidència inclou com
-# s'han aparellat, i la confiança dels de files es limita pels parells no ambigus.
-PAIRED_DETECTORS = {detect_values, detect_order, detect_rows}
-ROW_DETECTORS = {detect_order, detect_rows}
-
 
 def _row_confidence(change, old: Table, new: Table, rows) -> float:
     """
@@ -55,6 +49,7 @@ def _adopt_kind_of_empty_columns(old: Table, new: Table, pairs: list[tuple[str, 
 
 
 def diff_tables(old: Table, new: Table, config: EngineConfig = DEFAULT_CONFIG) -> DiffResult:
+    """Compara dues taules ja carregades i en retorna els canvis (estat `ok`)."""
     cols = align_by_name(old, new)
     rows = align_rows(old, new, cols.pairs(), config)
     for _ in range(2):
