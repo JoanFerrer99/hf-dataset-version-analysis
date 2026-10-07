@@ -468,8 +468,8 @@ def remove_rows_with_nulls(old, new, seed, rng, mag):
     old.df[col] = old.df[col].astype(float)
     old.df.loc[nulls, col] = np.nan
     new.df = old.df.dropna(subset=[col]).reset_index(drop=True)
-    # P12: la proporció de nuls baixa només perquè s'eliminen files; C510 es permet però no s'exigeix.
-    return Effect({("C422", "had_nulls")}, allowed={"C312", "C510"}, touched={col})
+    # El paper (§4) reporta C510 encara que el canvi vingui de files eliminades.
+    return Effect({("C422", "had_nulls"), ("C510", None)}, allowed={"C312"}, touched={col})
 
 
 @mutation("remove_outliers", "row")

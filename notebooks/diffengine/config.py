@@ -59,9 +59,6 @@ class EngineConfig:
     """P5: els canvis de representació es reporten amb subtipus `representation`."""
     transformation_suppresses_c530: bool = True
     """P8: una columna explicada per una transformació (C322) no genera C530."""
-    row_change_suppresses_c510: bool = True
-    """P12: si la proporció de nuls només canvia perquè s'afegeixen o s'eliminen files (cap cel·la aparellada
-    no passa de nul a valor o al revés), no és C510 sinó conseqüència de C421/C422 (criteri del paper)."""
 
     c510_min_rate_delta: float = 0.01
     """C510: diferència mínima de proporció de nuls (efecte), a més de la prova estadística."""

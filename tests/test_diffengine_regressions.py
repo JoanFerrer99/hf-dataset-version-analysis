@@ -248,11 +248,28 @@ def test_24_rename_on_another_sample_of_rows_is_c223():
     assert not {"C221", "C222"} & {c for c, _ in got}
 
 
-def test_25_null_rate_change_caused_only_by_removed_rows_is_not_c510(base):
-    """P12 (criteri del paper, Census D7): s'eliminen les files amb nuls; cap cel·la no canvia."""
+def test_25_null_rate_change_caused_only_by_removed_rows_is_still_c510(base):
+    """Paper §4: C510 "can be a consequence of the addition/removal of rows. However, we consider them separately"."""
     old = base.copy()
     old.loc[old.index[::10], "workclass"] = None
     new = old.dropna(subset=["workclass"]).reset_index(drop=True)
     got = labels(csv_bytes(old), csv_bytes(new))
     assert ("C422", "had_nulls") in got
-    assert "C510" not in {c for c, _ in got}
+    assert ("C510", "rate") in got
+
+
+def test_26_label_encoding_is_a_type_change_and_a_recoding(base):
+    """Paper §4 i Taula 1 (D3/D4): categòriques codificades com a enters → C311 + C312."""
+    new = base.copy()
+    new["workclass"] = new["workclass"].map({"Private": 0, "Gov": 1, "Self": 2, "Unknown": 3})
+    got = labels(csv_bytes(base), csv_bytes(new))
+    assert ("C311", "to_numeric") in got and ("C312", "recoded") in got
+
+
+def test_27_numbers_written_as_text_are_not_a_recoding(base):
+    """Un canvi de format ("1" → 1) no canvia els valors del domini: sense C312."""
+    old = base.assign(level=(base["age"] % 4).astype(str))  # parquet: text "0".."3"
+    new = old.assign(level=old["level"].astype(int))
+    got = labels(parquet_bytes(old), parquet_bytes(new), ".parquet", ".parquet")
+    assert ("C311", "to_numeric") in got
+    assert "C312" not in {c for c, _ in got}

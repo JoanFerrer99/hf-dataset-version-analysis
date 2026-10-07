@@ -16,7 +16,8 @@ from diffengine.config import EngineConfig
 from diffengine.load import NULL_TOKEN, NUMERIC, OPAQUE, TEXT, Table
 from diffengine.output import Change
 from diffengine.rows import RowAlignment, cell_tokens, is_identifier_like, is_row_number, is_sequence, paired_values
-from diffengine.transforms import analyze_mapping, distribution_distance, fit_numeric, is_perturbation, normalize_value
+from diffengine.transforms import (analyze_mapping, distribution_distance, fit_numeric, is_bijection, is_perturbation,
+                                   normalize_value)
 
 # Ajustos que són un subtipus de C322 (`identity` no és un canvi; `round` és C321).
 _C322_FITS = {"factor", "linear", "minmax", "standardization", "normalization", "log", "sqrt", "reciprocal", "exp"}
@@ -95,6 +96,9 @@ def detect_kinds(ctx: Context) -> list[Change]:
             out.append(_change(code, m, subtype="to_numeric" if fn == "numeric" else "to_categorical",
                                evidence={"old_kind": ko.kind, "new_kind": kn.kind,
                                          "old_dtype": ko.raw_dtype, "new_dtype": kn.raw_dtype}))
+            recoding = _recoding(ctx, m)
+            if recoding is not None:
+                out.append(recoding)
         elif fo == "numeric" and not ko.integer and kn.integer and len(ctx.rows.pairs):
             x, y = ctx.paired(m)
             fit = fit_numeric(x.to_numpy(float), y.to_numpy(float), ctx.config.column_match_min_validity)
@@ -103,6 +107,25 @@ def detect_kinds(ctx: Context) -> list[Change]:
                 out.append(_change("C321", m, subtype="real_to_integer", confidence=fit.validity,
                                    evidence={"fit": fit.kind, "old_dtype": ko.raw_dtype, "new_dtype": kn.raw_dtype}))
     return out
+
+
+def _recoding(ctx: Context, m: ColumnMatch) -> Change | None:
+    """
+    Paper §4: un canvi de tipus que és una bijecció entre valors (p.e. codificar
+    categories com a enters) també canvia els valors del domini (C312) a més del
+    tipus (C311/C321). Un canvi només de format ("1" → 1) no ho és.
+    """
+    pairs = ctx.rows.reliable_pairs
+    if len(pairs) < 10:
+        return None
+    a = cell_tokens(ctx.old, m.old).iloc[pairs[:, 0]].reset_index(drop=True)
+    b = cell_tokens(ctx.new, m.new).iloc[pairs[:, 1]].reset_index(drop=True)
+    ok, validity = is_bijection(a, b, ctx.config.column_match_min_validity)
+    if not ok or a.nunique() < 2 or (a == b).mean() >= ctx.config.column_match_min_validity:
+        return None
+    mapping = dict(list(pd.Series(b.values, index=a.values).groupby(level=0).first().items())[:50])
+    return _change("C312", m, subtype="recoded", n_affected=int((a != b).sum()), confidence=validity,
+                   evidence={"mapping": mapping})
 
 
 # --- Valors: C312, C322, transicions de nuls (C510) ----------------------------
@@ -357,9 +380,6 @@ def detect_missing(ctx: Context) -> list[Change]:
                                evidence={"old_tokens": sorted(ko.missing_tokens), "new_tokens": sorted(kn.missing_tokens)}))
         if m.old in ctx.c510_columns:
             continue
-        rows_changed = len(ctx.rows.unmatched_old) or len(ctx.rows.unmatched_new)
-        if cfg.row_change_suppresses_c510 and len(ctx.rows.pairs) and rows_changed:
-            continue  # P12: cap cel·la aparellada no ha canviat; el canvi de proporció ve de les files
         p1, p2, n1, n2 = o_null.mean(), n_null.mean(), len(o_null), len(n_null)
         if abs(p1 - p2) < cfg.c510_min_rate_delta or not n1 or not n2:
             continue
