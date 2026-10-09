@@ -15,6 +15,8 @@
 
 Altres:
 
+- `reunio_census_income.md`: resum d'una pàgina de la validació amb Census Income, per a la reunió.
+
 - `GIT_FLOW.md`: model de branques i convencions de commit.
 - `historic/`: documents de fases anteriors, que es conserven com a
   registre (auditoria del motor anterior, històries d'usuari de Taiga,
