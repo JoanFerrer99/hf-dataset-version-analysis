@@ -76,45 +76,92 @@ feta amb una sola execució. La proporció d'elegibles varia entre el 0,35% i
 el 0,85% segons l'execució (sis execucions de 2.000), així que caldria un
 marge.
 
-**c) `eligible` i `eligible_total`.** Són el mateix número: es van afegir des
-de dos llocs del codi. Es deixarà només `eligible`.
+**c) `eligible` i `eligible_total`.** Sí, són redundants: valen sempre el
+mateix, perquè tots dos són el nombre de files amb `eligible = True` del
+report. Hi són per com ha crescut el codi, no perquè signifiquin coses
+diferents:
 
-## 3. D6: quin fitxer
+- **`eligible`** (juliol) forma part de l'**embut**. Amb `ineligible`,
+  `access_restricted` i `errors` suma la mida de la mostra (a `run_8`:
+  11 + 1.894 + 87 + 8 = 2.000), i és el numerador de les dues proporcions.
+- **`eligible_total`** (setembre) es va afegir en crear l'orquestrador
+  (`run_pipeline.py`), que el llegeix per saber si cal executar les Fases 1
+  i 2 (si és 0, s'aturen). També es va posar al costat del desglossament
+  per criteri: `eligible_Criteri_A` + `eligible_Criteri_B` (a `run_8`,
+  4 + 7 = 11).
 
-D6 és **`ETdanR/adult_income`**
-(`huggingface.co/datasets/ETdanR/adult_income`), versió del 31 de maig de
-2025 (commit `780110a`, on es van pujar les dades; després només ha
-canviat el README). Té tres fitxers:
+**Què farem:** deixar només `eligible`, fer que l'orquestrador llegeixi
+aquest camp, i mantenir el desglossament per criteri amb la suma explícita
+(`11 = 4 (A) + 7 (B)`).
 
-| Fitxer | Files |
-|---|---|
-| `train_data.csv` | 11.208 |
-| `validation_data.csv` | 2.240 |
-| `experiment_data.csv` | 8.968 |
+## 3. D6: quin fitxer i què hi ha
 
-La frase de l'arquitectura era d'una versió antiga, quan es feia servir
-només `train_data.csv`. Ara:
+**Quin dataset és.** D6 és **`ETdanR/adult_income`**
+(`huggingface.co/datasets/ETdanR/adult_income`). Té tres commits, tots del
+31 de maig de 2025: el commit inicial, la pujada de les dades (`780110a`) i
+un canvi al README. Fem servir `780110a`.
 
-- La targeta diu que és **un sol dataset equilibrat partit en tres
-  fitxers**, i per això els comparem **concatenats** (22.416 files: 11.208
-  de cada classe d'ingressos).
-- Hem provat també cada fitxer per separat: els tres donen exactament els
-  mateixos codis.
-- Hi ha una branca `refs/convert/parquet` amb un commit de l'agost de 2025.
-  És una còpia automàtica de Hugging Face per al visor web, amb les mateixes
-  files que els CSV (sense `experiment_data.csv`). No és una versió nova.
+**Què diu la targeta.** "A balanced version of the UCI Adult dataset, split
+into training, validation, and test sets". La van preparar per a un
+projecte d'atacs adversaris sobre models tabulars.
 
-Resultat de D6 contra la Taula 1:
+**Els tres fitxers.** Cada fitxer està equilibrat al 50% entre les dues
+classes d'ingressos:
 
-- **Coincideixen** C223 (renoms), C422 (s'eliminen files per equilibrar) i
-  C530 (canvia la distribució de la classe).
-- **El motor marca a més:**
-  - C222: `fnlwgt` no hi és;
-  - C410: files en ordre aleatori;
-  - C421: algunes files vénen d'`adult.test`;
-  - C510: no queden valors absents.
+| Fitxer | Files | `>50K` | `<=50K` |
+|---|---|---|---|
+| `train_data.csv` | 11.208 | 5.604 | 5.604 |
+| `validation_data.csv` | 2.240 | 1.120 | 1.120 |
+| `experiment_data.csv` | 8.968 | 4.484 | 4.484 |
+| **Total** | **22.416** | **11.208** | **11.208** |
 
-  Tots quatre són canvis reals que la targeta no esmenta.
+**Com es va construir** (deduït de les dades):
+
+- Parteix de la **UCI completa** (`adult.data` + `adult.test`), sense les
+  files amb valors absents: 45.222 files, de les quals exactament **11.208
+  són `>50K`**, el mateix nombre que té D6. Per tant, D6 conté totes les
+  files `>50K` i el mateix nombre de files `<=50K` triades, i després les
+  reparteix en tres fitxers.
+- Té files d'`adult.test`: 2.147 combinacions de valors de D6 només
+  existeixen a `adult.test`.
+- **No té `fnlwgt`** i fa servir altres noms: `educational-num` en lloc
+  d'`education-num` i `gender` en lloc de `sex`. Aquests noms coincideixen
+  amb la versió de l'Adult que circula a Kaggle (`adult.csv`, 48.842
+  files), i probablement en parteix.
+- No té cap valor absent (`?`).
+
+**Per què l'arquitectura parlava de "tres fitxers candidats".** El paper
+només dona la URL del repositori. El motor anterior comparava només
+`train_data.csv`, i no sabíem si el paper havia fet servir aquest, un altre
+o tots tres. Ara:
+
+- comparem **els tres concatenats**, perquè la targeta diu que són un sol
+  dataset partit;
+- hem provat també cada fitxer per separat (`experiments/census_variants/`):
+  els tres donen **exactament els mateixos codis**, així que la tria no
+  canvia el resultat.
+
+**La branca `refs/convert/parquet`.** Té un commit de l'agost de 2025
+("Update parquet files"). És una còpia automàtica que fa Hugging Face per
+al visor web: conté les mateixes files, en el mateix ordre, que
+`train_data.csv` i `validation_data.csv`, i no inclou `experiment_data.csv`
+("experiment" no és un nom de partició que reconegui). No és una versió
+nova del dataset.
+
+**Resultat de D6 contra la Taula 1**, comparant amb `adult.data`:
+
+| Codi | Taula 1 | Motor | Què hi ha a les dades |
+|---|---|---|---|
+| C223 | sí | sí | Renoms: `educational-num`, `gender` |
+| C422 | sí | sí | S'eliminen files: en queden 22.416 de 32.561, per equilibrar classes |
+| C530 | sí | sí | La distribució de la classe passa de 24% `>50K` a 50% |
+| C222 | — | sí | `fnlwgt` no hi és |
+| C410 | — | sí | Les files estan en ordre aleatori |
+| C421 | — | sí | Hi ha files d'`adult.test` |
+| C510 | — | sí | Els valors absents de `workclass`, `occupation` i `native-country` desapareixen |
+
+Els tres codis de la taula surten de la targeta ("balanced"); els quatre
+que només marca el motor són canvis reals que la targeta no esmenta.
 
 ## 4. Validació amb Census Income
 
