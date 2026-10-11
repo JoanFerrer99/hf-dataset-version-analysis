@@ -16,10 +16,14 @@ from diffengine.transforms import distribution_distance, normalize_value
 
 def detect_missing(ctx: Context) -> list[Change]:
     """
-    C510, tres casos per columna:
-    1. cel·les de files aparellades que passen de nul a valor (`imputed...`) o al revés (`masking`) (P1);
-    2. canvi del token d'absent (`?` → buit): `representation` (P5);
-    3. si no hi ha cap 1, la proporció de nuls de la columna canvia: `rate`.
+    Canvis en els valors absents (C510), per columna:
+    1. cel·les de files aparellades que passen de buides a tenir valor
+       (`imputed...`) o al revés (`masking`);
+    2. canvi del token que vol dir "absent" (`?` → buit): `representation`;
+    3. si no hi ha cap cas 1, canvi de la proporció de buits de la columna: `rate`.
+
+    :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
+    :return: els canvis trobats.
     """
     out = []
     cfg = ctx.config
@@ -41,6 +45,13 @@ def detect_missing(ctx: Context) -> list[Change]:
 
 
 def _null_transitions(ctx: Context, m) -> list[Change]:
+    """
+    Cel·les de files aparellades que passen de buides a tenir valor, o al revés.
+
+    :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
+    :param m: parella de columnes.
+    :return: zero, un o dos canvis.
+    """
     a, b = ctx.paired(m)
     na, nb = a.isna().to_numpy(), b.isna().to_numpy()
     imputed, masked = na & ~nb, ~na & nb
@@ -57,7 +68,15 @@ def _null_transitions(ctx: Context, m) -> list[Change]:
 
 
 def _imputed_label(values: np.ndarray, reference: pd.Series) -> str:
-    """Amb quin valor s'han omplert els nuls: la mitjana, la mediana, la moda, una constant o valors diversos."""
+    """
+    Amb quin valor s'han omplert els buits: la mitjana, la mediana, la moda,
+    una constant o valors diferents.
+
+    :param values: valors nous de les cel·les que abans eren buides.
+    :param reference: la columna antiga, per calcular-ne la mitjana i la mediana.
+    :return: el subtipus (`imputed_constant:mean`, `imputed_constant:median`,
+        `imputed_constant:mode`, `imputed_constant:value` o `imputed`).
+    """
     if len(np.unique(values)) != 1:
         return "imputed"
     v = float(values[0]) if isinstance(values[0], (int, float, np.number)) else values[0]
@@ -72,7 +91,15 @@ def _imputed_label(values: np.ndarray, reference: pd.Series) -> str:
 
 
 def _rate_change(o_null: pd.Series, n_null: pd.Series, cfg) -> dict | None:
-    """Prova de dues proporcions; cal un efecte d'almenys `c510_min_rate_delta` i p < `alpha`."""
+    """
+    Prova si la proporció de buits d'una columna ha canviat prou: cal una
+    diferència mínima i que la prova de dues proporcions ho confirmi.
+
+    :param o_null: per a cada fila antiga, si és buida.
+    :param n_null: per a cada fila nova, si és buida.
+    :param cfg: llindars del motor.
+    :return: les dues proporcions i el p-valor, o `None` si no hi ha canvi.
+    """
     p1, p2, n1, n2 = o_null.mean(), n_null.mean(), len(o_null), len(n_null)
     if not n1 or not n2 or abs(p1 - p2) < cfg.c510_min_rate_delta:
         return None
@@ -86,10 +113,13 @@ def _rate_change(o_null: pd.Series, n_null: pd.Series, cfg) -> dict | None:
 
 def detect_correlation(ctx: Context) -> list[Change]:
     """
-    C520: la relació entre dues columnes canvia. Mesura segons els tipus:
-    Spearman (numèrica-numèrica), V de Cramér (categòrica-categòrica),
-    raó de correlació eta (numèrica-categòrica). Cal |Δ| ≥ `c520_min_delta`
-    i una prova de Fisher z amb p < `alpha`.
+    Canvis de correlació entre parelles de columnes (C520). La mesura depèn dels
+    tipus: Spearman per a dues numèriques, V de Cramér per a dues categòriques,
+    i la raó de correlació per a una de cada. Cal una diferència mínima i que una
+    prova estadística la confirmi.
+
+    :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
+    :return: un canvi per cada parella de columnes amb correlació diferent.
     """
     cfg = ctx.config
     cols = [m for m in ctx.cols.matches if _is_variable(ctx, m)][: cfg.c520_max_columns]
@@ -116,7 +146,15 @@ def detect_correlation(ctx: Context) -> list[Change]:
 
 
 def _is_variable(ctx: Context, m) -> bool:
-    """Columna que té sentit correlacionar: no identificador, mateix tipus, ni opaca, ni text, ≤ 50 categories."""
+    """
+    Diu si té sentit mesurar la correlació d'una columna: no identifica files,
+    no canvia de tipus, no és complexa ni text lliure, i si és categòrica té 50
+    valors diferents com a màxim.
+
+    :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
+    :param m: parella de columnes.
+    :return: `True` si es pot fer servir.
+    """
     ko, kn = ctx.old.columns[m.old], ctx.new.columns[m.new]
     if m.old in ctx.identifiers or m.old in ctx.kind_changed or OPAQUE in (ko.kind, kn.kind) or TEXT in (ko.kind, kn.kind):
         return False
@@ -124,6 +162,16 @@ def _is_variable(ctx: Context, m) -> bool:
 
 
 def _association(x: pd.Series, y: pd.Series, kx: str, ky: str) -> float | None:
+    """
+    Mesura la relació entre dues columnes, d'una mateixa versió, amb la mesura
+    que correspon als seus tipus.
+
+    :param x: primera columna.
+    :param y: segona columna.
+    :param kx: tipus de `x`.
+    :param ky: tipus de `y`.
+    :return: un valor entre -1 i 1 (o entre 0 i 1), o `None` si no es pot calcular amb fiabilitat.
+    """
     df = pd.DataFrame({"x": x.to_numpy(), "y": y.to_numpy()}).dropna()
     if kx != NUMERIC:
         df["x"] = _group_rare(df["x"])
@@ -145,7 +193,13 @@ def _association(x: pd.Series, y: pd.Series, kx: str, ky: str) -> float | None:
 
 
 def _cramers_v(table: pd.DataFrame) -> float | None:
-    """V de Cramér amb correcció de biaix; `None` si no compleix la regla de Cochran (comptes esperats ≥ 5)."""
+    """
+    V de Cramér (relació entre dues categòriques) amb correcció per a mostres
+    petites. No es calcula si hi ha massa caselles amb pocs casos esperats.
+
+    :param table: taula de freqüències creuades de les dues columnes.
+    :return: un valor entre 0 i 1, o `None` si no és fiable.
+    """
     if min(table.shape) < 2:
         return None
     chi2, _, _, expected = stats.chi2_contingency(table, correction=False)
@@ -160,7 +214,14 @@ def _cramers_v(table: pd.DataFrame) -> float | None:
 
 
 def _group_rare(s: pd.Series, min_count: int = 5) -> pd.Series:
-    """Categories amb menys de 5 files → una sola categoria `other` (si no, les mesures són inestables)."""
+    """
+    Agrupa en una sola categoria `other` les categories amb molt poques files,
+    que farien inestables les mesures de relació.
+
+    :param s: la columna.
+    :param min_count: files mínimes perquè una categoria es mantingui sola.
+    :return: la columna amb les categories rares agrupades.
+    """
     counts = s.value_counts()
     rare = counts.index[counts < min_count]
     return s.where(~s.isin(rare), "\x00other") if len(rare) else s
@@ -168,9 +229,12 @@ def _group_rare(s: pd.Series, min_count: int = 5) -> pd.Series:
 
 def detect_distribution(ctx: Context) -> list[Change]:
     """
-    C530: la distribució d'una columna canvia (KS per a numèriques, variació
-    total per a categòriques; distància ≥ `c530_min_distance` i p < `alpha`).
-    Sense identificadors ni text; si una transformació ja l'explica, P8.
+    Canvis de distribució d'una columna (C530): prova de Kolmogorov-Smirnov per a
+    numèriques, variació total per a categòriques. No es miren els
+    identificadors, el text lliure ni les columnes que ja explica una fórmula.
+
+    :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
+    :return: els canvis trobats.
     """
     cfg = ctx.config
     out = []

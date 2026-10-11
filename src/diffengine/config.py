@@ -75,7 +75,11 @@ class EngineConfig:
     """Nivell de significació de les proves (filtre secundari: decideix la mida d'efecte)."""
 
     def hash(self) -> str:
-        """Hash curt de la configuració, per guardar-lo amb cada resultat."""
+        """
+        Identificador curt de la configuració, per guardar-lo a cada fila de sortida.
+
+        :return: els 12 primers caràcters del SHA-256 dels valors.
+        """
         payload = json.dumps(asdict(self), sort_keys=True, default=list).encode()
         return hashlib.sha256(payload).hexdigest()[:12]
 

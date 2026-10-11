@@ -25,7 +25,15 @@ C322_FITS = {"factor", "linear", "minmax", "standardization", "normalization", "
 
 
 def detect_kinds(ctx: Context) -> list[Change]:
-    """C311/C321: canvi de tipus, codificat pel tipus antic (P3); C321 `real_to_integer` si s'arrodoneix."""
+    """
+    Canvis de tipus d'una columna (categòrica ↔ numèrica, real → enter). Es
+    codifica pel tipus antic: C311 si era categòrica, C321 si era numèrica.
+    Marca a `ctx.kind_changed` les columnes que canvien de tipus, perquè no se'n
+    comparin els valors.
+
+    :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
+    :return: els canvis trobats.
+    """
     out = []
     for m in ctx.cols.matches:
         ko, kn = ctx.old.columns[m.old], ctx.new.columns[m.new]
@@ -54,9 +62,13 @@ def detect_kinds(ctx: Context) -> list[Change]:
 
 def _recoding(ctx: Context, m: ColumnMatch) -> Change | None:
     """
-    P13: un canvi de tipus que és una bijecció entre valors (p.e. codificar
-    categories com a enters) també canvia els valors del domini: C312 `recoded`.
-    Un canvi només de format ("1" → 1) no ho és.
+    Si un canvi de tipus és una correspondència u a u entre valors (codificar
+    categories com a enters), també han canviat els valors: C312 `recoded`. Un
+    canvi només de format ("1" → 1) no compta.
+
+    :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
+    :param m: parella de columnes.
+    :return: el canvi, o `None` si no és una recodificació.
     """
     pairs = ctx.rows.reliable_pairs
     if len(pairs) < 10:
@@ -72,7 +84,13 @@ def _recoding(ctx: Context, m: ColumnMatch) -> Change | None:
 
 
 def detect_values(ctx: Context) -> list[Change]:
-    """C312 (categòriques) i C322 (numèriques): cel·les no nul·les que canvien a les files aparellades."""
+    """
+    Canvis de valors (C312 per a categòriques, C322 per a numèriques), comparant
+    cel·la a cel·la les files aparellades.
+
+    :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
+    :return: els canvis trobats.
+    """
     out = []
     if not len(ctx.rows.pairs):
         return out
@@ -89,9 +107,16 @@ def detect_values(ctx: Context) -> list[Change]:
 
 def _numeric_values(ctx: Context, m: ColumnMatch, a: pd.Series, b: pd.Series) -> list[Change]:
     """
-    Per ordre: només ha canviat el format → `representation`; comptador de
-    posició → `renumbered`; una transformació explica els canvis → el seu nom
-    (`factor`, `log`...); soroll petit → `perturbation`; si no → `cell_edits`.
+    Explica com han canviat els valors d'una columna numèrica, en aquest ordre:
+    només el format (`representation`), un comptador renumerat (`renumbered`), una
+    fórmula (`factor`, `log`...), soroll (`perturbation`) o cel·les soltes
+    (`cell_edits`).
+
+    :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
+    :param m: parella de columnes.
+    :param a: valors antics a les files aparellades.
+    :param b: valors nous, alineats amb `a`.
+    :return: zero o un canvi.
     """
     ko, kn = ctx.old.columns[m.old], ctx.new.columns[m.new]
     x, y = a.to_numpy(float), b.to_numpy(float)
@@ -125,7 +150,16 @@ def _numeric_values(ctx: Context, m: ColumnMatch, a: pd.Series, b: pd.Series) ->
 
 
 def _categorical_values(ctx: Context, m: ColumnMatch, a: pd.Series, b: pd.Series) -> list[Change]:
-    """El tipus de mapatge vell → nou: `relabel`, `anonymization`, `merge`, `split`, `representation`, `cell_edits`."""
+    """
+    Explica com han canviat els valors d'una columna de categories (reetiquetatge,
+    fusió, divisió, només format o cel·les soltes).
+
+    :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
+    :param m: parella de columnes.
+    :param a: valors antics a les files aparellades.
+    :param b: valors nous, alineats amb `a`.
+    :return: zero o un canvi.
+    """
     mapping = analyze_mapping(a, b, ctx.config.column_match_min_validity, ctx.config.min_explained_rows)
     if mapping.kind == "identity":
         return []

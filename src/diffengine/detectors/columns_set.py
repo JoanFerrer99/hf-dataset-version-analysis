@@ -13,7 +13,14 @@ from diffengine.output import Change
 
 
 def detect_column_set(ctx: Context) -> list[Change]:
-    """C210 ordre, C221 afegida, C222 eliminada, C223 renom; i C311 `one_hot` (una categòrica → diverses 0/1)."""
+    """
+    Canvis en el conjunt de columnes: ordre (C210), columnes afegides (C221),
+    eliminades (C222) i reanomenades (C223), i una categòrica convertida en
+    diverses columnes 0/1 (C311 `one_hot`).
+
+    :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
+    :return: els canvis trobats.
+    """
     out = []
     if order_changed(ctx.old, ctx.new, ctx.cols):
         out.append(change("C210", evidence={"old_order": list(ctx.old.values.columns),

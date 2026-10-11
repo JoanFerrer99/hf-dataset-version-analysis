@@ -74,6 +74,9 @@ class Table:
 
     @property
     def n_rows(self) -> int:
+        """
+        :return: nombre de files de la taula.
+        """
         return len(self.values)
 
 
@@ -82,6 +85,12 @@ class ParseError(Exception):
 
 
 def _json_default(value):
+    """
+    Converteix a text els valors que el mòdul `json` no sap escriure.
+
+    :param value: el valor.
+    :return: un valor que `json` pot escriure (bytes → resum SHA-1, array → llista...).
+    """
     if isinstance(value, (bytes, bytearray)):
         return "sha1:" + hashlib.sha1(bytes(value)).hexdigest()
     if isinstance(value, np.ndarray):
@@ -92,7 +101,13 @@ def _json_default(value):
 
 
 def _serialize(value) -> str | None:
-    """Cel·la no hashable (imatge, àudio, llista) → text determinista."""
+    """
+    Converteix una cel·la complexa (imatge, àudio, llista) en un text
+    determinista, perquè es pugui comparar i fer-ne hash.
+
+    :param value: el contingut de la cel·la.
+    :return: el text, o `None` si la cel·la és buida.
+    """
     if is_missing(value):
         return None
     if isinstance(value, (bytes, bytearray)):
@@ -101,7 +116,12 @@ def _serialize(value) -> str | None:
 
 
 def is_missing(value) -> bool:
-    """Nul escalar (None, NaN, pd.NA). Una llista o un array no ho és mai."""
+    """
+    Diu si un valor és buit (`None`, `NaN`). Una llista o un array no ho és mai.
+
+    :param value: qualsevol valor.
+    :return: `True` si és buit.
+    """
     try:
         return value is None or bool(pd.isna(value))
     except (TypeError, ValueError):
@@ -109,7 +129,13 @@ def is_missing(value) -> bool:
 
 
 def _unwrap_singletons(series: pd.Series) -> pd.Series | None:
-    """Columna de llistes/arrays d'un sol element (LeRobot desa així els escalars) → escalars."""
+    """
+    Si totes les cel·les d'una columna són llistes d'un sol element (`[0.04]`),
+    les converteix en valors simples.
+
+    :param series: la columna.
+    :return: la columna amb valors simples, o `None` si no és d'aquest tipus.
+    """
     present = series[series.map(lambda v: v is not None)]  # `[nan]` també compta: és un escalar absent
     if present.empty or not present.map(lambda v: isinstance(v, (list, tuple, np.ndarray)) and len(v) == 1).all():
         return None
@@ -117,6 +143,13 @@ def _unwrap_singletons(series: pd.Series) -> pd.Series | None:
 
 
 def _is_opaque(series: pd.Series) -> bool:
+    """
+    Diu si una columna conté valors complexos (diccionaris, llistes, bytes) que no
+    es poden comparar com a nombres o text.
+
+    :param series: la columna.
+    :return: `True` si el primer valor no buit és complex.
+    """
     sample = series.dropna()
     if sample.empty:
         return False
@@ -125,6 +158,14 @@ def _is_opaque(series: pd.Series) -> bool:
 
 
 def _text_or_categorical(values: pd.Series, config: EngineConfig) -> str:
+    """
+    Decideix si una columna de text és text lliure (molts valors diferents i
+    llargs) o categòrica (pocs valors que es repeteixen).
+
+    :param values: la columna, com a text.
+    :param config: llindars del motor.
+    :return: `text` o `categorical`.
+    """
     present = values.dropna()
     if present.empty:
         return CATEGORICAL
@@ -136,12 +177,26 @@ def _text_or_categorical(values: pd.Series, config: EngineConfig) -> str:
 
 
 def _integral(values: pd.Series) -> bool:
+    """
+    Diu si tots els valors no buits d'una columna numèrica són enters.
+
+    :param values: la columna.
+    :return: `True` si són tots enters (i n'hi ha almenys un).
+    """
     present = values.dropna()
     return bool(len(present)) and bool(np.all(np.isclose(present, np.round(present))))
 
 
 def _from_typed(df: pd.DataFrame, fmt: str, config: EngineConfig) -> Table:
-    """Parquet/JSON: el tipus físic ja ve donat."""
+    """
+    Converteix una taula que ja porta tipus (parquet, JSON) a la representació
+    del motor: per a cada columna, els valors i el seu tipus.
+
+    :param df: la taula llegida per pandas.
+    :param fmt: format d'origen (`parquet` o `json`).
+    :param config: llindars del motor (tokens de valor absent, llindars de text).
+    :return: la taula preparada per comparar.
+    """
     values, columns = {}, {}
     for name in df.columns:
         s = df[name]
@@ -172,6 +227,13 @@ def _from_typed(df: pd.DataFrame, fmt: str, config: EngineConfig) -> Table:
 
 
 def _sniff(text: str) -> dict:
+    """
+    Endevina el separador d'un CSV (`,`, `;`, tabulador o `|`) i si hi ha un espai
+    després de cada separador.
+
+    :param text: contingut del fitxer.
+    :return: diccionari amb `delimiter` i `skipinitialspace`.
+    """
     sample = text[:65536]
     try:
         dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
@@ -181,6 +243,17 @@ def _sniff(text: str) -> dict:
 
 
 def _from_csv(data: bytes, ext: str, config: EngineConfig) -> Table:
+    """
+    Llegeix un CSV o TSV com a text i decideix el tipus de cada columna pels
+    valors. Els tokens de valor absent (`?`, `NA`, buit...) es converteixen en
+    buits, i es guarda quins eren.
+
+    :param data: contingut del fitxer, en bytes.
+    :param ext: `.csv` o `.tsv`.
+    :param config: llindars del motor.
+    :return: la taula preparada per comparar.
+    :raises ParseError: si pandas no el pot llegir.
+    """
     for encoding in ("utf-8-sig", "latin-1"):
         try:
             text = data.decode(encoding)
@@ -229,11 +302,14 @@ def _from_csv(data: bytes, ext: str, config: EngineConfig) -> Table:
 
 def load_table(data: bytes, ext: str, config: EngineConfig = DEFAULT_CONFIG) -> Table:
     """
-    Llegeix un fitxer tabular.
+    Llegeix un fitxer tabular i el prepara per comparar: valors i tipus de cada
+    columna.
 
-    :param data: contingut del fitxer.
+    :param data: contingut del fitxer, en bytes.
     :param ext: extensió (`.csv`, `.tsv`, `.parquet`, `.json`, `.jsonl`).
-    :raises ParseError: si no es pot llegir.
+    :param config: llindars del motor.
+    :return: la taula preparada per comparar.
+    :raises ParseError: si no es pot llegir o el format no és compatible.
     """
     ext = ext.lower()
     try:

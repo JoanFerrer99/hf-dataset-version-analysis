@@ -23,9 +23,13 @@ from diffengine.rows import cell_tokens
 
 def detect_order(ctx: Context) -> list[Change]:
     """
-    C410: les files aparellades segures (ni còpies idèntiques ni files editades)
-    no conserven l'ordre. Files desordenades = les que no són a la subseqüència
-    creixent més llarga. Subtipus `sorted_by:<col>` si la nova està ordenada per una columna.
+    Canvi d'ordre de les files (C410). Només es miren les parelles segures. Les
+    files desordenades són les que queden fora de la subseqüència creixent més
+    llarga. Si la versió nova està ordenada per una columna, el subtipus és
+    `sorted_by:<columna>`.
+
+    :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
+    :return: zero o un canvi.
     """
     pairs = ctx.rows.certain_pairs
     if len(pairs) < 2:
@@ -45,6 +49,13 @@ def detect_order(ctx: Context) -> list[Change]:
 
 
 def _longest_increasing_subsequence(seq: np.ndarray) -> int:
+    """
+    Longitud de la subseqüència creixent més llarga (les files que conserven
+    l'ordre relatiu).
+
+    :param seq: posicions noves de les files, en l'ordre antic.
+    :return: la longitud.
+    """
     tails: list[int] = []
     for v in seq:
         i = bisect_left(tails, v)
@@ -56,6 +67,13 @@ def _longest_increasing_subsequence(seq: np.ndarray) -> int:
 
 
 def _sorted_by(table: Table, columns: list[str]) -> str | None:
+    """
+    Busca una columna per la qual la taula estigui ordenada.
+
+    :param table: la taula.
+    :param columns: columnes candidates.
+    :return: el nom de la primera columna ordenada, o `None`.
+    """
     for c in columns:
         s = table.values[c].dropna()
         if len(s) > 2 and s.nunique() > 2 and (s.is_monotonic_increasing or s.is_monotonic_decreasing):
@@ -65,9 +83,12 @@ def _sorted_by(table: Table, columns: list[str]) -> str | None:
 
 def detect_rows(ctx: Context) -> list[Change]:
     """
-    C421: files noves sense parella (`duplicate_of_existing` si és còpia d'una
-    que ja hi era, si no `new`). C422: files antigues sense parella
-    (`duplicate_removed`, o el motiu: `had_nulls`, `outlier`, `predicate`, `all_rows`).
+    Files afegides (C421) i eliminades (C422): les que no tenen parella. Les
+    afegides poden ser còpies d'una fila que ja hi era (`duplicate_of_existing`)
+    o noves (`new`). De les eliminades es busca què tenen en comú.
+
+    :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
+    :return: els canvis trobats.
     """
     out = []
     old_rows = _row_tokens(ctx.old, [m.old for m in ctx.cols.matches])
@@ -98,14 +119,30 @@ def detect_rows(ctx: Context) -> list[Change]:
 
 
 def _row_tokens(table: Table, columns: list[str]) -> np.ndarray:
-    """Cada fila com un sol text (valors de les columnes aparellades), per reconèixer còpies."""
+    """
+    Cada fila com un sol text, unint els valors de les columnes, per reconèixer
+    files idèntiques.
+
+    :param table: la taula.
+    :param columns: columnes a unir.
+    :return: un text per fila.
+    """
     if not columns:
         return np.array([""] * table.n_rows, dtype=object)
     return reduce(lambda a, b: a + "\x1f" + b, (cell_tokens(table, c) for c in columns)).to_numpy()
 
 
 def _why_removed(ctx: Context, removed: np.ndarray, kept: np.ndarray) -> tuple[str, dict]:
-    """Què tenen en comú les files eliminades: totes, les que tenien nuls, valors extrems, o una regla."""
+    """
+    Què tenen en comú les files eliminades: totes (`all_rows`), les que tenien
+    algun buit (`had_nulls`), valors extrems d'una columna (`outlier`) o una regla
+    senzilla (`predicate`). Si no es troba res, `unexplained`.
+
+    :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
+    :param removed: posicions de les files eliminades.
+    :param kept: posicions de les files que es conserven.
+    :return: `(subtipus, evidència)`.
+    """
     cfg, old = ctx.config, ctx.old
     cols = [m.old for m in ctx.cols.matches if old.columns[m.old].kind != OPAQUE]
     if not len(kept):
@@ -133,7 +170,16 @@ def _why_removed(ctx: Context, removed: np.ndarray, kept: np.ndarray) -> tuple[s
 
 
 def _removal_rule(ctx: Context, cols: list[str], removed: np.ndarray, kept: np.ndarray) -> str | None:
-    """Un arbre de decisió de profunditat 2 que separi les files eliminades de les que queden."""
+    """
+    Entrena un arbre de decisió de profunditat 2 que separi les files eliminades
+    de les conservades. Si l'encerta gairebé sempre, la regla explica l'eliminació.
+
+    :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
+    :param cols: columnes que pot fer servir la regla.
+    :param removed: posicions de les files eliminades.
+    :param kept: posicions de les files que es conserven.
+    :return: la regla en text, o `None` si no n'hi ha cap de prou bona.
+    """
     from sklearn.tree import DecisionTreeClassifier, export_text
 
     df = ctx.old.values[cols]

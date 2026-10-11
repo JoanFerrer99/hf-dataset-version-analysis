@@ -48,24 +48,47 @@ class Context:
     c510_columns: set[str] = field(default_factory=set)
 
     def paired(self, m: ColumnMatch) -> tuple[pd.Series, pd.Series]:
-        """Valors de la columna a les files aparellades (vell, nou), alineats."""
+        """
+        Valors d'una columna a les files aparellades, a les dues versions, alineats.
+
+        :param m: parella de columnes.
+        :return: `(valors antics, valors nous)`, en el mateix ordre de files.
+        """
         pairs = self.rows.pairs
         return paired_values(self.old, m.old, pairs[:, 0]), paired_values(self.new, m.new, pairs[:, 1])
 
     def comparable(self, m: ColumnMatch) -> bool:
-        """Es poden comparar cel·la a cel·la: mateix tipus, ni opaca ni número de fila."""
+        """
+        Diu si els valors d'una columna es poden comparar cel·la a cel·la: mateix
+        tipus a les dues versions, no complexa i no és un número de fila.
+
+        :param m: parella de columnes.
+        :return: `True` si es pot comparar.
+        """
         ko, kn = self.old.columns[m.old], self.new.columns[m.new]
         return (m.old not in self.kind_changed and m.old not in self.row_numbers
                 and OPAQUE not in (ko.kind, kn.kind) and family(ko.kind) == family(kn.kind))
 
 
 def family(kind: str) -> str:
-    """`numeric`, `categorical` (inclou text) o `opaque`."""
+    """
+    Agrupa els tipus de columna en tres famílies per comparar-los.
+
+    :param kind: tipus de la columna (`numeric`, `categorical`, `text` o `opaque`).
+    :return: `numeric`, `categorical` (inclou text) o `opaque`.
+    """
     return "numeric" if kind == NUMERIC else ("opaque" if kind == OPAQUE else "categorical")
 
 
 def change(code: str, m: ColumnMatch | None = None, **kw) -> Change:
-    """Crea un `Change`; amb `m`, hi posa la columna nova i l'antiga si s'ha reanomenat."""
+    """
+    Crea un canvi. Si es dona la parella de columnes, hi posa el nom nou i,
+    si ha canviat, l'antic.
+
+    :param code: codi de la taxonomia (`C223`, `C322`...).
+    :param m: parella de columnes afectada, o `None` si el canvi és de tota la taula.
+    :return: el canvi.
+    """
     if m is not None:
         kw.setdefault("column", m.new)
         kw.setdefault("old_column", m.old if m.old != m.new else None)
@@ -74,9 +97,13 @@ def change(code: str, m: ColumnMatch | None = None, **kw) -> Change:
 
 def find_identifiers(ctx: Context) -> None:
     """
-    Marca les columnes que identifiquen files i no són variables: la clau, les
-    que tenen nom d'identificador i valors únics, els números de fila i les
-    seqüències (p.e. `episode_index`).
+    Marca les columnes que identifiquen files i no són dades: la columna clau,
+    les que tenen nom d'identificador i valors únics, els números de fila i els
+    comptadors de posició. Aquestes columnes no es fan servir per buscar canvis
+    de distribució ni de correlació. Desa el resultat a `ctx.identifiers` i
+    `ctx.row_numbers`.
+
+    :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
     """
     ctx.identifiers = set(ctx.rows.key_columns)
     for m in ctx.cols.matches:

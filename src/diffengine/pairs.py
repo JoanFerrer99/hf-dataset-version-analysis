@@ -37,7 +37,12 @@ Call = Callable[..., object]
 
 
 def direct_call(fn, *args, **kwargs):
-    """`call` per defecte: sense reintents."""
+    """
+    Fa una crida sense reintents. És el valor per defecte del paràmetre `call`.
+
+    :param fn: funció a cridar.
+    :return: el que retorni `fn(*args, **kwargs)`.
+    """
     return fn(*args, **kwargs)
 
 
@@ -68,7 +73,16 @@ class UnitPair:
 
 
 def list_revision(repo_id: str, revision: str, token: str | None, call: Call = direct_call) -> Revision:
-    """Llista fitxers (amb mida i hash de contingut) i resol les taules d'una revisió."""
+    """
+    Llista els fitxers d'una revisió (amb mida i identificador de contingut) i
+    en troba les taules.
+
+    :param repo_id: repositori de Hugging Face (`propietari/nom`).
+    :param revision: commit a llistar.
+    :param token: token d'accés a Hugging Face, o `None`.
+    :param call: funció per fer les crides a l'API (permet afegir-hi reintents).
+    :return: la revisió: mides, identificadors de contingut i taules.
+    """
     entries = call(
         lambda: list(list_repo_tree(repo_id, repo_type="dataset", revision=revision, recursive=True, token=token)))
     files = [e for e in entries if getattr(e, "size", None) is not None]
@@ -87,7 +101,14 @@ def list_revision(repo_id: str, revision: str, token: str | None, call: Call = d
 
 
 def _units(rev: Revision, config: EngineConfig) -> tuple[dict[str, tuple[str, ...]], dict[str, str]]:
-    """`(taules per clau subset/split, fitxers sols per ruta)`."""
+    """
+    Separa les taules d'una revisió en dos grups: les que s'aparellen pel nom de
+    la partició i els fitxers que s'aparellen per la ruta.
+
+    :param rev: revisió ja llistada.
+    :param config: llindars del motor (si es concatenen els fitxers partits).
+    :return: `(taules per nom de partició, fitxers sols per ruta)`.
+    """
     tables, singles = {}, {}
     for u in rev.layout.units:
         if u.naming == "single" or (u.naming in ("hf_shards", "numbered") and config.concat_shards):
@@ -99,6 +120,18 @@ def _units(rev: Revision, config: EngineConfig) -> tuple[dict[str, tuple[str, ..
 
 
 def pair_units(old: Revision, new: Revision, config: EngineConfig = DEFAULT_CONFIG) -> list[UnitPair]:
+    """
+    Aparella les taules de dues revisions. Per nom de partició; si una taula
+    d'un sol fitxer no troba parella, per la ruta, després pel contingut
+    (fitxer reanomenat) i després pel nom amb una altra extensió. A cada parella
+    li posa l'estat inicial (`pending`, `identical_content`, `absent_old`,
+    `absent_new` o `excluded`).
+
+    :param old: revisió antiga.
+    :param new: revisió nova.
+    :param config: llindars del motor.
+    :return: una parella per taula, inclosos els fitxers exclosos que han canviat.
+    """
     old_tables, old_singles = _units(old, config)
     new_tables, new_singles = _units(new, config)
     pairs: list[UnitPair] = []
@@ -159,6 +192,13 @@ def pair_units(old: Revision, new: Revision, config: EngineConfig = DEFAULT_CONF
 
 
 def _concat(tables: list[Table]) -> Table:
+    """
+    Uneix en una sola taula els fitxers d'una taula partida.
+
+    :param tables: les parts, en ordre.
+    :return: la taula sencera.
+    :raises ParseError: si les parts no tenen les mateixes columnes.
+    """
     first = tables[0]
     if any(list(t.values.columns) != list(first.values.columns) for t in tables[1:]):
         raise ParseError("els shards no comparteixen esquema")
@@ -172,6 +212,17 @@ def _concat(tables: list[Table]) -> Table:
 
 def _load_files(repo_id: str, revision: str, files: tuple[str, ...], token: str | None, call: Call,
                 config: EngineConfig) -> Table:
+    """
+    Descarrega i llegeix els fitxers d'una taula en una revisió.
+
+    :param repo_id: repositori de Hugging Face.
+    :param revision: commit.
+    :param files: fitxers de la taula.
+    :param token: token d'accés, o `None`.
+    :param call: funció per fer les crides a l'API.
+    :param config: llindars del motor.
+    :return: la taula llegida (concatenada si n'hi ha més d'un).
+    """
     tables = []
     for path in files:
         local = call(hf_hub_download, repo_id=repo_id, repo_type="dataset", filename=path,
@@ -187,7 +238,20 @@ class DownloadFailed(Exception):
 
 def compare_pair(repo_id: str, pair: UnitPair, old: Revision, new: Revision, token: str | None,
                  call: Call = direct_call, config: EngineConfig = DEFAULT_CONFIG) -> UnitPair:
-    """Descarrega i compara un parell `pending`. Omple `status` i `result`."""
+    """
+    Descarrega i compara una parella de taules pendent, i n'actualitza l'estat
+    i el resultat. Una fallada de descàrrega o de lectura queda com a estat, mai
+    com a canvis.
+
+    :param repo_id: repositori de Hugging Face.
+    :param pair: parella a comparar (es modifica).
+    :param old: revisió antiga.
+    :param new: revisió nova.
+    :param token: token d'accés, o `None`.
+    :param call: funció per fer les crides a l'API.
+    :param config: llindars del motor.
+    :return: la mateixa parella, amb l'estat i el resultat omplerts.
+    """
     if pair.status != "pending":
         return pair
     total = sum(old.sizes[f] for f in pair.old_files) + sum(new.sizes[f] for f in pair.new_files)
@@ -217,10 +281,14 @@ def compare_pair(repo_id: str, pair: UnitPair, old: Revision, new: Revision, tok
 def revision_rows(repo_id: str, old_rev: str, new_rev: str, pairs: list[UnitPair],
                   config: EngineConfig = DEFAULT_CONFIG) -> tuple[list[dict], list[dict]]:
     """
-    Converteix els parells comparats en files de sortida.
+    Converteix les parelles comparades en files de sortida.
 
-    :return: `(canvis, estats)`: una fila per canvi detectat (format llarg de
-        `output.changes_frame`) i una fila d'estat per parell.
+    :param repo_id: repositori de Hugging Face.
+    :param old_rev: commit antic.
+    :param new_rev: commit nou.
+    :param pairs: parelles ja comparades.
+    :param config: llindars del motor (se'n guarda el hash a cada fila).
+    :return: `(canvis, estats)`: una fila per canvi detectat i una fila per parella de taules.
     """
     changes, statuses = [], []
     for p in pairs:
@@ -237,7 +305,18 @@ def revision_rows(repo_id: str, old_rev: str, new_rev: str, pairs: list[UnitPair
 
 def compare_revisions(repo_id: str, old_rev: str, new_rev: str, token: str | None, call: Call = direct_call,
                       config: EngineConfig = DEFAULT_CONFIG) -> list[UnitPair]:
-    """Compara totes les taules de dues revisions (les de contingut idèntic no es descarreguen)."""
+    """
+    Compara totes les taules de dues revisions d'un repositori. És la funció que
+    fa servir el pipeline. Les taules amb el mateix contingut no es descarreguen.
+
+    :param repo_id: repositori de Hugging Face.
+    :param old_rev: commit antic.
+    :param new_rev: commit nou.
+    :param token: token d'accés, o `None`.
+    :param call: funció per fer les crides a l'API (p.e. amb reintents).
+    :param config: llindars del motor.
+    :return: una parella per taula, cadascuna amb el seu estat i, si s'ha comparat, el resultat.
+    """
     old = list_revision(repo_id, old_rev, token, call)
     new = list_revision(repo_id, new_rev, token, call)
     pairs = pair_units(old, new, config)

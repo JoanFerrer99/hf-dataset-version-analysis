@@ -61,6 +61,9 @@ class DiffResult:
 
     @property
     def codes(self) -> set[str]:
+        """
+        :return: els codis de canvi diferents que s'han detectat.
+        """
         return {c.code for c in self.changes}
 
 
@@ -72,7 +75,14 @@ CHANGE_COLUMNS = ["repo_id", "old_rev", "new_rev", "file_path", "old_file_path",
 
 def changes_frame(result: DiffResult, key: dict, engine_version: str, config_hash: str) -> pd.DataFrame:
     """
-    :param key: `repo_id`, `old_rev`, `new_rev`, `file_path`, `old_file_path`.
+    Converteix els canvis d'una parella de taules en files de la taula de sortida.
+
+    :param result: resultat de comparar la parella.
+    :param key: columnes que identifiquen la parella (`repo_id`, `old_rev`,
+        `new_rev`, `file_path`, `old_file_path`).
+    :param engine_version: versió del motor, per saber amb quin s'ha generat.
+    :param config_hash: hash de la configuració, per saber amb quins llindars.
+    :return: una fila per canvi, amb les columnes de `CHANGE_COLUMNS`.
     """
     rows = []
     for c in result.changes:
@@ -85,6 +95,14 @@ def changes_frame(result: DiffResult, key: dict, engine_version: str, config_has
 
 
 def status_frame(result: DiffResult, key: dict) -> pd.DataFrame:
+    """
+    Fila de sortida amb l'estat d'una parella de taules i com s'han aparellat
+    les files.
+
+    :param result: resultat de comparar la parella.
+    :param key: columnes que identifiquen la parella.
+    :return: una taula d'una sola fila.
+    """
     info = result.info
     return pd.DataFrame([{
         **key, "status": result.status,
@@ -97,7 +115,13 @@ def status_frame(result: DiffResult, key: dict) -> pd.DataFrame:
 
 
 def legacy_frame(changes: pd.DataFrame) -> pd.DataFrame:
-    """Columnes del CSV antic (`dataset_id, version_from, version_to, code, description, is_breaking`) + `file_path`."""
+    """
+    Converteix la taula de canvis al format antic (un codi per fitxer i
+    versions, amb descripció i si trenca), per compatibilitat.
+
+    :param changes: taula de canvis (`changes_frame`).
+    :return: la taula en el format antic, sense files repetides.
+    """
     out = pd.DataFrame({
         "dataset_id": changes["repo_id"], "version_from": changes["old_rev"], "version_to": changes["new_rev"],
         "file_path": changes["file_path"], "code": changes["code"],

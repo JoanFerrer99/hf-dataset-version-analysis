@@ -39,20 +39,32 @@ class Fit:
 
 
 def _close(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """
+    Compara dues llistes de nombres amb una petita tolerància (relativa a la
+    mida dels valors).
+
+    :param a: primera llista.
+    :param b: segona llista.
+    :return: per a cada posició, `True` si els dos valors són pràcticament iguals.
+    """
     scale = max(float(np.nanmax(np.abs(b))) if len(b) else 1.0, 1e-12)
     return np.isclose(a, b, rtol=1e-5, atol=1e-6 * scale)
 
 
 def fit_numeric(x: np.ndarray, y: np.ndarray, min_validity: float, explain_changed: bool = False) -> Fit | None:
     """
-    Transformació que porta `x` (vell) a `y` (nou), o `None`.
+    Busca una fórmula que porti els valors antics als nous (multiplicar per un
+    factor, escalar entre 0 i 1, estandarditzar, logaritme...). Prova de la més
+    simple a la més complexa i accepta la primera que reprodueix gairebé totes
+    les files.
 
-    Les candidates basades en agregats (min-max, z-score...) es calculen amb
-    els estadístics de `x` sencer, com ho faria qui les ha aplicat.
-
-    :param explain_changed: la transformació ha de reproduir també les files
-        que han canviat (no n'hi ha prou amb les que no, p.e. els zeros d'un
-        factor), i la identitat no compta.
+    :param x: valors antics.
+    :param y: valors nous, alineats amb `x`.
+    :param min_validity: proporció mínima de files que la fórmula ha de reproduir.
+    :param explain_changed: si és `True`, la fórmula també ha de reproduir les
+        files que han canviat (no n'hi ha prou amb les que no) i "no canviar" no compta.
+    :return: la fórmula trobada (tipus, paràmetres i proporció de files que
+        reprodueix), o `None` si cap no funciona.
     """
     mask = ~(np.isnan(x) | np.isnan(y))
     x, y = x[mask].astype(float), y[mask].astype(float)
@@ -108,10 +120,14 @@ def fit_numeric(x: np.ndarray, y: np.ndarray, min_validity: float, explain_chang
 
 def distribution_distance(a: pd.Series, b: pd.Series, numeric: bool) -> tuple[float, float, str]:
     """
-    Distància entre les distribucions de dues columnes (sense nuls) i el p-valor:
-    KS per a numèriques, variació total (amb khi quadrat) per a categòriques.
+    Mesura quant ha canviat la distribució d'una columna. Per a nombres, la
+    prova de Kolmogorov-Smirnov; per a categories, la variació total (amb una
+    prova de khi quadrat).
 
-    :return: `(distància, p_valor, mesura)`.
+    :param a: valors antics, sense buits.
+    :param b: valors nous, sense buits.
+    :param numeric: `True` si la columna és numèrica.
+    :return: `(distància, p-valor, nom de la mesura)`.
     """
     if numeric:
         res = stats.ks_2samp(a.to_numpy(float), b.to_numpy(float), method="asymp")
@@ -123,7 +139,16 @@ def distribution_distance(a: pd.Series, b: pd.Series, numeric: bool) -> tuple[fl
 
 
 def is_perturbation(x: np.ndarray, y: np.ndarray, max_rel_noise: float = 0.25, min_changed: float = 0.5) -> bool:
-    """Soroll al voltant de la identitat: molts valors canviats, però poc i sense tendència."""
+    """
+    Diu si els valors nous són els antics amb soroll: molts valors canviats,
+    però poc i sense una tendència.
+
+    :param x: valors antics.
+    :param y: valors nous, alineats amb `x`.
+    :param max_rel_noise: soroll màxim, com a fracció de la desviació dels valors.
+    :param min_changed: proporció mínima de valors canviats.
+    :return: `True` si és soroll.
+    """
     mask = ~(np.isnan(x) | np.isnan(y))
     x, y = x[mask], y[mask]
     if len(x) < 10 or np.std(x) == 0:
@@ -153,14 +178,24 @@ class Mapping:
 
 
 def normalize_value(v) -> str:
-    """Forma canònica d'una categoria per a canvis de representació: sense espais extra, en minúscules."""
+    """
+    Forma canònica d'una categoria, per detectar canvis només de format: sense
+    espais de més i en minúscules.
+
+    :param v: el valor.
+    :return: el valor normalitzat.
+    """
     return re.sub(r"\s+", " ", str(v).strip()).lower()
 
 
 def _dominant_maps(a: np.ndarray, b: np.ndarray) -> tuple[pd.Series, pd.Series, np.ndarray, np.ndarray]:
     """
-    Valor dominant de cada costat: `fwd[x]` és el valor nou més freqüent per a
-    l'antic `x`, i `bwd` al revés. `*_hit[i]` diu si la fila `i` segueix el mapa.
+    Per a cada valor antic, el valor nou més freqüent (i al revés), i quines
+    files segueixen aquesta correspondència.
+
+    :param a: valors antics.
+    :param b: valors nous, alineats amb `a`.
+    :return: `(antic → nou, nou → antic, files que segueixen antic → nou, files que segueixen nou → antic)`.
     """
     df = pd.DataFrame({"a": a, "b": b})
     fwd = df.groupby("a")["b"].agg(lambda s: s.value_counts().index[0])
@@ -170,12 +205,16 @@ def _dominant_maps(a: np.ndarray, b: np.ndarray) -> tuple[pd.Series, pd.Series, 
 
 def analyze_mapping(old: pd.Series, new: pd.Series, min_validity: float, min_group_rows: int) -> Mapping:
     """
-    Com es corresponen els valors vells i nous en files aparellades (tots
-    dos no nuls). `old`/`new` són text.
+    Explica com han canviat els valors d'una columna de categories, comparant
+    les files aparellades on els dos valors no són buits.
 
-    Un mapa (reetiquetatge, fusió, divisió) ha d'explicar la majoria de files
-    I de files canviades: en una edició de cel·les, el valor dominant d'una
-    categoria és ella mateixa, i no n'explica cap.
+    :param old: valors antics, com a text.
+    :param new: valors nous, alineats amb `old`.
+    :param min_validity: proporció mínima de files que la correspondència ha d'explicar.
+    :param min_group_rows: files mínimes perquè una categoria nova compti com a divisió.
+    :return: el tipus de canvi (`identity`, `representation`, `relabel`,
+        `anonymization`, `merge`, `split` o `cell_edits`), la correspondència i
+        quantes files han canviat.
     """
     mask = old.notna().to_numpy() & new.notna().to_numpy()
     a = old[mask].astype(str).to_numpy()
@@ -206,7 +245,15 @@ def analyze_mapping(old: pd.Series, new: pd.Series, min_validity: float, min_gro
 
 
 def is_bijection(old: pd.Series, new: pd.Series, min_validity: float) -> tuple[bool, float]:
-    """Dependència funcional en tots dos sentits (Explain-Da-V §4.6), amb nuls aparellats."""
+    """
+    Diu si dues columnes es corresponen u a u: cada valor antic dona sempre el
+    mateix valor nou, i al revés.
+
+    :param old: valors antics.
+    :param new: valors nous, alineats amb `old`.
+    :param min_validity: proporció mínima de files que han de seguir la correspondència.
+    :return: `(es corresponen, proporció de files que la segueixen)`.
+    """
     a = old.astype(object).where(old.notna(), NULL_TOKEN).astype(str).to_numpy()
     b = new.astype(object).where(new.notna(), NULL_TOKEN).astype(str).to_numpy()
     if not len(a):

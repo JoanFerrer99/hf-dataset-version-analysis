@@ -76,11 +76,24 @@ class RepoLayout:
 
 
 def is_tabular_path(path: str) -> bool:
+    """
+    Diu si un fitxer és una taula que el motor sap llegir, només pel nom.
+
+    :param path: ruta del fitxer dins del repositori.
+    :return: `True` si l'extensió és `.parquet`, `.csv`, `.tsv`, `.json` o
+        `.jsonl` i no és un fitxer de metadades conegut.
+    """
     return path.lower().endswith(TABULAR_EXTENSIONS) and os.path.basename(path) not in METADATA_FILES
 
 
 def classify_naming(files: list[str]) -> str:
-    """Patró de noms d'un grup de fitxers (vegeu `Unit.naming`)."""
+    """
+    Diu com es reparteix una taula en fitxers, segons els noms.
+
+    :param files: rutes dels fitxers de la taula.
+    :return: `single` (un fitxer), `hf_shards` (`train-00000-of-00003`...),
+        `numbered` (mateix nom amb un número que canvia) o `distinct` (noms no relacionats).
+    """
     if len(files) == 1:
         return "single"
     if all(_HF_SHARD.search(f) for f in files):
@@ -93,9 +106,11 @@ def classify_naming(files: list[str]) -> str:
 
 def _configs_only_readme(readme_text: str) -> str | None:
     """
-    README amb només la clau `configs` del YAML: és l'única que afecta la
-    resolució, i així un tipus de feature desconegut (p.e. `VideoFrame`)
-    no la fa fallar.
+    Del README, conserva només la part de configuració que descriu les
+    particions. La resta de metadades pot fer fallar la llibreria `datasets`.
+
+    :param readme_text: contingut del README.
+    :return: un README mínim amb només la configuració, o `None` si no n'hi ha.
     """
     import yaml
 
@@ -113,11 +128,15 @@ def _configs_only_readme(readme_text: str) -> str | None:
 
 def resolve_units(paths: list[str], readme_text: str | None = None) -> RepoLayout:
     """
-    Resol les taules (subset, split) d'una revisió amb les regles de `datasets`.
+    Troba les taules d'una revisió d'un repositori, sense descarregar dades.
+
+    Recrea l'arbre de fitxers com a fitxers buits en un directori temporal i li
+    pregunta a la llibreria `datasets` quines particions hi veu. Els fitxers
+    partits d'una mateixa partició formen una sola taula.
 
     :param paths: tots els fitxers del repositori en aquella revisió.
-    :param readme_text: contingut del `README.md` (pel YAML `configs`), o `None`.
-    :return: `RepoLayout` amb les taules i els fitxers tabulars exclosos.
+    :param readme_text: contingut del README (pot descriure les particions), o `None`.
+    :return: les taules trobades i els fitxers tabulars que no formen part de cap taula, amb el motiu.
     """
     from datasets.load import LocalDatasetModuleFactory
 
