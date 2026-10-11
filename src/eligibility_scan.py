@@ -2,8 +2,10 @@
 Fase 0 (mostreig + elegibilitat) i Fase 2 (classificació de canvis).
 
   - Mostreig: reservoir sampling uniforme sobre tota la població de HF.
-  - Elegibilitat: Criteri A (>=2 tags + >=2 commits substantius) o
-    Criteri B (>=2 branches + >=2 sessions de commits substantius).
+  - Elegibilitat: Criteri A (>=2 tags + >=2 commits que toquen dades
+    tabulars) o Criteri B (>=2 branques + commits que toquen dades tabulars
+    en >=2 sessions). Només compten els fitxers tabulars (`.parquet`,
+    `.csv`, `.tsv`, `.json`, `.jsonl`): són els únics que el motor compara.
   - Classificació (`run_classification`): codis de la taxonomia per als
     datasets elegibles d'un CSV ja generat.
 
@@ -79,11 +81,6 @@ SUBSTANTIVE_DATA_EXTENSIONS = (
     ".mp4", ".avi", ".mov", ".wav", ".mp3", ".flac",
     ".png", ".jpg", ".jpeg", ".webp", ".tiff", ".bmp",
 )
-
-NON_SUBSTANTIVE_TITLE_KEYWORDS = {
-    "readme", "metadata", ".gitattributes", "dataset_infos",
-    "license", "citation", "typo", "fix typo", "update docs",
-}
 
 MIN_SUBSTANTIVE_GAP_HOURS = 6.0
 GIT_CLONE_TIMEOUT_S = 30
@@ -208,6 +205,8 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
         "num_tags": 0,
         "num_branches": 0,
         "num_commits_substantive": 0,
+        "num_data_files": None,
+        "tabular_file_share": None,
         "eligible": False,
         "eligibility_reason": "",
         "status": "classified",
@@ -238,6 +237,10 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
                 **RETRY_CONFIG,
             )
             with bare_clone(dataset_id) as clone_dir:
+                if clone_dir is not None:
+                    result["num_data_files"], result["tabular_file_share"] = tabular_file_share(
+                        list_files_at_head(clone_dir) or []
+                    )
                 for i, commit in enumerate(commits):
                     commits_scanned += 1
 
@@ -253,14 +256,14 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
                     if not result["eligible"]:
                         if len(tags) >= 2 and num_commits_substantive >= 2:
                             result["eligible"] = True
-                            result["eligibility_reason"] = "Criteri A: tags>=2 amb commits substantius"
+                            result["eligibility_reason"] = "Criteri A: tags>=2 i >=2 commits amb dades tabulars"
                         elif not tags_only and len(branches) >= 2 and has_time_dispersed_substantive_commits(
                             substantive_times
                         ):
                             result["eligible"] = True
                             result["eligibility_reason"] = (
-                                "Criteri B: substantive_commits>=2 dispersos "
-                                f">={MIN_SUBSTANTIVE_GAP_HOURS}h"
+                                "Criteri B: commits amb dades tabulars en >=2 sessions "
+                                f"(separades >{MIN_SUBSTANTIVE_GAP_HOURS}h)"
                             )
 
                     if result["eligible"] and not classify_changes:
@@ -317,26 +320,6 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
     return result
 
 
-def is_substantive_commit(commit_title: str) -> bool:
-    """
-    Heurística de reserva quan no hi ha clon: el commit és substantiu si el
-    títol no conté cap paraula de `NON_SUBSTANTIVE_TITLE_KEYWORDS`.
-
-    :param commit_title: títol del commit (pot ser `None`).
-    :return: `False` si el títol és buit o conté alguna paraula clau.
-    """
-    if not commit_title:
-        return False
-
-    title_lower = commit_title.lower()
-
-    for keyword in NON_SUBSTANTIVE_TITLE_KEYWORDS:
-        if keyword in title_lower:
-            return False
-
-    return True
-
-
 def is_substantive_path(path: str) -> bool:
     """
     Decideix si un fitxer és dades reals (i no metadada), en aquest ordre:
@@ -360,6 +343,31 @@ def is_substantive_path(path: str) -> bool:
         log.debug(f"is_substantive_path: extensió no classificada, fail-open: {path}")
 
     return True
+
+
+def is_tabular_data_path(path: str) -> bool:
+    """
+    Fitxer de dades tabular: el que fa elegible un dataset i el que compara el
+    motor. Ha de ser dades (`is_substantive_path`, que exclou p.e. `meta/`) i
+    tabular segons el motor (`diffengine.units.is_tabular_path`: `.parquet`,
+    `.csv`, `.tsv`, `.json`, `.jsonl`, sense els JSON de metadades).
+    """
+    return is_substantive_path(path) and units.is_tabular_path(path)
+
+
+def tabular_file_share(paths: list[str]) -> tuple[int, float | None]:
+    """
+    Informació complementària (no decideix l'elegibilitat): de tots els
+    fitxers de dades d'un repositori, quina proporció són tabulars. Un
+    repositori de vídeo amb un parquet d'índex tindrà una proporció baixa.
+
+    :param paths: fitxers del repositori.
+    :return: `(fitxers de dades, proporció tabular)`; proporció `None` si no hi ha dades.
+    """
+    data = [p for p in paths if is_substantive_path(p)]
+    if not data:
+        return 0, None
+    return len(data), round(sum(units.is_tabular_path(p) for p in data) / len(data), 4)
 
 
 @contextmanager
@@ -437,22 +445,37 @@ def get_changed_files(clone_dir: str, commit_sha: str) -> list[str] | None:
         return None
 
 
+def list_files_at_head(clone_dir: str) -> list[str] | None:
+    """Tots els fitxers de la revisió actual, llegits del clon bare (sense xarxa)."""
+    try:
+        result = subprocess.run(
+            ["git", "ls-tree", "-r", "--name-only", "HEAD"],
+            cwd=clone_dir, capture_output=True, text=True, timeout=GIT_SHOW_TIMEOUT_S,
+        )
+        return result.stdout.splitlines() if result.returncode == 0 else None
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+
+
 def determine_commit_substantive_with_paths(commit, clone_dir: str | None) -> tuple[bool, list[str] | None]:
     """
-    Un commit és substantiu si toca algun fitxer substantiu. Si no hi ha
-    clon o `git show` falla, s'usa l'heurística de títol.
+    Un commit és substantiu (compta per a l'elegibilitat i per a les versions)
+    si toca algun fitxer de dades tabular (`is_tabular_data_path`).
+
+    Cal saber quins fitxers toca, i això només ho dona el clon. Sense clon, o
+    si `git show` falla, el commit no compta: el títol no diu si el fitxer
+    tocat és tabular.
 
     :param commit: commit de `list_repo_commits`.
     :param clone_dir: clon bare, o `None`.
-    :return: `(és_substantiu, fitxers_tocats)`; `fitxers_tocats` és `None`
-        si s'ha fet servir l'heurística de títol.
+    :return: `(és_substantiu, fitxers_tocats)`; `fitxers_tocats` és `None` sense clon.
     """
-    if clone_dir is not None:
-        changed_paths = get_changed_files(clone_dir, commit.commit_id)
-        if changed_paths is not None:
-            return any(is_substantive_path(p) for p in changed_paths), changed_paths
-
-    return is_substantive_commit(commit.title), None
+    if clone_dir is None:
+        return False, None
+    changed_paths = get_changed_files(clone_dir, commit.commit_id)
+    if changed_paths is None:
+        return False, None
+    return any(is_tabular_data_path(p) for p in changed_paths), changed_paths
 
 
 def determine_commit_substantive(commit, clone_dir: str | None) -> bool:
@@ -620,16 +643,23 @@ def compute_funnel_stats(counts: FunnelCounts) -> dict:
 
     - `eligible_proportion`: elegibles / classificats amb èxit (sense 403
       ni errors al denominador).
-    - `eligible_proportion_of_attempts`: elegibles / tots els intents.
-    - `estimated_eligible_in_population`: extrapolació a `total_scanned`,
-      assumint que els inaccessibles tenen la mateixa proporció.
+    - `eligible_proportion_of_attempts`: elegibles / tots els intents
+      (elegibles, no elegibles, inaccessibles i errors).
+    - `estimated_eligible_in_scanned_population`: quants elegibles hi
+      hauria a tota la població recorreguda (`total_scanned`), amb la
+      proporció sobre tots els intents.
+    - `attempts_per_eligible`: quants datasets cal provar per obtenir-ne un
+      d'elegible. Serveix per fixar la mostra: per tenir N datasets
+      elegibles (i per tant amb dades tabulars per comparar), cal una
+      mostra d'unes N × `attempts_per_eligible`.
 
-    :return: els recomptes més les tres mètriques (0 si el denominador és 0).
+    :return: els recomptes més les mètriques (0 o `None` si el denominador és 0).
     """
     denom_valid = counts.eligible + counts.ineligible
     denom_attempts = denom_valid + counts.access_restricted + counts.errors
 
     eligible_proportion = round(counts.eligible / denom_valid, 4) if denom_valid else 0.0
+    proportion_of_attempts = counts.eligible / denom_attempts if denom_attempts else 0.0
 
     return {
         "eligible": counts.eligible,
@@ -637,12 +667,9 @@ def compute_funnel_stats(counts: FunnelCounts) -> dict:
         "access_restricted": counts.access_restricted,
         "errors": counts.errors,
         "eligible_proportion": eligible_proportion,
-        "eligible_proportion_of_attempts": (
-            round(counts.eligible / denom_attempts, 4) if denom_attempts else 0.0
-        ),
-        "estimated_eligible_in_population": (
-            int(round(eligible_proportion * counts.total_scanned)) if denom_valid else 0
-        ),
+        "eligible_proportion_of_attempts": round(proportion_of_attempts, 4),
+        "estimated_eligible_in_scanned_population": int(round(proportion_of_attempts * counts.total_scanned)),
+        "attempts_per_eligible": round(denom_attempts / counts.eligible, 1) if counts.eligible else None,
     }
 
 def get_next_run_id(output_dir: str, sample_size: int) -> int:
@@ -703,7 +730,6 @@ def write_results(rows: list[dict], run_id: int, sample_size: int, total_scanned
         "sampling_method": "reservoir_sampling_R_Vitter_uniform_no_bias",
         "sample_size": total,
         "population_scanned": total_scanned,
-        "eligible_total": eligible,
         "eligible_Criteri_A": int(df["eligibility_reason"].str.startswith("Criteri A").sum()),
         "eligible_Criteri_B": int(df["eligibility_reason"].str.startswith("Criteri B").sum()),
         **compute_funnel_stats(counts),

@@ -18,11 +18,22 @@ import eligibility_scan as es
 
 @contextmanager
 def _no_git_clone(dataset_id):
-    # Substitueix es.bare_clone als tests de classify_dataset() que no
-    # exerceixen explícitament US-302: sense clonatge real (yield None),
-    # classify_dataset recorre a l'heurística de títol (is_substantive_commit),
-    # evitant una crida de xarxa real (i lenta/inestable) a cada test.
+    # Sense clon (yield None): cap commit no compta, perquè no se sap quins
+    # fitxers toca. Evita una crida de xarxa real a cada test.
     yield None
+
+
+def _files_by_title(monkeypatch):
+    """
+    Clon fals on cada commit toca fitxers segons el títol: "README"/"typo" →
+    `README.md` (no compta); qualsevol altre → `data/train.csv` (dades tabulars).
+    `_FakeCommit` usa el títol com a `commit_id`, que és el que rep `get_changed_files`.
+    """
+    def changed(clone_dir, sha):
+        return ["README.md"] if any(w in sha.lower() for w in ("readme", "typo")) else ["data/train.csv"]
+
+    monkeypatch.setattr(es, "bare_clone", _fake_git_clone)
+    monkeypatch.setattr(es, "get_changed_files", changed)
 
 
 @contextmanager
@@ -267,26 +278,45 @@ class TestGetChangedFiles:
 
 
 class TestDetermineCommitSubstantive:
-    def test_falls_back_to_title_heuristic_when_no_clone_dir(self):
-        assert es.determine_commit_substantive(_FakeCommit("Add new records"), None) is True
-        assert es.determine_commit_substantive(_FakeCommit("Update README"), None) is False
+    """Un commit compta si toca algun fitxer de dades tabular; sense clon, no compta."""
+
+    def test_without_clone_the_commit_does_not_count(self):
+        assert es.determine_commit_substantive(_FakeCommit("Add new records"), None) is False
 
     def test_uses_real_files_when_clone_available(self, monkeypatch):
-        # Títol genèric (no substantiu segons l'heurística) però toca
-        # dades reals -> substantiu segons la inspecció de fitxers.
         commit = _FakeCommit("Merge pull request #3")
         monkeypatch.setattr(es, "get_changed_files", lambda clone_dir, sha: ["data/file.parquet"])
         assert es.determine_commit_substantive(commit, "/fake/clone") is True
 
-    def test_metadata_only_files_are_not_substantive_even_with_generic_title(self, monkeypatch):
+    def test_metadata_only_files_do_not_count(self, monkeypatch):
         commit = _FakeCommit("Update stuff")
         monkeypatch.setattr(es, "get_changed_files", lambda clone_dir, sha: ["README.md", ".gitattributes"])
         assert es.determine_commit_substantive(commit, "/fake/clone") is False
 
-    def test_falls_back_to_title_heuristic_when_get_changed_files_fails(self, monkeypatch):
-        commit = _FakeCommit("Add new records")
+    def test_non_tabular_data_files_do_not_count(self, monkeypatch):
+        # Vídeo, àudio o imatges són dades, però el motor no les compara.
+        commit = _FakeCommit("Add episodes")
+        monkeypatch.setattr(es, "get_changed_files", lambda clone_dir, sha: [
+            "videos/chunk-000/episode_000001.mp4", "audio/clip.wav", "images/a.png"])
+        assert es.determine_commit_substantive(commit, "/fake/clone") is False
+
+    def test_lerobot_meta_tables_do_not_count(self, monkeypatch):
+        commit = _FakeCommit("Update meta")
+        monkeypatch.setattr(es, "get_changed_files", lambda clone_dir, sha: ["meta/episodes.jsonl"])
+        assert es.determine_commit_substantive(commit, "/fake/clone") is False
+
+    def test_when_git_show_fails_the_commit_does_not_count(self, monkeypatch):
         monkeypatch.setattr(es, "get_changed_files", lambda clone_dir, sha: None)
-        assert es.determine_commit_substantive(commit, "/fake/clone") is True
+        assert es.determine_commit_substantive(_FakeCommit("Add new records"), "/fake/clone") is False
+
+
+class TestTabularFileShare:
+    def test_share_of_data_files_that_are_tabular(self):
+        paths = ["README.md", "data/train.parquet", "videos/a.mp4", "videos/b.mp4", "meta/info.json"]
+        assert es.tabular_file_share(paths) == (3, round(1 / 3, 4))
+
+    def test_no_data_files(self):
+        assert es.tabular_file_share(["README.md", ".gitattributes"]) == (0, None)
 
 
 class TestBareClone:
@@ -364,6 +394,15 @@ class TestComputeFunnelStats:
         stats = es.compute_funnel_stats(counts)
         assert stats["eligible_proportion_of_attempts"] == round(10 / 100, 4)
 
+    def test_estimate_and_sample_planning_use_all_attempts(self):
+        # Xifres de run_8: 11 elegibles en 2.000 intents (87 inaccessibles, 8 errors).
+        counts = es.FunnelCounts(
+            total_scanned=1_068_504, eligible=11, ineligible=1894, access_restricted=87, errors=8
+        )
+        stats = es.compute_funnel_stats(counts)
+        assert stats["estimated_eligible_in_scanned_population"] == round(11 / 2000 * 1_068_504)
+        assert stats["attempts_per_eligible"] == round(2000 / 11, 1)
+
     def test_handles_zero_classified_without_dividing_by_zero(self):
         counts = es.FunnelCounts(
             total_scanned=50, eligible=0, ineligible=0, access_restricted=10, errors=40
@@ -371,7 +410,8 @@ class TestComputeFunnelStats:
         stats = es.compute_funnel_stats(counts)
         assert stats["eligible_proportion"] == 0.0
         assert stats["eligible_proportion_of_attempts"] == 0.0
-        assert stats["estimated_eligible_in_population"] == 0
+        assert stats["estimated_eligible_in_scanned_population"] == 0
+        assert stats["attempts_per_eligible"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -392,10 +432,10 @@ class _FakeRefs:
 
 
 class _FakeCommit:
-    def __init__(self, title, created_at=None, commit_id="abc123"):
+    def __init__(self, title, created_at=None, commit_id=None):
         self.title = title
         self.created_at = created_at
-        self.commit_id = commit_id
+        self.commit_id = commit_id or title
 
 
 class _FakeCompletedProcess:
@@ -418,14 +458,14 @@ class TestClassifyDatasetResultShape:
                 _FakeCommit("Fix labeling errors"),
             ]),
         )
-        monkeypatch.setattr(es, "bare_clone", _no_git_clone)
+        _files_by_title(monkeypatch)
         monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
 
         result = es.classify_dataset("org/ds")
 
         assert result["status"] == "classified"
         assert result["eligible"] is True
-        assert result["eligibility_reason"] == "Criteri A: tags>=2 amb commits substantius"
+        assert result["eligibility_reason"] == "Criteri A: tags>=2 i >=2 commits amb dades tabulars"
 
     def test_tags_with_only_one_substantive_commit_are_not_eligible(self, monkeypatch, tmp_path):
         # >=2 tags però només 1 commit substantiu (per sota del llindar de
@@ -435,7 +475,7 @@ class TestClassifyDatasetResultShape:
             es, "list_repo_commits",
             lambda **kw: iter([_FakeCommit("Update README"), _FakeCommit("Add new records")]),
         )
-        monkeypatch.setattr(es, "bare_clone", _no_git_clone)
+        _files_by_title(monkeypatch)
         monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
 
         result = es.classify_dataset("org/ds")
@@ -451,7 +491,7 @@ class TestClassifyDatasetResultShape:
             es, "list_repo_commits",
             lambda **kw: iter([_FakeCommit("Update README"), _FakeCommit("fix typo")]),
         )
-        monkeypatch.setattr(es, "bare_clone", _no_git_clone)
+        _files_by_title(monkeypatch)
         monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
 
         result = es.classify_dataset("org/ds")
@@ -467,13 +507,13 @@ class TestClassifyDatasetResultShape:
             es, "list_repo_commits",
             lambda **kw: iter([_FakeCommit("Add new records"), _FakeCommit("Fix labeling errors")]),
         )
-        monkeypatch.setattr(es, "bare_clone", _no_git_clone)
+        _files_by_title(monkeypatch)
         monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
 
         result = es.classify_dataset("org/ds", tags_only=True)
 
         assert result["eligible"] is True
-        assert result["eligibility_reason"] == "Criteri A: tags>=2 amb commits substantius"
+        assert result["eligibility_reason"] == "Criteri A: tags>=2 i >=2 commits amb dades tabulars"
 
     def test_tags_only_with_insufficient_substantive_commits_is_not_eligible(self, monkeypatch, tmp_path):
         # >=2 tags per si sols ja NO n'hi ha prou (a diferència del
@@ -483,7 +523,7 @@ class TestClassifyDatasetResultShape:
             es, "list_repo_commits",
             lambda **kw: iter([_FakeCommit("Update README"), _FakeCommit("Add new records")]),
         )
-        monkeypatch.setattr(es, "bare_clone", _no_git_clone)
+        _files_by_title(monkeypatch)
         monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
 
         result = es.classify_dataset("org/ds", tags_only=True)
@@ -559,7 +599,7 @@ class TestClassifyDatasetResultShape:
                 _FakeCommit("Fix labeling errors", created_at=now - timedelta(days=2)),
             ]),
         )
-        monkeypatch.setattr(es, "bare_clone", _no_git_clone)
+        _files_by_title(monkeypatch)
         monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
 
         result = es.classify_dataset("org/ds")
@@ -584,7 +624,7 @@ class TestClassifyDatasetResultShape:
                 _FakeCommit("Add new episode", created_at=now - timedelta(minutes=5)),
             ]),
         )
-        monkeypatch.setattr(es, "bare_clone", _no_git_clone)
+        _files_by_title(monkeypatch)
         monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
 
         result = es.classify_dataset("org/ds")
@@ -616,9 +656,9 @@ class TestClassifyDatasetResultShape:
 # ---------------------------------------------------------------------------
 
 class TestDetermineCommitSubstantiveWithPaths:
-    def test_no_clone_dir_falls_back_to_title_no_paths(self):
+    def test_no_clone_dir_returns_no_paths(self):
         is_sub, paths = es.determine_commit_substantive_with_paths(_FakeCommit("Add new records"), None)
-        assert is_sub is True
+        assert is_sub is False
         assert paths is None
 
     def test_real_files_returns_paths(self, monkeypatch):
@@ -628,17 +668,8 @@ class TestDetermineCommitSubstantiveWithPaths:
         assert is_sub is True
         assert paths == ["data/file.parquet", "README.md"]
 
-    def test_get_changed_files_failure_falls_back_with_no_paths(self, monkeypatch):
-        commit = _FakeCommit("Add new records")
-        monkeypatch.setattr(es, "get_changed_files", lambda clone_dir, sha: None)
-        is_sub, paths = es.determine_commit_substantive_with_paths(commit, "/fake/clone")
-        assert is_sub is True
-        assert paths is None
-
     def test_determine_commit_substantive_matches_the_bool_half(self, monkeypatch):
-        # determine_commit_substantive() ha de seguir retornant exactament
-        # el primer element de la tupla -- no s'ha trencat cap contracte
-        # existent (version_extractor.py en depèn).
+        # version_extractor.py fa servir el booleà sol.
         commit = _FakeCommit("Merge pull request #3")
         monkeypatch.setattr(es, "get_changed_files", lambda clone_dir, sha: ["data/file.parquet"])
         assert es.determine_commit_substantive(commit, "/fake/clone") is True
@@ -719,7 +750,7 @@ class TestClassifyDatasetWithChangeClassification:
             es, "list_repo_commits",
             lambda **kw: iter([_FakeCommit("Add new records"), _FakeCommit("Add more records")]),
         )
-        monkeypatch.setattr(es, "bare_clone", _no_git_clone)
+        _files_by_title(monkeypatch)
         monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
 
         result = es.classify_dataset("org/ds")
@@ -900,7 +931,8 @@ class TestRunSamplingReturnValue:
 
         assert csv_path == os.path.join(str(tmp_path), "eligibility_report_1_1.csv")
         assert json_path == os.path.join(str(tmp_path), "funnel_summary_1_1.json")
-        assert summary["eligible_total"] == 1
+        assert summary["eligible"] == 1
+        assert "eligible_total" not in summary
         assert os.path.exists(csv_path)
 
 

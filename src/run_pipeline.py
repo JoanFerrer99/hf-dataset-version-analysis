@@ -73,7 +73,7 @@ def run_full_pipeline(
     :param skip_version_extraction: omet la Fase 1.
     :param skip_classification: omet la Fase 2.
     :param skip_size: no calcula la mida de cada versió a la Fase 1.
-    :return: `run_dir`, `eligibility_csv`, `eligible_total`, `versions_csv`,
+    :return: `run_dir`, `eligibility_csv`, `eligible`, `versions_csv`,
         `change_classification_csv` (`None` si la fase no s'ha executat) i
         `generated_files` (rutes agrupades per fase).
     """
@@ -86,32 +86,32 @@ def run_full_pipeline(
     generated_files: dict[str, list[str]] = {"Fase 0-1 (mostreig+elegibilitat)": [], "Fase 1b (versions)": [],
                                               "Fase 2 (classificació de canvis)": []}
     outputs = {
-        "run_dir": run_dir, "eligibility_csv": None, "eligible_total": 0,
+        "run_dir": run_dir, "eligibility_csv": None, "eligible": 0,
         "versions_csv": None, "change_classification_csv": None, "generated_files": generated_files,
     }
 
     if input_csv:
         log.info(f"Fase 0-1 saltada -- reutilitzant {input_csv}")
         eligibility_csv = input_csv
-        eligible_total = int(pd.read_csv(eligibility_csv)["eligible"].sum())
+        eligible = int(pd.read_csv(eligibility_csv)["eligible"].sum())
     else:
         eligibility_csv, funnel_summary_json, summary = es.run_sampling(
             sample_size=sample_size, max_scanned=max_scanned, num_threads=num_threads, tags_only=tags_only,
         )
-        eligible_total = summary["eligible_total"]
+        eligible = summary["eligible"]
         generated_files["Fase 0-1 (mostreig+elegibilitat)"] += [eligibility_csv, funnel_summary_json]
 
     outputs["eligibility_csv"] = eligibility_csv
-    outputs["eligible_total"] = eligible_total
+    outputs["eligible"] = eligible
 
-    if eligible_total == 0:
+    if eligible == 0:
         log.info("Cap dataset elegible -- s'omet Fase 1b (extracció de versions) i Fase 2 (classificació de canvis).")
         return outputs
 
     if skip_version_extraction:
         log.info("FASE 1b saltada (--skip-version-extraction).")
     else:
-        log.info(f"FASE 1b: Extraient versions dels {eligible_total} datasets elegibles...")
+        log.info(f"FASE 1b: Extraient versions dels {eligible} datasets elegibles...")
         run_id = ve.get_next_run_id(ve.OUTPUT_DIR)
         versions_csv = os.path.join(ve.OUTPUT_DIR, f"versions_{run_id}.csv")
         ve.run_extraction(eligibility_csv, versions_csv, es.HF_TOKEN, ve.RETRY_CONFIG, compute_size=not skip_size)
@@ -121,7 +121,7 @@ def run_full_pipeline(
     if skip_classification:
         log.info("FASE 2 saltada (--skip-classification).")
     else:
-        log.info(f"FASE 2: Classificant canvis dels {eligible_total} datasets elegibles...")
+        log.info(f"FASE 2: Classificant canvis dels {eligible} datasets elegibles...")
         change_classification_csv = es.run_classification(eligibility_csv)
         outputs["change_classification_csv"] = change_classification_csv
         generated_files["Fase 2 (classificació de canvis)"].append(change_classification_csv)
@@ -235,7 +235,7 @@ if __name__ == "__main__":
     print("  RESUM PIPELINE COMPLET")
     print(f"{'=' * 65}")
     print(f"  Carpeta d'aquesta execució: {result['run_dir']}")
-    print(f"  Datasets elegibles:         {result['eligible_total']}")
+    print(f"  Datasets elegibles:         {result['eligible']}")
     print(f"{'=' * 65}")
     print("  Fitxers generats, per fase:")
     for phase, paths in result["generated_files"].items():

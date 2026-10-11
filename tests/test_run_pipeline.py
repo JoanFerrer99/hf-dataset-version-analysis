@@ -53,7 +53,7 @@ def _patch_base_output_dir(monkeypatch, tmp_path):
 def _patch_run_sampling(monkeypatch, calls, eligibility_csv, eligible_total):
     def fake_run_sampling(**kwargs):
         calls.append(("run_sampling", kwargs))
-        return eligibility_csv, "funnel_summary.json", {"eligible_total": eligible_total}
+        return eligibility_csv, "funnel_summary.json", {"eligible": eligible_total}
 
     monkeypatch.setattr(es, "run_sampling", fake_run_sampling)
 
@@ -95,7 +95,7 @@ class TestRunFullPipeline:
         assert calls[2][1] == eligibility_csv  # Fase 2 llegeix el MATEIX CSV, no un altre
         assert result["run_dir"] == str(tmp_path / "run_1")
         assert result["eligibility_csv"] == eligibility_csv
-        assert result["eligible_total"] == 1
+        assert result["eligible"] == 1
         assert result["versions_csv"] == str(tmp_path / "run_1" / "versions_1.csv")
         assert result["change_classification_csv"] == "change_classification_1.csv"
 
@@ -178,7 +178,7 @@ class TestRunFullPipeline:
 
         assert [c[0] for c in calls] == ["run_extraction", "run_classification"]
         assert result["eligibility_csv"] == str(input_csv)
-        assert result["eligible_total"] == 1
+        assert result["eligible"] == 1
         # Fase 0-1 saltada -- no hi ha res a llistar per a aquesta fase.
         assert result["generated_files"]["Fase 0-1 (mostreig+elegibilitat)"] == []
 
