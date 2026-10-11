@@ -1,5 +1,5 @@
 """
-L3: aparellar les columnes de dues versions (quina columna nova és quina antiga).
+Pas 3a i 3c: aparellar les columnes de dues versions (quina columna nova és quina antiga).
 
 1. Pel **nom**: exacte, i després normalitzat (`marital-status` =
    `marital.status`).

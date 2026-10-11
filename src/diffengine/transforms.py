@@ -1,5 +1,7 @@
 """
-Explicar com ha canviat una columna, comparant els seus valors a les files aparellades.
+Eines per explicar com ha canviat una columna, comparant els seus valors a les
+files aparellades. Les fan servir el pas 3c (reconèixer una columna
+reanomenada) i el pas 4 (dir quin canvi ha patit).
 
 - `fit_numeric`: quina transformació porta els valors vells als nous
   (identitat, factor, lineal, min-max, estandardització, logaritme…). Es

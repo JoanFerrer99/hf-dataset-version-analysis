@@ -1,5 +1,5 @@
 """
-L5: detectors de canvis, un mòdul per perspectiva de la taxonomia (paper §4):
+Pas 4: detectors de canvis, un mòdul per perspectiva de la taxonomia (paper §4):
 
 - `columns_set.py`   C2xx: conjunt de columnes (ordre, afegir, eliminar, renom)
 - `column_kind.py`   C3xx: tipus i valors d'una columna

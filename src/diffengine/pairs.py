@@ -1,5 +1,9 @@
 """
-L0, segona part: aparellar les taules de dues revisions i comparar-les.
+Pas 1 (segona part): aparellar les taules de dues revisions i comparar-les.
+
+Aquí comença una comparació de revisions: `compare_revisions` fa el pas 1 i
+crida `engine.diff_tables` (passos 3 i 4) per a cada parell; `revision_rows`
+converteix el resultat en files de sortida (pas 5).
 
 - Cada revisió es llista amb l'API (`list_revision`) i se'n resolen les
   taules (`units.resolve_units`).

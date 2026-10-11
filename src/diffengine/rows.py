@@ -1,5 +1,5 @@
 """
-L4: aparellar les files de dues versions (quina fila nova és quina antiga).
+Pas 3b: aparellar les files de dues versions (quina fila nova és quina antiga).
 
 Per passos (`align_rows`):
 1. **Clau**: si una columna té valors únics a les dues versions i en

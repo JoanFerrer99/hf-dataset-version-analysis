@@ -1,5 +1,7 @@
 """
-L0, primera part: quines taules té un repositori en una revisió.
+Pas 1 (primera part): quines taules té un repositori en una revisió.
+
+És el primer pas del motor (vegeu l'índex a `engine.py`).
 
 A Hugging Face, un dataset no és un fitxer: pot estar partit en shards
 (`train-00000-of-00003.parquet`…), en episodis (LeRobot), en subconjunts i

@@ -1,4 +1,4 @@
-"""Tests de L1 (`diffengine.load`)."""
+"""Tests del pas 2 del motor: llegir una taula (`diffengine.load`)."""
 
 import io
 

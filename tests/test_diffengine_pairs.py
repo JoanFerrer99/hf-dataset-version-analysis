@@ -1,4 +1,4 @@
-"""Tests de L0 (`diffengine.pairs`): aparellament de taules i estats, sense xarxa."""
+"""Tests del pas 1 del motor (`diffengine.pairs`): aparellament de taules i estats, sense xarxa."""
 
 import pandas as pd
 

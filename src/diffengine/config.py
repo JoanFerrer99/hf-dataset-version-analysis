@@ -15,13 +15,13 @@ from dataclasses import asdict, dataclass
 
 @dataclass(frozen=True)
 class EngineConfig:
-    # --- L0: unitats i fitxers ---------------------------------------------
+    # --- Pas 1: quines taules es comparen -----------------------------------
     concat_shards: bool = True
     """U1: concatena els shards (hf_shards / numbered) d'una taula si comparteixen esquema."""
     max_unit_bytes: int = 500 * 1024**2
     """U4: per sobre, la taula es marca `too_large_profile_only`."""
 
-    # --- L1: càrrega i tipus ----------------------------------------------
+    # --- Pas 2: llegir cada taula -------------------------------------------
     missing_tokens: tuple[str, ...] = ("", "?", "NA", "N/A", "n/a", "NaN", "nan", "null", "NULL", "None", "none", "-")
     """Valors que es llegeixen com a absents (comparats després de treure espais)."""
     text_min_distinct_share: float = 0.5
@@ -29,7 +29,7 @@ class EngineConfig:
     text_min_mean_length: float = 30.0
     """P6: ... i una longitud mitjana d'almenys aquests caràcters."""
 
-    # --- L3: alineació de columnes ------------------------------------------
+    # --- Pas 3a/3c: aparellar columnes --------------------------------------
     column_match_min_validity: float = 0.95
     """Proporció de files aparellades que una explicació (identitat, bijecció, transformació) ha de reproduir."""
     numeric_rel_tolerance: float = 1e-6
@@ -43,7 +43,7 @@ class EngineConfig:
     mostly_null_share: float = 0.8
     """C222 `mostly_null`: proporció de nuls a la columna eliminada."""
 
-    # --- L4: alineació de files --------------------------------------------
+    # --- Pas 3b: aparellar files --------------------------------------------
     edited_row_min_agreement: float = 0.5
     """P2: proporció mínima de columnes aparellades on dues files han de coincidir per ser "la mateixa fila editada"."""
     key_min_overlap: float = 0.5
@@ -53,7 +53,7 @@ class EngineConfig:
     row_subtype_min_validity: float = 0.9
     """Validesa mínima per assignar un subtipus de fila (`outlier`, `predicate`...)."""
 
-    # --- L5: detectors ------------------------------------------------------
+    # --- Pas 4: detectar els canvis -----------------------------------------
     null_transition_is_c510: bool = True
     """P1: valor <-> nul en una fila aparellada és C510 (si no, C312/C322)."""
     kind_change_by_old_kind: bool = True

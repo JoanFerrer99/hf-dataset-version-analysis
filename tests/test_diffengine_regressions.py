@@ -2,7 +2,7 @@
 Casos FP/FN coneguts del motor antic (prompt del motor v2), un test per cas.
 Les decisions que en canvien l'expectativa són a `docs/open_decisions.md`
 (C100 fora d'abast: cas 8; P8: cas 15; C530 sense target: casos 16 i 17).
-Els casos 11 i 13 (fallada de descàrrega, dos fitxers) són de L0:
+Els casos 11 i 13 (fallada de descàrrega, dos fitxers) són del pas 1 (trobar les taules):
 `tests/test_diffengine_pairs.py`.
 """
 

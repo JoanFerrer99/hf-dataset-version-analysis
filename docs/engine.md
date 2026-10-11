@@ -56,13 +56,25 @@ estadístics) i una **confiança**. Cada parell de taules acaba amb un
 
 ## 3. Recorregut d'una comparació, pas a pas
 
-Els passos s'anomenen capes (L0–L6). A la Fase 2 del pipeline, la crida és
-`pairs.compare_revisions(repo, revisió_antiga, revisió_nova, ...)`, que
-encadena tots els passos. Per comparar dos fitxers sols hi ha
-`engine.diff_bytes(bytes_antics, ".csv", bytes_nous, ".parquet")`, que comença
-directament a L1.
+El motor fa sempre els mateixos 5 passos, en aquest ordre. `engine.py` n'és
+l'índex: llegint-lo de dalt a baix es veuen tots cinc.
 
-### L0 — Quines taules hi ha i quina va amb quina (`units.py`, `pairs.py`)
+| Pas | Què fa | Mòduls |
+|---|---|---|
+| 1 | Trobar les taules que es comparen i quina va amb quina | `units.py`, `pairs.py` |
+| 2 | Llegir cada taula i saber el tipus de cada columna | `load.py` |
+| 3 | Aparellar columnes i files: 3a columnes pel nom, 3b files, 3c columnes pel contingut | `columns.py`, `rows.py`, `transforms.py` |
+| 4 | Detectar els canvis | `detectors/` |
+| 5 | Escriure el resultat | `output.py` |
+
+Hi ha dues maneres d'entrar. El pipeline (Fase 2) crida
+`pairs.compare_revisions(repo, revisió_antiga, revisió_nova, ...)`, que fa
+el pas 1 i, per a cada parell de taules, els passos 2 a 4. Per comparar dos
+fitxers sols (la validació de Census Income, els tests) hi ha
+`engine.diff_bytes(bytes_antics, ".csv", bytes_nous, ".parquet")`, que comença
+al pas 2.
+
+### Pas 1 — Trobar les taules que es comparen (`units.py`, `pairs.py`)
 
 **Problema.** A Hugging Face, un dataset no és un fitxer. Pot estar partit
 en shards (`train-00000-of-00003.parquet`…), en episodis (LeRobot,
@@ -101,7 +113,7 @@ exactament el mateix contingut (mateix hash de git), no es descarreguen.
 | `too_large_profile_only` | Massa gran (`max_unit_bytes`); no es compara |
 | `excluded` | Fitxer tabular que ha canviat però no és cap taula (metadades, fora de cap partició); el motiu queda a `detail` |
 
-### L1 — Llegir un fitxer i saber el tipus de cada columna (`load.py`)
+### Pas 2 — Llegir cada taula (`load.py`)
 
 **Problema.** El tipus que dona pandas no és el tipus de la dada: una
 columna d'enters amb un nul passa a `float`, un CSV porta espais després de
@@ -115,13 +127,27 @@ però es recorden per detectar si canvien (C510 `representation`). Les
 columnes de LeRobot que guarden un escalar dins d'un array d'un element
 (`[0.04]`) es llegeixen com a nombres.
 
-### L4 — Aparellar files (`rows.py`)
+### Pas 3 — Aparellar columnes i files (`columns.py`, `rows.py`, `transforms.py`)
 
-**Problema.** Saber quina fila nova correspon a quina antiga, encara que
-les files estiguin en un altre ordre, n'hi hagi de noves o d'eliminades, o
-se n'hagi editat alguna cel·la.
+**Problema.** Saber quina columna nova és quina antiga (`is_male` era
+`sex`, `final_weight` era `fnlwgt`) i quina fila nova és quina antiga
+(encara que hagin canviat de lloc, n'hi hagi de noves o se n'hagi editat
+alguna cel·la).
 
-**Solució.** `rows.align_rows`, per passos:
+Columnes i files depenen les unes de les altres: per reconèixer una columna
+reanomenada pel contingut cal saber quines files són la mateixa, i una
+columna reconeguda ajuda a reconèixer files. Per això el pas 3 té tres
+subpassos, que s'alternen com a màxim dues vegades
+(`engine.match_columns_and_rows`).
+
+#### 3a. Columnes pel nom (`columns.align_by_name`)
+
+Les columnes amb el mateix nom, exacte o normalitzat (`marital-status` =
+`marital.status`), són la mateixa. Les altres queden pendents per al 3c.
+
+#### 3b. Files (`rows.align_rows`)
+
+Es prova, en aquest ordre:
 
 1. **Clau.** Si hi ha una columna amb valors únics a les dues versions i
    que comparteixen la majoria de valors (un identificador), s'uneix per
@@ -144,33 +170,29 @@ Les columnes que són comptadors de posició (`index`, `episode_index` a
 LeRobot) no entren al hash, perquè una inserció al mig les renumera totes
 (P10). La classe `_HashMatcher` té un mètode per cada pas.
 
-### L3 — Aparellar columnes (`columns.py`, `transforms.py`)
+#### 3c. Columnes pel contingut (`columns.align_by_content`)
 
-**Problema.** Saber que `is_male` és l'antiga `sex`, o que `final_weight` és
-l'antiga `fnlwgt`.
-
-**Solució.** Primer pel **nom** (exacte i normalitzat: `marital-status` =
-`marital.status`). Les columnes que queden sense parella es comparen pel
-**contingut** sobre les files aparellades: valors idèntics, una
+Les columnes que han quedat sense parella al 3a es comparen pel
+**contingut**, sobre les files aparellades al 3b: valors idèntics, una
 correspondència u a u entre categories (`Male` → `True`), o una
-transformació numèrica (×1000, logaritme, estandardització…). L'assignació
-de totes les parelles alhora la fa l'algorisme hongarès
-(`linear_sum_assignment`). Si la versió nova és una altra mostra de files,
-una columna també és la mateixa si comparteix la majoria de valors i la
-mateixa distribució. Abans de tot això es busquen les codificacions one-hot
-(una categòrica que es converteix en diverses columnes 0/1).
+transformació numèrica (×1000, logaritme, estandardització…). Si la versió
+nova és una altra mostra de files, una columna també és la mateixa si
+comparteix la majoria de valors i la mateixa distribució. Abans es busquen
+les codificacions one-hot (una categòrica que es converteix en diverses
+columnes 0/1). Totes les parelles es trien alhora amb l'algorisme hongarès
+(`linear_sum_assignment`); el nom només desempata.
 
-Columnes i files depenen les unes de les altres: per comparar el contingut
-de dues columnes calen les files aparellades, i un renom trobat millora
-l'aparellament de files. Per això `engine.diff_tables` alterna L4 i L3 fins
-a dues vegades.
+**Si en troba alguna, torna al 3b**: amb més columnes aparellades es
+reconeixen millor les files. Al final, les columnes que encara no tenen
+parella s'han afegit (C221) o eliminat (C222) (`columns.classify_leftovers`).
 
-`transforms.py` conté les funcions que expliquen com ha canviat una columna:
-`fit_numeric` (quina transformació porta els valors vells als nous),
-`analyze_mapping` (reetiquetatge, fusió o divisió de categories, edicions
-soltes) i `distribution_distance` (quant ha canviat la distribució).
+Les funcions que expliquen com ha canviat una columna són a
+`transforms.py`: `fit_numeric` (quina transformació porta els valors vells
+als nous), `analyze_mapping` (reetiquetatge, fusió o divisió de categories,
+edicions soltes) i `distribution_distance` (quant ha canviat la
+distribució). Les fan servir el 3c i el pas 4.
 
-### L5 — Detectar els canvis (`detectors/`)
+### Pas 4 — Detectar els canvis (`detectors/`)
 
 Amb tot aparellat, cada detector busca uns codis. Hi ha un fitxer per cada
 perspectiva de la taxonomia del paper (§4):
@@ -193,7 +215,7 @@ explicació reprodueix, o 1 − p d'una prova estadística. L'evidència guarda
 el que justifica el codi. Els tests comproven que cap codi surt sense totes
 dues.
 
-### L6 — Sortida (`output.py`)
+### Pas 5 — Escriure el resultat (`output.py`)
 
 | Fitxer | Una fila per | Contingut |
 |---|---|---|
@@ -249,9 +271,9 @@ sola sessió.
 - **Punts d'entrada:** `engine.diff_bytes` (dos fitxers), `engine.diff_tables`
   (dues taules ja carregades), `pairs.compare_revisions` +
   `pairs.revision_rows` (dues revisions d'un repositori).
-- **Ordre de lectura del codi:** `engine.py` (l'esquelet, curt), `load.py`,
-  `rows.py`, `columns.py` + `transforms.py`, `detectors/` (un fitxer per
-  perspectiva), `output.py`, i finalment `units.py` + `pairs.py`.
+- **Ordre de lectura del codi:** `engine.py` (l'índex dels 5 passos, curt), i
+  després cada pas en ordre: `units.py` + `pairs.py`, `load.py`,
+  `columns.py` + `rows.py` + `transforms.py`, `detectors/`, `output.py`.
 - **El paquet no depèn del pipeline.** Les crides al Hub passen per un
   paràmetre `call`, on el pipeline hi posa la seva política de reintents.
   Les dependències internes només van cap avall:
@@ -270,7 +292,7 @@ pairs ─→ engine ─→ detectors ─→ columns ─→ transforms ─→ loa
   calibration`.
 - **Tests:** `tests/test_diffengine_regressions.py` té un test per cada cas
   real o conegut; `test_diffengine_units.py`, `test_diffengine_pairs.py` i
-  `test_diffengine_load.py` cobreixen L0 i L1.
+  `test_diffengine_load.py` cobreixen els passos 1 i 2.
 - **Cost:** per a una taula de `r` files i `c` columnes, gairebé tot és
   proporcional a `r × c`. Les taules amb el mateix contingut no es
   descarreguen, i les que passen de 500 MB no es comparen.

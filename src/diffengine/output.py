@@ -1,5 +1,5 @@
 """
-L6: com es representa un canvi i les taules de sortida.
+Pas 5: com es representa un canvi i les taules de sortida.
 
 - `Change`: un canvi detectat (codi, columna, subtipus, files afectades,
   confiança i evidència). És una fila de `changes_<k>.csv`.

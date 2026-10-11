@@ -1,5 +1,5 @@
 """
-L1: llegir un fitxer tabular i saber el tipus de cada columna.
+Pas 2: llegir un fitxer tabular i saber el tipus de cada columna.
 
 El tipus que dona pandas no és el tipus de la dada: una columna d'enters amb
 un sol nul passa a `float`, un CSV porta espais després de les comes, i `?`

@@ -225,19 +225,18 @@ Scripts de `src/`, en l'ordre en què s'executen:
 | `errors.py` | Reintents, classificació d'errors, registre de fallades |
 | `validate_census_income.py` | Valida el motor contra la Taula 1 del paper (Census Income); s'executa a part |
 
-Mòduls de `src/diffengine/`, en l'ordre en què treballen (capes de
-`docs/engine.md`):
+Mòduls de `src/diffengine/`, en l'ordre dels 5 passos del motor
+(`engine.py` n'és l'índex; explicació a `docs/engine.md`):
 
-| Mòdul | Capa | Què fa |
+| Pas | Què fa | Mòduls |
 |---|---|---|
-| `units.py`, `pairs.py` | L0 | Quines taules té cada revisió i com s'aparellen entre revisions |
-| `load.py` | L1 | Llegeix un fitxer i dedueix el tipus de cada columna |
-| `columns.py`, `transforms.py` | L3 | Aparella columnes (nom i contingut) |
-| `rows.py` | L4 | Aparella files |
-| `detectors/` | L5 | Un fitxer per perspectiva de la taxonomia: `columns_set.py` (C2xx), `column_kind.py` (C3xx), `rows_set.py` (C4xx), `data.py` (C5xx) |
-| `output.py` | L6 | Taules de sortida |
-| `engine.py` | — | Encadena les capes per a un parell de taules |
-| `config.py` | — | Tots els llindars i decisions provisionals |
+| 1 | Trobar les taules que es comparen i quina va amb quina | `units.py`, `pairs.py` |
+| 2 | Llegir cada taula i saber el tipus de cada columna | `load.py` |
+| 3 | Aparellar columnes i files (3a columnes pel nom, 3b files, 3c columnes pel contingut) | `columns.py`, `rows.py`, `transforms.py` |
+| 4 | Detectar els canvis: un fitxer per perspectiva de la taxonomia (C2xx, C3xx, C4xx, C5xx) | `detectors/` |
+| 5 | Escriure el resultat | `output.py` |
+
+`config.py` té tots els llindars, agrupats pels mateixos passos.
 
 Scripts d'`experiments/` (no formen part del pipeline):
 
@@ -412,8 +411,7 @@ proporció tabular molt baixa.
   per tenir N datasets elegibles, i per tant amb dades tabulars per
   comparar, cal una mostra d'unes N × `attempts_per_eligible`.
 
-Per exemple, amb la sortida de `run_8` (encara amb el criteri antic, que
-comptava qualsevol fitxer de dades):
+Per exemple, amb la sortida de `run_8`:
 
 ```
 eligible                                    11
@@ -422,10 +420,6 @@ eligible_proportion_of_attempts         0.0055   (11/2000)      elegibles / tots
 estimated_eligible_in_scanned_population  5877   (0.0055 × 1.068.504)
 attempts_per_eligible                    181.8   (2000/11)      per a 50 elegibles, ~9.100 intents
 ```
-
-Amb el criteri tabular, la proporció d'elegibles serà més baixa i
-`attempts_per_eligible` més alt: a `run_8`, només 4 dels 11 elegibles tenien
-alguna taula comparada.
 
 ---
 
@@ -491,13 +485,13 @@ mostra baixaria centenars de GB).
 
 ### 9.2 El motor (`diffengine/`)
 
-Per a cada parell de taules: llegeix els fitxers deduint el tipus de cada
-columna pels valors (L1), aparella les columnes per nom i per contingut
-(L3) i les files per clau inferida o per hash de fila (L4), i aplica un
-detector per família de codis (L5). Cada canvi surt amb subtipus (p.e.
-C322 `standardization`, C422 `had_nulls`), files afectades, confiança i
-evidència. Tots els llindars són a `diffengine/config.py`. Detall de cada
-capa i criteri: `docs/engine.md`.
+Per a cada parell de taules, el motor fa 5 passos: troba les taules que es
+comparen (1), les llegeix deduint el tipus de cada columna pels valors (2),
+aparella les columnes pel nom i pel contingut i les files per clau o per
+hash (3), i aplica un detector per família de codis (4). Cada canvi surt
+amb subtipus (p.e. C322 `standardization`, C422 `had_nulls`), files
+afectades, confiança i evidència (5). Tots els llindars són a
+`diffengine/config.py`. Detall de cada pas: `docs/engine.md`.
 
 ### 9.3 Limitacions conegudes
 
@@ -516,7 +510,7 @@ incremental, mai sobreescriu) i hi desa tot:
 | `eligibility_report_<N>_<k>.csv` | 0 | Una fila per dataset de la mostra: `dataset_id, num_tags, num_branches, num_commits_substantive, num_data_files, tabular_file_share, eligible, eligibility_reason, status, error_category, error`. `status` = `classified`, `access_restricted` (403) o `error`. |
 | `funnel_summary_<N>_<k>.json` | 0 | Resum de l'embut (secció 7.4): població recorreguda, elegibles per criteri, inaccessibles, errors, proporcions. |
 | `versions_<k>.csv` | 1 | Una fila per versió: `dataset_id, version_label, version_order, version_source, commit_sha, commit_date, authors, approx_size_bytes, session_commit_count, status`. |
-| `changes_<k>.csv` / `.parquet` | 2 | Una fila per canvi detectat: revisions, fitxer(s), `code`, `column`, `old_column`, `subtype`, files afectades, `confidence`, `evidence_json`, `engine_version`, `config_hash` (esquema complet: `docs/engine.md` §L6). |
+| `changes_<k>.csv` / `.parquet` | 2 | Una fila per canvi detectat: revisions, fitxer(s), `code`, `column`, `old_column`, `subtype`, files afectades, `confidence`, `evidence_json`, `engine_version`, `config_hash` (vegeu `docs/engine.md`, pas 5). |
 | `change_pairs_<k>.csv` | 2 | Una fila per parell de taules comparat, amb el seu `status` i com s'han aparellat les files. |
 | `change_classification_<k>.csv` | 2 | Format antic, derivat de `changes`: `dataset_id, version_from, version_to, file_path, code, description, is_breaking`. `version_from`/`version_to` són SHA de commit. |
 | `failures.csv` | totes | Només si hi ha fallades: `timestamp, source, dataset_id, error_category, error_message, retries_attempted`. `source` indica la fase. |
