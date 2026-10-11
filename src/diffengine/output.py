@@ -1,10 +1,12 @@
 """
-L6: model de sortida.
+L6: com es representa un canvi i les taules de sortida.
 
-- `Change`: un canvi detectat (una fila de la taula de canvis).
-- `DiffResult`: els canvis d'un parell de versions més el seu estat.
-- `changes_frame` / `status_frame`: taules llargues per escriure a CSV/parquet.
-- `legacy_frame`: export amb les columnes del CSV antic, més `file_path`.
+- `Change`: un canvi detectat (codi, columna, subtipus, files afectades,
+  confiança i evidència). És una fila de `changes_<k>.csv`.
+- `DiffResult`: els canvis d'un parell de taules més el seu estat.
+- `changes_frame`, `status_frame`: les taules que escriu la Fase 2.
+- `legacy_frame`: el CSV en el format antic, per compatibilitat.
+- `TABULAR_CODES`, `CODE_DESCRIPTIONS`, `BREAKING_CODES`: la taxonomia.
 """
 
 import json

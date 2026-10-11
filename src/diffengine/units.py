@@ -1,11 +1,16 @@
 """
-L0 (part 1): quines taules té un repositori en una revisió.
+L0, primera part: quines taules té un repositori en una revisió.
 
-Un "dataset" del motor és una taula (subset, split) tal com la mostra el
-Hub. La resolució la fa la llibreria `datasets` amb les seves pròpies
-regles (patró de shards, noms de split, YAML `configs` del README, un sol
-format per dataset), sobre una còpia buida de l'arbre de fitxers: no es
-descarrega cap dada.
+A Hugging Face, un dataset no és un fitxer: pot estar partit en shards
+(`train-00000-of-00003.parquet`…), en episodis (LeRobot), en subconjunts i
+particions (train/test). La unitat que compara el motor és la **taula
+(subset, split)**, tal com la mostra el Hub (decisió U1).
+
+Per saber quines taules hi ha, `resolve_units` fa servir les mateixes regles
+que la llibreria `datasets`: recrea l'arbre de fitxers com a fitxers buits
+en un directori temporal (no es descarrega res) i li pregunta quines
+particions hi veu. S'hi afegeixen dos casos que `datasets` no cobreix: els
+repositoris de vídeo amb taules (P11) i els repositoris que no sap llegir.
 """
 
 import os

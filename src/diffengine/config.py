@@ -1,7 +1,10 @@
 """
-Configuració del motor: tots els llindars i decisions provisionals en un sol
-lloc, amb el valor per defecte documentat. Les decisions P* i U* es
-descriuen a `docs/open_decisions.md`. Per provar uns altres valors:
+Tots els llindars i decisions provisionals del motor, en un sol lloc.
+
+Cada camp porta el seu valor per defecte i el perquè. Les decisions
+provisionals (P*, U*) s'expliquen a `docs/open_decisions.md`. Cada fila de
+sortida guarda el hash d'aquesta configuració, per saber amb quins llindars
+s'ha generat. Per provar uns altres valors:
 `dataclasses.replace(DEFAULT_CONFIG, alpha=0.05)`.
 """
 

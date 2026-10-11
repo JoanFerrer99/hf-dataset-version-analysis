@@ -1,21 +1,23 @@
 """
-L4: aparellar les files de dues versions.
+L4: aparellar les files de dues versions (quina fila nova és quina antiga).
 
-1. Clau: si una columna aparellada és única i no nul·la a les dues versions
-   i en comparteix els valors, s'uneix per ella.
-2. Si no, hash additiu de fila sobre les columnes ESTABLES (les que
-   conserven el seu multiconjunt de valors). Les columnes transformades
-   senceres (factor, reetiquetatge...) es deixen fora: si no, cap fila
-   coincidiria. El hash d'una fila és la suma (mod 2^64) dels hashes de les
-   seves cel·les, així que "la fila sense la columna j" és una resta.
-   Les files repetides porten un índex d'ocurrència.
-3. Les files que queden soles s'aparellen si difereixen en una sola
-   columna estable (hash sense aquella columna), sempre que coincideixin
-   en prou columnes (P2).
+Per passos (`align_rows`):
+1. **Clau**: si una columna té valors únics a les dues versions i en
+   comparteixen la majoria (un identificador), s'uneix per ella. Un número
+   de fila (0, 1, 2…) no compta: es renumera quan s'insereixen files.
+2. **Files idèntiques**: cada fila es resumeix en un número (hash) a partir
+   dels valors de les columnes que conserven la majoria dels seus valors.
+   El hash d'una fila és la suma dels hashes de les seves cel·les, i per
+   això "la fila sense una columna" és una simple resta.
+3. **Files editades en una columna**, i després en dues: es tornen a
+   comparar sense aquelles columnes. Només s'accepta si no pot ser
+   casualitat.
+4. **Parelles dubtoses**: si diverses files són idèntiques, quina va amb
+   quina és ambigu; es marquen i no s'usen per comparar valors ni ordre.
 
-Els números de fila i les seqüències (`index`, `episode_index`) no són ni
-clau ni part del hash: només diuen la posició, i una inserció al mig els
-renumera a totes les files següents.
+Els comptadors de posició (`index`, `episode_index`) no entren al hash: una
+inserció al mig els renumera tots (P10). La classe `_HashMatcher` té un
+mètode per cada pas.
 """
 
 from dataclasses import dataclass, field

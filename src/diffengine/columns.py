@@ -1,14 +1,16 @@
 """
-L3: aparellar les columnes de dues versions.
+L3: aparellar les columnes de dues versions (quina columna nova és quina antiga).
 
-1. Per nom exacte, i després per nom normalitzat (majúscules, separadors).
-2. Les columnes eliminades × afegides que queden, per CONTINGUT sobre les
-   files aparellades (L4): contingut idèntic, bijecció (Explain-Da-V §4.6),
-   transformació numèrica (§4.1) o one-hot (§4.4). L'assignació és global
-   (algorisme hongarès); el nom només desempata.
-3. Columnes afegides que són funció d'una columna que encara existeix:
-   C221 `derived`. Columnes eliminades: `mostly_null`, `duplicate_of:<col>`
-   o `unexplained`.
+1. Pel **nom**: exacte, i després normalitzat (`marital-status` =
+   `marital.status`).
+2. Les que queden sense parella, pel **contingut** sobre les files ja
+   aparellades: valors idèntics, una correspondència u a u entre categories
+   (`Male` → `True`), una transformació numèrica (×1000, logaritme…) o una
+   codificació one-hot. Si la versió nova és una altra mostra de files, també
+   val compartir la majoria de valors amb la mateixa distribució. Totes les
+   parelles es trien alhora amb l'algorisme hongarès; el nom només desempata.
+3. El que encara queda: columnes afegides (C221, `derived` si es poden
+   calcular a partir d'una que ja hi era) i eliminades (C222).
 """
 
 import difflib

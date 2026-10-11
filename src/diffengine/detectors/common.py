@@ -1,4 +1,13 @@
-"""El que comparteixen tots els detectors: el context de la comparació i com es crea un canvi."""
+"""
+El que comparteixen tots els detectors.
+
+- `Context`: les dues taules ja aparellades, més anotacions que uns
+  detectors deixen per als següents (p.e. quines columnes ha explicat una
+  transformació, perquè el detector de distribució no les torni a marcar).
+- `change`: com es crea un canvi.
+- `find_identifiers`: quines columnes identifiquen files (claus,
+  comptadors) i no s'han de tractar com a variables.
+"""
 
 from dataclasses import dataclass, field
 

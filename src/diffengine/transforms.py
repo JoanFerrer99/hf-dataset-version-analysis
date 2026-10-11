@@ -1,11 +1,16 @@
 """
-Explicar com ha canviat una columna a partir de les files aparellades.
+Explicar com ha canviat una columna, comparant els seus valors a les files aparellades.
 
-- Numèriques: s'ajusta una transformació (de la més simple a la més
-  complexa) i s'accepta si reprodueix una proporció de files ≥ validesa
-  mínima (Explain-Da-V §4.1, §7.1).
-- Categòriques: taula de contingència vell × nou: bijecció (reetiquetatge o
-  anonimització), fusió, divisió o edicions soltes.
+- `fit_numeric`: quina transformació porta els valors vells als nous
+  (identitat, factor, lineal, min-max, estandardització, logaritme…). Es
+  proven de la més simple a la més complexa, i se n'accepta una si reprodueix
+  gairebé totes les files, també les que han canviat.
+- `analyze_mapping`: com es corresponen les categories velles i noves
+  (reetiquetatge, anonimització, fusió, divisió, només format, o edicions
+  soltes).
+- `distribution_distance`: quant ha canviat la distribució d'una columna
+  (prova KS o variació total), compartida per C530 i per l'aparellament de
+  columnes.
 """
 
 import re

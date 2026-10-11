@@ -1,11 +1,18 @@
 """
-Orquestració: de dos fitxers (o dues taules ja carregades) a la llista de canvis.
+L'esquelet del motor: de dues taules a la llista de canvis.
 
-1. Columnes per nom (L3) i files (L4).
-2. Si queden columnes sense parella, es busquen renoms pel contingut sobre les
-   files aparellades i, si se'n troben, es tornen a aparellar les files
-   (com a màxim 2 vegades: un renom pot millorar l'aparellament de files).
-3. Cada detector (L5) busca els seus codis.
+Recorregut (cada pas és un mòdul):
+1. Llegir els fitxers i deduir el tipus de cada columna (`load.py`).
+2. Aparellar les columnes pel nom (`columns.align_by_name`) i les files
+   (`rows.align_rows`).
+3. Si queden columnes sense parella, buscar renoms pel contingut
+   (`columns.align_by_content`). Si se'n troben, tornar a aparellar les
+   files, perquè ara hi ha més columnes per reconèixer-les. Com a màxim 2
+   vegades.
+4. Cada detector (`detectors/`) busca els seus codis sobre el que s'ha
+   aparellat.
+
+És el millor fitxer per començar a llegir el motor.
 """
 
 import hashlib

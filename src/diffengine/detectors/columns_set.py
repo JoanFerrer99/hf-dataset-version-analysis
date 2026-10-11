@@ -1,4 +1,11 @@
-"""C2xx: canvis en el conjunt de columnes. Les decisions ja les ha pres l'aparellament de columnes (L3)."""
+"""
+C2xx, canvis en el conjunt de columnes: ordre (C210), columna afegida (C221),
+eliminada (C222) o reanomenada (C223).
+
+No cal calcular gaire: l'aparellament de columnes (`columns.py`) ja ha decidit
+quines són la mateixa, quines són noves i quines han desaparegut. Aquí
+només es converteix en codis.
+"""
 
 from diffengine.columns import order_changed
 from diffengine.detectors.common import Context, change

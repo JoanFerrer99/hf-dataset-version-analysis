@@ -1,8 +1,17 @@
 """
-Valida el motor de diffing contra el ground truth de Census Income:
-compara cada versió D1-D7 (Hugging Face) amb l'original de la UCI (D0) i
-contrasta els codis detectats amb la Taula 1 del paper. Script aïllat,
-no el crida `run_pipeline.py`.
+Validació del motor amb la Taula 1 del paper (Census Income).
+
+El paper etiqueta a mà els canvis de 7 versions del dataset Census Income
+publicades a Hugging Face (D1–D7) respecte a l'original de la UCI (D0). Aquest
+script fa el mateix amb el motor i compara el resultat amb la taula, codi
+per codi: encerts, falsos positius i falsos negatius.
+
+Decisions que hi ha al codi (explicades a `docs/validacio_census_income.md`):
+  - D0 és `adult.data` de la UCI, com al paper.
+  - Cada versió es llegeix a una revisió fixada del repositori.
+  - D6 té tres fitxers que són un sol dataset partit: es concatenen.
+
+Script aïllat: no el crida `run_pipeline.py`.
 
 Ús:
   python validate_census_income.py

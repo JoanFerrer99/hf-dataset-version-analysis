@@ -1,13 +1,19 @@
 """
-L1: llegir un fitxer tabular i normalitzar-lo.
+L1: llegir un fitxer tabular i saber el tipus de cada columna.
 
-- CSV/TSV es llegeixen com a text cru (es conserva per detectar canvis de
-  representació) i després es converteixen.
-- El tipus lògic de cada columna surt dels VALORS, no del dtype de pandas:
-  una columna entera que guanya un NaN continua sent entera.
-- Les cel·les no hashables (dict, list, bytes: imatge/àudio de HF) es
-  serialitzen de manera determinista: participen en la identitat i l'ordre
-  de les files, però no en les comparacions de valors.
+El tipus que dona pandas no és el tipus de la dada: una columna d'enters amb
+un sol nul passa a `float`, un CSV porta espais després de les comes, i `?`
+vol dir "absent". Per això `load_table`:
+
+- Llegeix els CSV com a text i en detecta el separador i el dialecte.
+- Converteix els tokens d'absent (`?`, `NA`, buit…) en nuls, però en guarda
+  quins eren, per detectar si canvien (C510 `representation`).
+- Dedueix el **tipus lògic** pels valors: `numeric`, `categorical`, `text`
+  (text lliure) o `opaque` (imatges, àudio, vectors). Les cel·les opaques es
+  converteixen en text determinista: serveixen per reconèixer files, però no
+  es comparen.
+- Llegeix com a nombre una columna d'arrays d'un sol element (LeRobot desa
+  així els escalars).
 """
 
 import csv

@@ -1,6 +1,13 @@
 """
-C3xx: canvis en una columna. C311/C321: el tipus (categòrica ↔ numèrica).
-C312/C322: els valors, comparats cel·la a cel·la sobre les files aparellades.
+C3xx, canvis en una columna concreta.
+
+- C311/C321: canvia el tipus (categòrica ↔ numèrica), codificat pel tipus
+  antic (P3). Si el canvi és una correspondència u a u entre valors
+  (codificar categories com a enters), també C312 `recoded` (P13).
+- C312/C322: canvien els valors. Es comparen cel·la a cel·la a les files
+  aparellades, i el subtipus diu què ho explica: una transformació
+  (`factor`, `log`…), un mapatge de categories (`relabel`, `merge`…), només
+  el format (`representation`) o edicions soltes (`cell_edits`).
 """
 
 import numpy as np

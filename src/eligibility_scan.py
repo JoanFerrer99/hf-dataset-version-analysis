@@ -1,13 +1,28 @@
 """
-Fase 0 (mostreig + elegibilitat) i Fase 2 (classificació de canvis).
+Fase 0 (mostreig i elegibilitat) i Fase 2 (classificació de canvis).
 
-  - Mostreig: reservoir sampling uniforme sobre tota la població de HF.
-  - Elegibilitat: Criteri A (>=2 tags + >=2 commits que toquen dades
-    tabulars) o Criteri B (>=2 branques + commits que toquen dades tabulars
-    en >=2 sessions). Només compten els fitxers tabulars (`.parquet`,
-    `.csv`, `.tsv`, `.json`, `.jsonl`): són els únics que el motor compara.
-  - Classificació (`run_classification`): codis de la taxonomia per als
-    datasets elegibles d'un CSV ja generat.
+Què volem saber: quins datasets de Hugging Face tenen més d'una versió de
+dades tabulars, i per tant es poden estudiar. Com que n'hi ha ~1 milió, es
+treballa sobre una mostra.
+
+1. **Mostreig** (`reservoir_sample_dataset_ids`): mostra aleatòria uniforme
+   de tota la població amb l'algorisme de reservori, sense carregar-la mai
+   sencera a memòria.
+2. **Elegibilitat** (`classify_dataset`): un dataset és elegible si té
+   - Criteri A: >=2 tags i >=2 commits que toquen dades tabulars; o
+   - Criteri B: >=2 branques i commits que toquen dades tabulars repartits
+     en >=2 sessions de treball (separades per més de 6 hores).
+   Per saber quins fitxers toca cada commit es fa un clon de git sense
+   contingut (`bare_clone`) i `git show` en local, sense crides a l'API.
+   Només compten els fitxers de dades tabulars (`is_tabular_data_path`):
+   són els únics que el motor pot comparar.
+3. **Resum de l'embut** (`compute_funnel_stats`): proporció d'elegibles i
+   quants intents calen per elegible, per fixar la mida de la mostra.
+4. **Classificació** (`run_classification`): per als elegibles, compara
+   versions consecutives amb el motor (`diffengine`) i escriu els canvis.
+
+Per llegir el codi: `classify_dataset` és el centre de tot.
+Detall: `docs/architecture.md`, seccions 7 i 9.
 
 Ús:
   python eligibility_scan.py --sample-size 2000 --threads 4 --seed 42
@@ -16,7 +31,7 @@ Fase 0 (mostreig + elegibilitat) i Fase 2 (classificació de canvis).
 
 Output:
   data/eligibility_report_<N>_<run_id>.csv, data/funnel_summary_<N>_<run_id>.json
-  data/change_classification_<run_id>.csv (amb --classify-eligible)
+  data/changes_<run_id>.csv/.parquet, change_pairs_<run_id>.csv, change_classification_<run_id>.csv
   data/failures.csv
 """
 

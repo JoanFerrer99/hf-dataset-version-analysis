@@ -1,19 +1,19 @@
 """
-L0 (part 2): aparellar les taules de dues revisions d'un repositori i
-comparar-les.
+L0, segona part: aparellar les taules de dues revisions i comparar-les.
 
-- Cada revisió es resol en taules (`units.resolve_units`). Els shards d'una
-  taula (`hf_shards`, `numbered`) formen una unitat; si els noms no estan
-  relacionats (`distinct`), cada fitxer és una unitat (decisió U1).
-- Les unitats s'aparellen per (subset, split); els fitxers sols, per ruta,
-  després per hash de contingut (fitxer reanomenat) i després pel mateix nom
-  amb una altra extensió (canvi de format, sense codi: C100 fora d'abast).
-- Si el contingut és idèntic (hash LFS o blob de git) no es descarrega res.
-- Cada parell acaba amb un estat; una fallada de descàrrega o de lectura
-  MAI es converteix en codis de canvi.
+- Cada revisió es llista amb l'API (`list_revision`) i se'n resolen les
+  taules (`units.resolve_units`).
+- `pair_units` aparella les taules per nom de partició. Una taula d'un sol
+  fitxer sense parella prova pel camí, pel contingut (fitxer reanomenat) i
+  pel nom amb una altra extensió (canvi de format).
+- `compare_pair` descarrega i compara cada parell, i li posa un estat:
+  `ok`, `identical_content` (mateix hash: no es descarrega), `absent_old`,
+  `absent_new`, `download_failed`, `parse_failed`, `too_large_profile_only`
+  o `excluded`. Una fallada mai es converteix en codis de canvi.
 
-Les crides al Hub passen per `call(fn, *args, **kwargs)`, que dona qui fa
-servir el motor (p.e. amb reintents). El paquet no depèn del pipeline.
+Les crides al Hub passen per `call(fn, *args, **kwargs)`: qui fa servir el
+motor hi posa la seva política de reintents. Així el motor no depèn del
+pipeline.
 """
 
 import os

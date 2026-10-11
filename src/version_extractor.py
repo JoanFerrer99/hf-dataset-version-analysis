@@ -1,22 +1,23 @@
 """
-Fase 1: seqüència de versions dels datasets elegibles, amb data, autors i
-mida aproximada.
+Fase 1: la llista ordenada de versions de cada dataset elegible, amb data,
+autors i mida aproximada.
 
-La "versió" depèn del criteri que va fer elegible el dataset (columna
-`eligibility_reason` del CSV, no es recalcula):
-  - Criteri A: cada tag és una versió.
-  - Criteri B: cada sessió de commits substantius és una versió
-    (`eligibility_scan.cluster_commit_times`).
+Què és una versió depèn del criteri que va fer elegible el dataset (columna
+`eligibility_reason`, no es recalcula):
+  - Criteri A: cada tag és una versió (una marca deliberada de l'autor).
+  - Criteri B: cada sessió de commits que toquen dades tabulars és una
+    versió, representada pel seu commit més recent. Les sessions es fan amb
+    la mateixa funció que la Fase 0 (`eligibility_scan.cluster_commit_times`).
 
-L'API no distingeix autor de committer: `authors` és l'únic camp disponible.
+Cada versió porta `version_source` (`tag` o `commit_session`) perquè la
+confiança no és la mateixa. L'API no distingeix autor de committer: `authors`
+és l'únic camp disponible.
 
 Ús:
-  python version_extractor.py --input ../data/eligibility_report_2000_5.csv
-  python version_extractor.py --skip-size  # sense list_repo_tree (més ràpid)
+  python version_extractor.py --input ../data/eligibility_report_<N>_<run_id>.csv
 
 Output:
   data/versions_<run_id>.csv
-  data/failures.csv (source="version_extraction")
 """
 
 import argparse

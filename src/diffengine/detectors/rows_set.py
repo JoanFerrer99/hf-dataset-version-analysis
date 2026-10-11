@@ -1,4 +1,12 @@
-"""C4xx: canvis en el conjunt de files. Les files ja les ha aparellat L4 (`rows.align_rows`)."""
+"""
+C4xx, canvis en el conjunt de files: ordre (C410), files afegides (C421) i
+eliminades (C422).
+
+Les files ja les ha aparellat `rows.align_rows`. L'ordre es jutja només amb
+les parelles segures. Per a les files eliminades es busca què tenen en comú
+(totes, les que tenien nuls, valors extrems o una regla senzilla), i per a
+les afegides, si són còpies de files que ja hi eren.
+"""
 
 from bisect import bisect_left
 from functools import reduce
