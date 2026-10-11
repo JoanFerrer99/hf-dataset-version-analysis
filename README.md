@@ -7,9 +7,8 @@ Aquest treball té com a objectiu analitzar com canvien els datasets allotjats a
 | Carpeta | Contingut |
 |---|---|
 | `src/` | El pipeline: `run_pipeline.py` (orquestrador), les fases i el motor de detecció de canvis (`src/diffengine/`) |
-| `experiments/` | Experiments del treball: avaluació del motor (`run_eval.py`) i estudi de Census Income (`census_variants.py`) |
 | `tests/` | Tests (`pytest`), sense xarxa |
-| `data/` | Resultats de cada execució (`data/run_<id>/`) i de la validació de Census Income |
+| `data/` | Resultats: una carpeta per execució (`data/run_<id>/`) i les de la validació de Census Income (`data/census_income/run_<id>/`) |
 | `docs/` | Documentació. **Ordre de lectura: `docs/README.md`** |
 
 ## Configuració
@@ -51,7 +50,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 echo "HF_TOKEN=hf_el_teu_token_aqui" > .env
 python src/run_pipeline.py --sample-size 2000 --threads 4 --seed 42 # execucio principal
-# Resultats a data/eligibility_report_*.csv, data/versions_*.csv, data/change_classification_*.csv
+# Resultats a data/run_<id>/: eligibility_report.csv, funnel_summary.json, versions.csv, change_classification.csv
 ```
 
 ## Quickstart
@@ -77,8 +76,8 @@ separat:
 
 ```bash
 python src/eligibility_scan.py --sample-size 50 --threads 4 --seed 42  # només Fase 0-1
-python src/version_extractor.py --input data/eligibility_report_<sample_size>_<run_id>.csv  # només Fase 1b
-python src/eligibility_scan.py --classify-eligible data/eligibility_report_<sample_size>_<run_id>.csv  # només Fase 2
+python src/version_extractor.py --input data/run_<id>/eligibility_report.csv            # només Fase 1
+python src/eligibility_scan.py --classify-eligible data/run_<id>/eligibility_report.csv  # només Fase 2
 ```
 
 ## Ús amb Docker
@@ -94,9 +93,8 @@ docker compose build
 # Pipeline complet en un sol comandament (Fase 0-1 + 1b + 2, mateix CSV
 # encadenat entre fases -- vegeu Quickstart més amunt):
 docker compose run --rm --remove-orphans run-pipeline --sample-size 50 --threads 4 --seed 42 --max-scanned 5000
-ls data/eligibility_report_50_*.csv         # CSV d'elegibilitat (nom exacte inclou el run_id)
-ls data/versions_*.csv                      # CSV de versions
-ls data/change_classification_*.csv         # CSV de canvis classificats (nomes si hi ha elegibles)
+ls data/run_<id>/                           # eligibility_report.csv, funnel_summary.json, versions.csv,
+                                            # change_classification.csv (nomes si hi ha elegibles)
 ```
 
 `--remove-orphans` neteja contenidors aturats d'execucions anteriors amb

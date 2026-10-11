@@ -39,8 +39,6 @@ class RowAlignment:
     :ivar unmatched_new: files noves sense parella (candidates a C421).
     :ivar method: `key`, `hash` o `none`.
     :ivar key_columns: columnes clau (noms antics) si `method == "key"`.
-    :ivar stable_columns: columnes (noms antics) usades per al hash.
-    :ivar ambiguous_share: proporció de files aparellades per ordre d'ocurrència.
     :ivar ambiguous: per a cada parella de `pairs`, si s'ha fet per ordre
         d'ocurrència dins d'un grup de files iguals (pot ser incorrecta).
     :ivar partial: per a cada parella, si s'ha fet sense totes les columnes
@@ -52,8 +50,6 @@ class RowAlignment:
     unmatched_new: np.ndarray
     method: str
     key_columns: list[str] = field(default_factory=list)
-    stable_columns: list[str] = field(default_factory=list)
-    ambiguous_share: float = 0.0
     ambiguous: np.ndarray | None = None
     partial: np.ndarray | None = None
 
@@ -79,14 +75,6 @@ class RowAlignment:
         if self.partial is None:
             return self.reliable_pairs
         return self.pairs[~self.ambiguous & ~self.partial]
-
-    @property
-    def matched_share(self) -> float:
-        """
-        :return: proporció de files que tenen parella (1.0 si les dues taules són buides).
-        """
-        total = len(self.pairs) + max(len(self.unmatched_old), len(self.unmatched_new))
-        return len(self.pairs) / total if total else 1.0
 
 
 def cell_tokens(table: Table, column: str) -> pd.Series:
@@ -479,6 +467,5 @@ class _HashMatcher:
         return RowAlignment(
             pairs=np.array([(a, b) for a, b, _, _ in pairs], dtype=int).reshape(-1, 2),
             unmatched_old=np.sort(self.free_old), unmatched_new=np.sort(self.free_new), method="hash",
-            stable_columns=self.stable, ambiguous_share=float(flags[:, 0].sum()) / max(len(pairs), 1),
             ambiguous=flags[:, 0], partial=flags[:, 1],
         )

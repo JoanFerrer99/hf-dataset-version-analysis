@@ -16,11 +16,11 @@ Script aïllat: no el crida `run_pipeline.py`.
 Ús:
   python validate_census_income.py
 
-Output (numerat, mai sobreescriu):
-  data/census_income_diff_report_<run_id>.csv
-  data/census_income_classification_<run_id>.csv
-  data/census_income_paper_comparison_<run_id>.csv
-  data/census_income_paper_comparison_by_code_<run_id>.csv
+Output (en una carpeta nova, `data/census_income/run_<id>/`):
+  diff_report.csv                codis detectats per versió
+  classification.csv             un canvi per fila, amb columna i subtipus
+  paper_comparison.csv           encerts, falsos positius i negatius per versió
+  paper_comparison_by_code.csv   el mateix, per codi
 """
 
 import logging
@@ -33,14 +33,10 @@ from huggingface_hub import hf_hub_download
 import errors
 from diffengine.engine import diff_bytes
 from diffengine.output import BREAKING_CODES, TABULAR_CODES
-from version_extractor import get_next_run_id
+import eligibility_scan as es
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
 log = logging.getLogger(__name__)
-
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-OUTPUT_DIR = os.path.join(SCRIPT_DIR, "..", "data")
-os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 UCI_ADULT_BASE_URL = "https://archive.ics.uci.edu/ml/machine-learning-databases/adult/"
 
@@ -58,7 +54,7 @@ CENSUS_INCOME_COLUMN_NAMES = [
 ]
 
 # Fitxer i revisió de cada versió (la més recent abans del paper; vegeu
-# `experiments/census_variants/`).
+# `docs/validacio_census_income.md`, secció 3).
 CENSUS_INCOME_SOURCES = {
     "D1": {"repo_id": "scikit-learn/adult-census-income", "filename": "adult.csv",
            "revision": "2a7ff8e6a6cd74fa596ed6622937081c52255fcb"},
@@ -250,11 +246,11 @@ if __name__ == "__main__":
     by_code_df = summarize_agreement_by_code(detectability_df)
     metrics = compute_agreement_metrics(comparison_df)
 
-    run_id = get_next_run_id(OUTPUT_DIR, prefix="census_income_diff_report_")
-    diff_report_path = os.path.join(OUTPUT_DIR, f"census_income_diff_report_{run_id}.csv")
-    classification_path = os.path.join(OUTPUT_DIR, f"census_income_classification_{run_id}.csv")
-    comparison_path = os.path.join(OUTPUT_DIR, f"census_income_paper_comparison_{run_id}.csv")
-    by_code_path = os.path.join(OUTPUT_DIR, f"census_income_paper_comparison_by_code_{run_id}.csv")
+    run_dir = es.new_run_dir(os.path.join(es.DATA_DIR, "census_income"))
+    diff_report_path = os.path.join(run_dir, "diff_report.csv")
+    classification_path = os.path.join(run_dir, "classification.csv")
+    comparison_path = os.path.join(run_dir, "paper_comparison.csv")
+    by_code_path = os.path.join(run_dir, "paper_comparison_by_code.csv")
     detectability_df.to_csv(diff_report_path, index=False)
     labels_df.to_csv(classification_path, index=False)
     comparison_df.to_csv(comparison_path, index=False)

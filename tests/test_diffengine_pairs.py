@@ -29,7 +29,6 @@ class TestPairUnits:
         new = revision("b", {"train.csv": "t", "test.csv": "s", "notes.csv": "n2", "extra.csv": "e"})
         result = by_key(pairs.pair_units(old, new))
         assert result["notes.csv"].status == "excluded"
-        assert result["notes.csv"].info == {"reason": "outside_any_split"}
         assert "extra.csv" not in result  # exclòs però sense canvis: no cal registrar-lo
 
     def test_identical_content_is_not_compared(self):
@@ -41,14 +40,13 @@ class TestPairUnits:
         old = revision("a", {"leaderboard.csv": "h1", "ablation.csv": "h2"})
         new = revision("b", {"leaderboard_v2.csv": "h1", "ablation.csv": "h3"})
         result = by_key(pairs.pair_units(old, new))
-        assert result["leaderboard_v2.csv"].info == {"renamed_from": "leaderboard.csv"}
+        assert result["leaderboard_v2.csv"].old_files == ("leaderboard.csv",)
 
     def test_format_change_pairs_by_stem(self):
         old = revision("a", {"data.csv": "h1"})
         new = revision("b", {"data.parquet": "h2"})
         result = pairs.pair_units(old, new)
-        assert [(p.old_files, p.new_files, p.info) for p in result] == [(("data.csv",), ("data.parquet",),
-                                                                         {"format_change": True})]
+        assert [(p.old_files, p.new_files) for p in result] == [(("data.csv",), ("data.parquet",))]
 
     def test_added_and_removed_files_get_absent_status(self):
         old = revision("a", {"a.csv": "h1", "b.csv": "h2"})

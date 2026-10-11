@@ -44,9 +44,7 @@ def detect_kinds(ctx: Context) -> list[Change]:
             ctx.kind_changed.add(m.old)
             old_based = fo if ctx.config.kind_change_by_old_kind else fn
             code = "C311" if old_based == "categorical" else "C321"
-            out.append(change(code, m, subtype="to_numeric" if fn == "numeric" else "to_categorical",
-                              evidence={"old_kind": ko.kind, "new_kind": kn.kind,
-                                        "old_dtype": ko.raw_dtype, "new_dtype": kn.raw_dtype}))
+            out.append(change(code, m, subtype="to_numeric" if fn == "numeric" else "to_categorical"))
             recoding = _recoding(ctx, m)
             if recoding is not None:
                 out.append(recoding)
@@ -55,8 +53,7 @@ def detect_kinds(ctx: Context) -> list[Change]:
             fit = fit_numeric(x.to_numpy(float), y.to_numpy(float), ctx.config.column_match_min_validity)
             if fit is not None and fit.kind == "round":
                 ctx.kind_changed.add(m.old)
-                out.append(change("C321", m, subtype="real_to_integer", confidence=fit.validity,
-                                  evidence={"fit": fit.kind, "old_dtype": ko.raw_dtype, "new_dtype": kn.raw_dtype}))
+                out.append(change("C321", m, subtype="real_to_integer"))
     return out
 
 
@@ -75,12 +72,10 @@ def _recoding(ctx: Context, m: ColumnMatch) -> Change | None:
         return None
     a = cell_tokens(ctx.old, m.old).iloc[pairs[:, 0]].reset_index(drop=True)
     b = cell_tokens(ctx.new, m.new).iloc[pairs[:, 1]].reset_index(drop=True)
-    ok, validity = is_bijection(a, b, ctx.config.column_match_min_validity)
+    ok, _ = is_bijection(a, b, ctx.config.column_match_min_validity)
     if not ok or a.nunique() < 2 or (a == b).mean() >= ctx.config.column_match_min_validity:
         return None
-    mapping = dict(list(pd.Series(b.values, index=a.values).groupby(level=0).first().items())[:50])
-    return change("C312", m, subtype="recoded", n_affected=int((a != b).sum()), confidence=validity,
-                  evidence={"mapping": mapping})
+    return change("C312", m, subtype="recoded")
 
 
 def detect_values(ctx: Context) -> list[Change]:
@@ -128,25 +123,20 @@ def _numeric_values(ctx: Context, m: ColumnMatch, a: pd.Series, b: pd.Series) ->
     if n_changed == 0:
         style_changed = abs(ko.exponent_share - kn.exponent_share) > 0.5 or ko.decimal_comma != kn.decimal_comma
         if ctx.config.report_representation and style_changed:
-            return [change("C322", m, subtype="representation",
-                           evidence={"exponent_share": [ko.exponent_share, kn.exponent_share],
-                                     "decimal_comma": [ko.decimal_comma, kn.decimal_comma]})]
+            return [change("C322", m, subtype="representation")]
         return []
 
-    share = n_changed / both.sum()
     if is_sequence(ctx.old, m.old) and is_sequence(ctx.new, m.new):
-        return [change("C322", m, subtype="renumbered", n_affected=n_changed, share_affected=float(share))]
+        return [change("C322", m, subtype="renumbered")]
     if n_changed >= ctx.config.min_explained_rows:
         fit = fit_numeric(x, y, ctx.config.column_match_min_validity, explain_changed=True)
         if fit is not None and fit.kind in C322_FITS:
             ctx.explained[m.old] = fit.kind
-            return [change("C322", m, subtype=fit.kind, n_affected=n_changed, share_affected=float(share),
-                           confidence=fit.validity, evidence={"fit": fit.kind, **fit.params})]
+            return [change("C322", m, subtype=fit.kind)]
     if is_perturbation(x, y):
         ctx.explained[m.old] = "perturbation"
-        return [change("C322", m, subtype="perturbation", n_affected=n_changed, share_affected=float(share),
-                       evidence={"residual_std": float(np.std((y - x)[both]))})]
-    return [change("C322", m, subtype="cell_edits", n_affected=n_changed, share_affected=float(share))]
+        return [change("C322", m, subtype="perturbation")]
+    return [change("C322", m, subtype="cell_edits")]
 
 
 def _categorical_values(ctx: Context, m: ColumnMatch, a: pd.Series, b: pd.Series) -> list[Change]:
@@ -167,7 +157,4 @@ def _categorical_values(ctx: Context, m: ColumnMatch, a: pd.Series, b: pd.Series
         ctx.relabeled[m.old] = mapping.mapping
     if mapping.kind == "representation":
         ctx.representation.add(m.old)
-    n = int((a.notna() & b.notna()).sum())
-    evidence = {"mapping": dict(list(mapping.mapping.items())[:50])} if mapping.mapping else {}
-    return [change("C312", m, subtype=mapping.kind, n_affected=mapping.changed,
-                   share_affected=mapping.changed / max(n, 1), confidence=mapping.validity, evidence=evidence)]
+    return [change("C312", m, subtype=mapping.kind)]

@@ -8,13 +8,13 @@ processen els datasets elegibles.
 Ús:
   python run_pipeline.py --sample-size 50 --threads 4 --seed 42 --max-scanned 5000  # prova ràpida
   python run_pipeline.py --sample-size 2000 --threads 4 --seed 42                    # execució principal
-  python run_pipeline.py --input-csv ../data/eligibility_report_2000_5.csv           # salta Fase 0-1, reutilitza un CSV existent
+  python run_pipeline.py --input-csv ../data/run_12/eligibility_report.csv           # salta la Fase 0, reutilitza un CSV existent
   python run_pipeline.py --sample-size 2000 --skip-classification                    # només Fase 0-1/1b
 
-Output: tot dins de `data/run_<id>/` (numerada, mai sobreescriu):
-  eligibility_report_<N>_<k>.csv, funnel_summary_<N>_<k>.json (Fase 0)
-  versions_<k>.csv (Fase 1)
-  changes_<k>.csv/.parquet, change_pairs_<k>.csv, change_classification_<k>.csv (Fase 2)
+Output: tot dins d'una carpeta nova, `data/run_<id>/` (mai sobreescriu):
+  eligibility_report.csv, funnel_summary.json (Fase 0)
+  versions.csv (Fase 1)
+  change_classification.csv (Fase 2)
   failures.csv (si hi ha fallades)
 Al final s'imprimeix la llista de fitxers generats per fase.
 """
@@ -33,26 +33,6 @@ import version_extractor as ve
 
 log = logging.getLogger(__name__)
 
-# Arrel fixa: es/ve.OUTPUT_DIR es reassignen a la carpeta run_<id>, i
-# usar-los com a base niaria run_1/run_1/... en crides repetides al mateix procés.
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
-
-
-def next_pipeline_run_dir(data_dir: str) -> str:
-    """
-    :param data_dir: arrel de dades (`DATA_DIR`).
-    :return: ruta de `run_<id>` amb el següent id lliure (encara no creada).
-    """
-    max_id = 0
-    if os.path.isdir(data_dir):
-        for name in os.listdir(data_dir):
-            if name.startswith("run_") and os.path.isdir(os.path.join(data_dir, name)):
-                try:
-                    max_id = max(max_id, int(name[len("run_"):]))
-                except ValueError:
-                    pass
-    return os.path.join(data_dir, f"run_{max_id + 1}")
-
 
 def run_full_pipeline(
     sample_size: int,
@@ -65,8 +45,8 @@ def run_full_pipeline(
     skip_size: bool,
 ) -> dict:
     """
-    Executa Fase 0 -> 1 -> 2 dins d'una carpeta `run_<id>` nova. Redirigeix
-    la sortida reassignant `es/ve.OUTPUT_DIR` i `FAILURES_LOG_PATH`.
+    Executa Fase 0 -> 1 -> 2 dins d'una carpeta `run_<id>` nova
+    (`es.new_run_dir`).
 
     :param sample_size, max_scanned, num_threads, tags_only: per a la Fase 0.
     :param input_csv: si es dona, salta la Fase 0 i usa aquest CSV.
@@ -77,10 +57,8 @@ def run_full_pipeline(
         `change_classification_csv` (`None` si la fase no s'ha executat) i
         `generated_files` (rutes agrupades per fase).
     """
-    run_dir = next_pipeline_run_dir(DATA_DIR)
-    os.makedirs(run_dir, exist_ok=True)
-    es.OUTPUT_DIR = ve.OUTPUT_DIR = run_dir
-    es.FAILURES_LOG_PATH = ve.FAILURES_LOG_PATH = os.path.join(run_dir, "failures.csv")
+    run_dir = es.new_run_dir()
+    ve.FAILURES_LOG_PATH = es.FAILURES_LOG_PATH
     log.info(f"Carpeta d'aquesta execució: {run_dir}")
 
     generated_files: dict[str, list[str]] = {"Fase 0-1 (mostreig+elegibilitat)": [], "Fase 1b (versions)": [],
@@ -112,8 +90,7 @@ def run_full_pipeline(
         log.info("FASE 1b saltada (--skip-version-extraction).")
     else:
         log.info(f"FASE 1b: Extraient versions dels {eligible} datasets elegibles...")
-        run_id = ve.get_next_run_id(ve.OUTPUT_DIR)
-        versions_csv = os.path.join(ve.OUTPUT_DIR, f"versions_{run_id}.csv")
+        versions_csv = os.path.join(run_dir, "versions.csv")
         ve.run_extraction(eligibility_csv, versions_csv, es.HF_TOKEN, ve.RETRY_CONFIG, compute_size=not skip_size)
         outputs["versions_csv"] = versions_csv
         generated_files["Fase 1b (versions)"].append(versions_csv)
@@ -125,11 +102,6 @@ def run_full_pipeline(
         change_classification_csv = es.run_classification(eligibility_csv)
         outputs["change_classification_csv"] = change_classification_csv
         generated_files["Fase 2 (classificació de canvis)"].append(change_classification_csv)
-        folder, name = os.path.split(change_classification_csv)
-        suffix = name[len("change_classification_"):-len(".csv")]
-        for sibling in (f"changes_{suffix}.csv", f"changes_{suffix}.parquet", f"change_pairs_{suffix}.csv"):
-            if os.path.exists(os.path.join(folder, sibling)):
-                generated_files["Fase 2 (classificació de canvis)"].append(os.path.join(folder, sibling))
 
     if os.path.exists(es.FAILURES_LOG_PATH):
         generated_files["Fallades (totes les fases)"] = [es.FAILURES_LOG_PATH]

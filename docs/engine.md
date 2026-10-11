@@ -49,10 +49,10 @@ versions.
 
 Un cop aparellat tot, detectar els canvis és directe: el que no té
 parella s'ha afegit o eliminat, i el que té parella es pot comparar cel·la
-a cel·la. Cada canvi surt amb una **explicació** (subtipus: `factor`,
-`relabel`, `had_nulls`...), una **evidència** (el mapatge, la fórmula, els
-estadístics) i una **confiança**. Cada parell de taules acaba amb un
-**estat**, de manera que res es perd en silenci.
+a cel·la. Cada canvi surt amb el seu codi de la taxonomia, la columna
+afectada i una **explicació** (subtipus: `factor`, `relabel`,
+`had_nulls`...). Cada parell de taules té un **estat** intern que decideix
+si es compara; una taula que no s'ha pogut llegir mai genera codis.
 
 ## 3. Recorregut d'una comparació, pas a pas
 
@@ -110,8 +110,8 @@ exactament el mateix contingut (mateix hash de git), no es descarreguen.
 | `identical_content` | Mateix contingut a les dues revisions: no es descarrega |
 | `absent_old`, `absent_new` | La taula sencera apareix o desapareix (no és C421/C422: no s'afegeixen files a una taula existent, decisió U2) |
 | `download_failed`, `parse_failed` | No s'ha pogut descarregar o llegir; mai es converteix en codis |
-| `too_large_profile_only` | Massa gran (`max_unit_bytes`); no es compara |
-| `excluded` | Fitxer tabular que ha canviat però no és cap taula (metadades, fora de cap partició); el motiu queda a `detail` |
+| `too_large` | Massa gran (`max_unit_bytes`); no es compara |
+| `excluded` | Fitxer tabular que ha canviat però no és cap taula (metadades, fora de cap partició) |
 
 ### Pas 2 — Llegir cada taula (`load.py`)
 
@@ -210,18 +210,15 @@ una transformació (C322), el detector de distribució no hi afegeix un C530
 (P8). Les columnes que identifiquen files (claus, comptadors) no es tracten
 com a variables.
 
-**Confiança i evidència.** La confiança és la proporció de files que una
-explicació reprodueix, o 1 − p d'una prova estadística. L'evidència guarda
-el que justifica el codi. Els tests comproven que cap codi surt sense totes
-dues.
-
 ### Pas 5 — Escriure el resultat (`output.py`)
 
-| Fitxer | Una fila per | Contingut |
-|---|---|---|
-| `changes_<k>.csv` / `.parquet` | canvi | Revisions, fitxer, codi, columna, subtipus, files afectades, confiança, evidència, versió del motor i hash de la configuració |
-| `change_pairs_<k>.csv` | parell de taules | L'estat de cada parell i com s'han aparellat les files |
-| `change_classification_<k>.csv` | codi per fitxer | El format antic, per compatibilitat |
+`pairs.revision_rows` converteix els canvis en files, i
+`output.classification_frame` escriu `change_classification.csv`: una fila
+per taula, parell de versions i codi, amb la descripció del codi i si
+trenca (`is_breaking`). Si una taula té el mateix codi en diverses
+columnes, surt un sol cop. La columna i el subtipus de cada canvi queden a
+l'objecte `Change`; els fan servir els tests i la validació de Census
+Income (`classification.csv`).
 
 ## 4. Configuració i decisions
 
@@ -229,16 +226,16 @@ Tots els llindars són a `config.EngineConfig`, cadascun amb el seu perquè al
 docstring. Les decisions provisionals són interruptors: P1 (un valor que
 passa a nul és C510), P3 (un canvi de tipus es codifica pel tipus antic),
 P5 (els canvis de format es reporten) i P8 (una transformació no genera
-també C530). Cada fila de sortida guarda el hash de la configuració, per
-saber amb quins llindars s'ha generat.
+també C530).
 
 ## 5. Com sabem que funciona
 
-- **Casos generats** (`experiments/`). 47 mutacions conegudes (reanomenar,
-  escalar, eliminar files…) aplicades a una taula sintètica i a UCI Adult,
-  soles o combinades. Un conjunt serveix per ajustar i un altre, reservat,
-  per mesurar. Al conjunt reservat, el pitjor F1 per codi passa de 0,34 amb
-  el diff a 0,98 (`experiments/report.md`).
+- **Casos generats.** Durant el desenvolupament, 47 mutacions conegudes
+  (reanomenar, escalar, eliminar files…) aplicades a una taula sintètica i
+  a UCI Adult, soles o combinades. Al conjunt reservat, el pitjor F1 per
+  codi va passar de 0,34 amb el diff a 0,98. L'script ja no és al
+  repositori (queda a l'historial de git, commit `d084ff7`); els casos
+  que importaven són a `tests/test_diffengine_regressions.py`.
 - **Census Income** (la Taula 1 del paper). El motor troba els 26 codis que
   marca el paper; el diff, 18 (`docs/validacio_census_income.md`).
 - **Dades reals.** Una execució del pipeline amb els 11 elegibles de
@@ -254,15 +251,14 @@ saber amb quins llindars s'ha generat.
 | A `stlee601/cube_pick1`, inserir episodis renumerava `index` i aparellava frames diferents | Els comptadors de posició no són clau ni entren al hash; si canvien, C322 `renumbered` (P10) |
 | `gripper_width` (un escalar dins d'un array) no es comparava | Els arrays d'un element es llegeixen com a escalars |
 | Una taula regravada s'aparellava només per `timestamp` i `frame_index`, que es repeteixen a cada episodi | Una parella dubtosa es descarta si un vector o una imatge la desmenteix |
-| Una taula que perdia 12.919 files tenia el C422 amb confiança 0 | La diferència de recompte és segura; subtipus `all_rows` si no en queda cap |
+| Una taula que perdia totes les files (12.919) no explicava el C422 | Subtipus `all_rows` si no en queda cap |
 | C520 per 5 files en una taula de 600 | Prova estadística per a totes les mesures i regla de Cochran |
 
 Amb la mateixa entrada, el diff donava 30 etiquetes en 3 datasets, i el
 motor actual dona 35 canvis en 3 datasets, cadascun amb la seva explicació.
 A més, el motor actual llegeix dades que el diff no llegia (els `.jsonl` de
-`ckwolfe/benchmarks-viz-tiles`) i registra un estat per a cada taula: 70
-taules de 5 datasets a `data/run_12`, l'execució de referència amb el codi
-actual. Els altres 6 elegibles de `run_8` ja no ho són amb el criteri
+`ckwolfe/benchmarks-viz-tiles`): 70 taules de 5 datasets a `data/run_12`,
+l'execució de referència. Els altres 6 elegibles de `run_8` ja no ho són amb el criteri
 tabular: 4 no tenen cap taula, i 2 tenen totes les pujades de dades en una
 sola sessió.
 
@@ -287,9 +283,8 @@ pairs ─→ engine ─→ detectors ─→ columns ─→ transforms ─→ loa
 - **Canviar un llindar:** només a `config.py`.
 - **Afegir un detector:** una funció `detect_x(ctx) -> list[Change]` al
   fitxer de la seva perspectiva, afegida a `DETECTORS`
-  (`detectors/__init__.py`); una mutació a `experiments/mutations.py` amb el
-  codi esperat; i tornar a executar `python experiments/run_eval.py --split
-  calibration`.
+  (`detectors/__init__.py`), i un test a
+  `tests/test_diffengine_regressions.py` amb el codi esperat.
 - **Tests:** `tests/test_diffengine_regressions.py` té un test per cada cas
   real o conegut; `test_diffengine_units.py`, `test_diffengine_pairs.py` i
   `test_diffengine_load.py` cobreixen els passos 1 i 2.

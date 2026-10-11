@@ -7,8 +7,9 @@ publicades a Hugging Face. Explica amb quines dades es fa la comparació, com
 va etiquetar el paper, el resultat, i cada cas en què el motor i el paper no
 coincideixen.
 
-Codi: `src/validate_census_income.py` (la validació) i
-`experiments/census_variants.py` (l'experiment de la secció 3).
+Codi: `src/validate_census_income.py`. L'experiment de la secció 3
+(`census_variants.py`) ja no és al repositori; queda a l'historial de git,
+commit `d084ff7`.
 
 ---
 
@@ -62,7 +63,7 @@ troba canvis que la targeta no esmenta i que el recompte no deixa veure.
 El paper només dona la URL de cada repositori i de la pàgina de la UCI. No
 diu quin fitxer, quina revisió ni quina part de la UCI va fer servir: la UCI
 publica `adult.data` (32.561 files) i `adult.test` (16.281). Per saber-ho,
-l'experiment `experiments/census_variants.py` va provar totes les
+l'experiment `census_variants.py` va provar totes les
 combinacions (cada fitxer, cada revisió del repositori fins a la data del
 paper, i les tres D0 possibles) i va mirar d'on surten les files de cada
 versió:
@@ -106,7 +107,8 @@ Dos casos concrets:
 | **Motor actual** | 68,4% | **100%** | **26 de 26** |
 
 Fitxers: `data/census_income/census_income_paper_comparison_by_code_9.csv`
-(motor actual) i `_5` (motor anterior, amb les dades d'aleshores).
+(motor actual) i `_5` (motor anterior, amb les dades d'aleshores). Les
+execucions noves escriuen a `data/census_income/run_<id>/`.
 
 **El motor troba tots els canvis que marca el paper.** El motor anterior en
 perd 8 de 26: canvis de tipus, de valors i d'ordre en columnes que s'han
@@ -197,6 +199,5 @@ test:
 ## 10. Com reproduir-ho
 
 ```bash
-python src/validate_census_income.py      # la validació (escriu a data/)
-python experiments/census_variants.py     # quines dades va fer servir el paper
+python src/validate_census_income.py      # escriu a data/census_income/run_<id>/
 ```

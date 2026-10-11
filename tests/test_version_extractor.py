@@ -4,7 +4,7 @@ Tests unitaris per a `src/version_extractor.py` (US-201 + US-202).
 Cobreixen:
   1. Funcions pures: ordenació cronològica, suma de mides, format d'autors.
   2. `build_sessions_from_commits`: agrupació de commits substantius en
-     sessions (Criteri B), reutilitzant `determine_commit_substantive` i
+     sessions (Criteri B), reutilitzant `is_tabular_commit` i
      `cluster_commit_times` reals.
   3. `extract_versions_for_dataset`: bifurcació tag/sessió segons
      `eligibility_reason`, tolerància a errors parcials.
@@ -127,7 +127,7 @@ class TestFormatAuthors:
 
 class TestBuildSessionsFromCommits:
     def test_commits_within_gap_form_one_session(self, monkeypatch):
-        monkeypatch.setattr(ve, "determine_commit_substantive", lambda commit, clone_dir: True)
+        monkeypatch.setattr(ve, "is_tabular_commit", lambda commit, clone_dir: True)
         base = datetime(2026, 1, 1, 12, 0, 0)
         commits = [
             _FakeCommit("Add records", created_at=base, commit_id="c1", authors=["alice"]),
@@ -140,7 +140,7 @@ class TestBuildSessionsFromCommits:
         assert sessions[0]["authors"] == ["alice", "bob"]
 
     def test_commits_beyond_gap_form_separate_sessions(self, monkeypatch):
-        monkeypatch.setattr(ve, "determine_commit_substantive", lambda commit, clone_dir: True)
+        monkeypatch.setattr(ve, "is_tabular_commit", lambda commit, clone_dir: True)
         base = datetime(2026, 1, 1, 0, 0, 0)
         commits = [
             _FakeCommit("Session 1", created_at=base, commit_id="c1"),
@@ -153,17 +153,17 @@ class TestBuildSessionsFromCommits:
         assert [s["commit_sha"] for s in sessions] == ["c1", "c2"]
 
     def test_non_substantive_commits_are_excluded(self, monkeypatch):
-        monkeypatch.setattr(ve, "determine_commit_substantive", lambda commit, clone_dir: False)
+        monkeypatch.setattr(ve, "is_tabular_commit", lambda commit, clone_dir: False)
         commits = [_FakeCommit("Update README", created_at=datetime(2026, 1, 1))]
         assert ve.build_sessions_from_commits(commits, clone_dir=None) == []
 
     def test_commits_without_created_at_are_ignored(self, monkeypatch):
-        monkeypatch.setattr(ve, "determine_commit_substantive", lambda commit, clone_dir: True)
+        monkeypatch.setattr(ve, "is_tabular_commit", lambda commit, clone_dir: True)
         commits = [_FakeCommit("Add records", created_at=None)]
         assert ve.build_sessions_from_commits(commits, clone_dir=None) == []
 
     def test_sessions_are_returned_in_chronological_order(self, monkeypatch):
-        monkeypatch.setattr(ve, "determine_commit_substantive", lambda commit, clone_dir: True)
+        monkeypatch.setattr(ve, "is_tabular_commit", lambda commit, clone_dir: True)
         base = datetime(2026, 1, 1)
         gap = timedelta(hours=MIN_SUBSTANTIVE_GAP_HOURS + 1)
         commits = [
@@ -211,7 +211,7 @@ class TestExtractVersionsForDataset:
             lambda **kw: [_FakeCommit("Add data", created_at=base, commit_id="c1", authors=["alice"])],
         )
         monkeypatch.setattr(ve, "bare_clone", lambda dataset_id: _NoGitClone())
-        monkeypatch.setattr(ve, "determine_commit_substantive", lambda commit, clone_dir: True)
+        monkeypatch.setattr(ve, "is_tabular_commit", lambda commit, clone_dir: True)
 
         rows = ve.extract_versions_for_dataset(
             "org/ds", "Criteri B: substantive_commits>=2 dispersos >=6.0h", "tok", ve.RETRY_CONFIG,
@@ -353,23 +353,3 @@ class TestRunExtraction:
         assert failures_df.iloc[0]["source"] == "version_extraction"
         assert failures_df.iloc[0]["dataset_id"] == "org/broken"
 
-
-# ---------------------------------------------------------------------------
-# get_next_run_id
-# ---------------------------------------------------------------------------
-
-
-class TestGetNextRunId:
-    def test_no_existing_files_starts_at_one(self, tmp_path):
-        assert ve.get_next_run_id(str(tmp_path)) == 1
-
-    def test_picks_highest_existing_id_plus_one(self, tmp_path):
-        (tmp_path / "versions_1.csv").write_text("")
-        (tmp_path / "versions_3.csv").write_text("")
-        (tmp_path / "versions_2.csv").write_text("")
-        assert ve.get_next_run_id(str(tmp_path)) == 4
-
-    def test_ignores_unrelated_files(self, tmp_path):
-        (tmp_path / "versions_summary_5.json").write_text("")
-        (tmp_path / "eligibility_report_2000_5.csv").write_text("")
-        assert ve.get_next_run_id(str(tmp_path)) == 1

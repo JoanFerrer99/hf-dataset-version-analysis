@@ -23,19 +23,15 @@ def detect_column_set(ctx: Context) -> list[Change]:
     """
     out = []
     if order_changed(ctx.old, ctx.new, ctx.cols):
-        out.append(change("C210", evidence={"old_order": list(ctx.old.values.columns),
-                                            "new_order": list(ctx.new.values.columns)}))
+        out.append(change("C210"))
     for n in ctx.cols.added:
         origin = ctx.cols.derived.get(n)
-        out.append(change("C221", column=n, subtype="derived" if origin else "unexplained",
-                          evidence={"origin": origin, "kind": ctx.new.columns[n].kind}))
+        out.append(change("C221", column=n, subtype="derived" if origin else "unexplained"))
     for o in ctx.cols.removed:
-        out.append(change("C222", old_column=o, subtype=ctx.cols.removed_subtypes.get(o, "unexplained"),
-                          evidence={"kind": ctx.old.columns[o].kind,
-                                    "null_share": float(ctx.old.values[o].isna().mean())}))
+        out.append(change("C222", old_column=o, subtype=ctx.cols.removed_subtypes.get(o, "unexplained")))
     for m in ctx.cols.matches:
         if m.old != m.new:
-            out.append(change("C223", m, confidence=m.validity, evidence={"method": m.method, **m.detail}))
+            out.append(change("C223", m))
     for oh in ctx.cols.one_hot:
-        out.append(change("C311", old_column=oh["old"], subtype="one_hot", evidence=oh))
+        out.append(change("C311", old_column=oh["old"], subtype="one_hot"))
     return out

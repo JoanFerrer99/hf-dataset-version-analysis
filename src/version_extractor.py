@@ -14,10 +14,10 @@ confiança no és la mateixa. L'API no distingeix autor de committer: `authors`
 és l'únic camp disponible.
 
 Ús:
-  python version_extractor.py --input ../data/eligibility_report_<N>_<run_id>.csv
+  python version_extractor.py --input ../data/run_12/eligibility_report.csv
 
-Output:
-  data/versions_<run_id>.csv
+Output (en una carpeta nova, `data/run_<id>/`):
+  versions.csv, failures.csv (si hi ha fallades)
 """
 
 import argparse
@@ -33,16 +33,13 @@ from dotenv import load_dotenv
 from huggingface_hub import list_repo_commits, list_repo_refs, list_repo_tree
 
 import errors
-from eligibility_scan import bare_clone, cluster_commit_times, determine_commit_substantive
+import eligibility_scan as es
+from eligibility_scan import MAX_COMMITS, bare_clone, cluster_commit_times, is_tabular_commit
 
 log = logging.getLogger(__name__)
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-OUTPUT_DIR = os.path.join(SCRIPT_DIR, "..", "data")
-DEFAULT_INPUT = os.path.join(OUTPUT_DIR, "eligibility_report_2000_5.csv")
-FAILURES_LOG_PATH = os.path.join(OUTPUT_DIR, "failures.csv")
-
-MAX_COMMITS = 50  # mateix límit que classify_dataset
+# Qui executa la fase hi posa el de la carpeta de l'execució (`es.new_run_dir`).
+FAILURES_LOG_PATH = es.FAILURES_LOG_PATH
 
 RETRY_CONFIG: dict = dict(errors.DEFAULT_RETRY_CONFIG)
 
@@ -50,7 +47,7 @@ RETRY_CONFIG: dict = dict(errors.DEFAULT_RETRY_CONFIG)
 @dataclass
 class VersionRow:
     """
-    Una versió d'un dataset elegible (una fila de `versions_<run_id>.csv`).
+    Una versió d'un dataset elegible (una fila de `versions.csv`).
 
     :ivar dataset_id: dataset.
     :ivar version_label: nom del tag, o `session-<n>` (1 = més antiga).
@@ -118,18 +115,18 @@ def build_sessions_from_commits(commits: list, clone_dir: str | None) -> list[di
         `commit_date` del commit més recent, `authors` (unió) i
         `session_commit_count`.
     """
-    dated_substantive = [
+    dated_tabular = [
         c for c in commits
-        if getattr(c, "created_at", None) is not None and determine_commit_substantive(c, clone_dir)
+        if getattr(c, "created_at", None) is not None and is_tabular_commit(c, clone_dir)
     ]
-    if not dated_substantive:
+    if not dated_tabular:
         return []
 
     by_time: dict = {}
-    for c in dated_substantive:
+    for c in dated_tabular:
         by_time.setdefault(c.created_at, []).append(c)
 
-    session_time_clusters = cluster_commit_times([c.created_at for c in dated_substantive])
+    session_time_clusters = cluster_commit_times([c.created_at for c in dated_tabular])
 
     sessions = []
     for time_cluster in session_time_clusters:
@@ -375,30 +372,13 @@ def run_extraction(
     }
 
 
-def get_next_run_id(output_dir: str, prefix: str = "versions_") -> int:
-    """Següent número de run a partir dels `<prefix><id>.csv` existents (1 si no n'hi ha)."""
-    max_id = 0
-    for filename in os.listdir(output_dir):
-        if filename.startswith(prefix) and filename.endswith(".csv"):
-            id_str = filename[len(prefix):-4]
-            try:
-                max_id = max(max_id, int(id_str))
-            except ValueError:
-                pass
-    return max_id + 1
-
-
 def parse_args() -> argparse.Namespace:
     """Arguments de la CLI. Sense cap argument mostra l'ajuda i surt."""
     parser = argparse.ArgumentParser(
         description="US-201/US-202: extreu la seqüència de versions (tags o sessions de commits) dels datasets elegibles.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--input", default=DEFAULT_INPUT, help="CSV de datasets elegibles (eligibility_report_*.csv).")
-    parser.add_argument(
-        "--output", default=None,
-        help="CSV de sortida. Per defecte: data/versions_<run_id>.csv, numerat automàticament.",
-    )
+    parser.add_argument("--input", required=True, help="CSV de datasets elegibles (eligibility_report.csv).")
     parser.add_argument(
         "--skip-size", action="store_true",
         help="No calcular approx_size_bytes (estalvia una crida list_repo_tree per versió).",
@@ -438,8 +418,9 @@ if __name__ == "__main__":
         "max_wait_s": args.retry_max_wait,
     }
 
-    run_id = get_next_run_id(OUTPUT_DIR)
-    output_csv = args.output or os.path.join(OUTPUT_DIR, f"versions_{run_id}.csv")
+    run_dir = es.new_run_dir()
+    FAILURES_LOG_PATH = es.FAILURES_LOG_PATH
+    output_csv = os.path.join(run_dir, "versions.csv")
 
     print(f"Extraient versions per als datasets elegibles de {args.input}...")
     summary = run_extraction(args.input, output_csv, hf_token, retry_config, compute_size=not args.skip_size)

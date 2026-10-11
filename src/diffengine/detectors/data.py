@@ -34,13 +34,11 @@ def detect_missing(ctx: Context) -> list[Change]:
         o_null, n_null = ctx.old.values[m.old].isna(), ctx.new.values[m.new].isna()
         if cfg.report_representation and o_null.any() and n_null.any() and ko.missing_tokens != kn.missing_tokens \
                 and ko.missing_tokens and kn.missing_tokens:
-            out.append(change("C510", m, subtype="representation",
-                              evidence={"old_tokens": sorted(ko.missing_tokens), "new_tokens": sorted(kn.missing_tokens)}))
+            out.append(change("C510", m, subtype="representation"))
         if m.old in ctx.c510_columns:
             continue
-        rate = _rate_change(o_null, n_null, cfg)
-        if rate is not None:
-            out.append(change("C510", m, subtype="rate", confidence=1 - rate["p_value"], evidence=rate))
+        if _rate_changed(o_null, n_null, cfg):
+            out.append(change("C510", m, subtype="rate"))
     return out
 
 
@@ -57,11 +55,9 @@ def _null_transitions(ctx: Context, m) -> list[Change]:
     imputed, masked = na & ~nb, ~na & nb
     out = []
     if imputed.any():
-        out.append(change("C510", m, subtype=_imputed_label(b[imputed].to_numpy(), ctx.old.values[m.old]),
-                          n_affected=int(imputed.sum()), share_affected=float(imputed.mean())))
+        out.append(change("C510", m, subtype=_imputed_label(b[imputed].to_numpy(), ctx.old.values[m.old])))
     if masked.any():
-        out.append(change("C510", m, subtype="masking", n_affected=int(masked.sum()),
-                          share_affected=float(masked.mean())))
+        out.append(change("C510", m, subtype="masking"))
     if out:
         ctx.c510_columns.add(m.old)
     return out
@@ -90,7 +86,7 @@ def _imputed_label(values: np.ndarray, reference: pd.Series) -> str:
     return "imputed_constant:value"
 
 
-def _rate_change(o_null: pd.Series, n_null: pd.Series, cfg) -> dict | None:
+def _rate_changed(o_null: pd.Series, n_null: pd.Series, cfg) -> bool:
     """
     Prova si la proporció de buits d'una columna ha canviat prou: cal una
     diferència mínima i que la prova de dues proporcions ho confirmi.
@@ -98,17 +94,15 @@ def _rate_change(o_null: pd.Series, n_null: pd.Series, cfg) -> dict | None:
     :param o_null: per a cada fila antiga, si és buida.
     :param n_null: per a cada fila nova, si és buida.
     :param cfg: llindars del motor.
-    :return: les dues proporcions i el p-valor, o `None` si no hi ha canvi.
+    :return: `True` si la proporció ha canviat.
     """
     p1, p2, n1, n2 = o_null.mean(), n_null.mean(), len(o_null), len(n_null)
     if not n1 or not n2 or abs(p1 - p2) < cfg.c510_min_rate_delta:
-        return None
+        return False
     p = (o_null.sum() + n_null.sum()) / (n1 + n2)
     se = np.sqrt(p * (1 - p) * (1 / n1 + 1 / n2))
     pval = float(2 * stats.norm.sf(abs(p1 - p2) / se)) if se > 0 else 0.0
-    if pval >= cfg.alpha:
-        return None
-    return {"old_rate": float(p1), "new_rate": float(p2), "p_value": pval}
+    return pval < cfg.alpha
 
 
 def detect_correlation(ctx: Context) -> list[Change]:
@@ -139,9 +133,7 @@ def detect_correlation(ctx: Context) -> list[Change]:
             pval = float(2 * stats.norm.sf(abs(z) / np.sqrt(1 / (n1 - 3) + 1 / (n2 - 3))))
             if pval >= cfg.alpha:
                 continue
-            out.append(change("C520", column=f"{a.new}|{b.new}", confidence=1 - pval,
-                              evidence={"old": r_old, "new": r_new, "p_value": pval,
-                                        "measure": "spearman" if ka == kb == NUMERIC else "cramers_v/eta"}))
+            out.append(change("C520", column=f"{a.new}|{b.new}"))
     return out
 
 
@@ -254,8 +246,7 @@ def detect_distribution(ctx: Context) -> list[Change]:
                 a = a.map(lambda v: ctx.relabeled[m.old].get(v, v))
             if m.old in ctx.representation:
                 a, b = a.map(normalize_value), b.map(normalize_value)
-        distance, pval, measure = distribution_distance(a, b, ko.kind == NUMERIC)
+        distance, pval, _ = distribution_distance(a, b, ko.kind == NUMERIC)
         if distance >= cfg.c530_min_distance and pval < cfg.alpha:
-            out.append(change("C530", m, confidence=1 - pval,
-                              evidence={"measure": measure, "distance": distance, "p_value": pval}))
+            out.append(change("C530", m))
     return out

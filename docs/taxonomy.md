@@ -131,4 +131,4 @@ Límits que encara té:
   quina còpia correspon a quina és ambigu; en combinació amb altres canvis
   pot aparèixer un C410 que no hi és.
 - **Taules massa grans.** Per sobre de `max_unit_bytes` el parell queda
-  amb l'estat `too_large_profile_only` i sense codis.
+  amb l'estat `too_large` i sense codis.

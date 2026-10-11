@@ -3,7 +3,7 @@ Pas 1 (segona part): aparellar les taules de dues revisions i comparar-les.
 
 Aquí comença una comparació de revisions: `compare_revisions` fa el pas 1 i
 crida `engine.diff_tables` (passos 3 i 4) per a cada parell; `revision_rows`
-converteix el resultat en files de sortida (pas 5).
+converteix els canvis en files de sortida (pas 5).
 
 - Cada revisió es llista amb l'API (`list_revision`) i se'n resolen les
   taules (`units.resolve_units`).
@@ -12,8 +12,9 @@ converteix el resultat en files de sortida (pas 5).
   pel nom amb una altra extensió (canvi de format).
 - `compare_pair` descarrega i compara cada parell, i li posa un estat:
   `ok`, `identical_content` (mateix hash: no es descarrega), `absent_old`,
-  `absent_new`, `download_failed`, `parse_failed`, `too_large_profile_only`
-  o `excluded`. Una fallada mai es converteix en codis de canvi.
+  `absent_new`, `download_failed`, `parse_failed`, `too_large` o
+  `excluded`. Només les `ok` tenen canvis: una fallada mai es converteix en
+  codis.
 
 Les crides al Hub passen per `call(fn, *args, **kwargs)`: qui fa servir el
 motor hi posa la seva política de reintents. Així el motor no depèn del
@@ -22,7 +23,7 @@ pipeline.
 
 import os
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import pandas as pd
 from huggingface_hub import hf_hub_download, list_repo_tree
@@ -30,7 +31,7 @@ from huggingface_hub import hf_hub_download, list_repo_tree
 from diffengine.config import DEFAULT_CONFIG, EngineConfig
 from diffengine.engine import diff_tables
 from diffengine.load import ParseError, Table, load_table
-from diffengine.output import ENGINE_VERSION, DiffResult, changes_frame, status_frame
+from diffengine.output import DiffResult
 from diffengine.units import RepoLayout, resolve_units
 
 Call = Callable[..., object]
@@ -60,8 +61,7 @@ class UnitPair:
     :ivar key: `subset/split` per a taules, o la ruta per a fitxers sols.
     :ivar status: `pending` fins que es compara; després `ok`, `identical_content`,
         `absent_old`, `absent_new`, `download_failed`, `parse_failed`,
-        `too_large_profile_only` o `excluded` (fitxer tabular canviat que no és
-        cap taula; el motiu és a `info["reason"]`).
+        `too_large` o `excluded` (fitxer tabular canviat que no és cap taula).
     """
 
     key: str
@@ -69,7 +69,6 @@ class UnitPair:
     new_files: tuple[str, ...]
     status: str = "pending"
     result: DiffResult | None = None
-    info: dict = field(default_factory=dict)
 
 
 def list_revision(repo_id: str, revision: str, token: str | None, call: Call = direct_call) -> Revision:
@@ -155,24 +154,20 @@ def pair_units(old: Revision, new: Revision, config: EngineConfig = DEFAULT_CONF
     for path in list(unmatched_old):
         target = by_content.get(old.content_ids[path])
         if target in unmatched_new:
-            pairs.append(UnitPair(target, (path,), (target,), info={"renamed_from": path}))
+            pairs.append(UnitPair(target, (path,), (target,)))
             unmatched_old.remove(path)
             unmatched_new.remove(target)
     by_stem = {os.path.splitext(p)[0]: p for p in unmatched_new}
     for path in list(unmatched_old):
         target = by_stem.get(os.path.splitext(path)[0])
         if target in unmatched_new:
-            pairs.append(UnitPair(target, (path,), (target,), info={"format_change": True}))
+            pairs.append(UnitPair(target, (path,), (target,)))
             unmatched_old.remove(path)
             unmatched_new.remove(target)
     pairs += [UnitPair(p, (p,), ()) for p in unmatched_old]
     pairs += [UnitPair(p, (), (p,)) for p in unmatched_new]
 
     for p in pairs:
-        old_ext = {os.path.splitext(f)[1] for f in p.old_files}
-        new_ext = {os.path.splitext(f)[1] for f in p.new_files}
-        if p.old_files and p.new_files and old_ext != new_ext:
-            p.info["format_change"] = True
         if not p.old_files:
             p.status = "absent_old"
         elif not p.new_files:
@@ -180,14 +175,13 @@ def pair_units(old: Revision, new: Revision, config: EngineConfig = DEFAULT_CONF
         elif [old.content_ids[f] for f in p.old_files] == [new.content_ids[f] for f in p.new_files]:
             p.status = "identical_content"
 
-    # Fitxers tabulars exclosos (decisió U1/U3): no es comparen, però si han
-    # canviat queden registrats amb el motiu.
+    # Fitxers tabulars exclosos (decisió U1/U3): no es comparen.
     in_pairs = {f for p in pairs for f in p.old_files + p.new_files}
     excluded = {**old.layout.excluded, **new.layout.excluded}
     for path in sorted(set(excluded) - in_pairs):
         if old.content_ids.get(path) != new.content_ids.get(path):
             pairs.append(UnitPair(path, (path,) if path in old.sizes else (), (path,) if path in new.sizes else (),
-                                  status="excluded", info={"reason": excluded[path]}))
+                                  status="excluded"))
     return pairs
 
 
@@ -256,8 +250,7 @@ def compare_pair(repo_id: str, pair: UnitPair, old: Revision, new: Revision, tok
         return pair
     total = sum(old.sizes[f] for f in pair.old_files) + sum(new.sizes[f] for f in pair.new_files)
     if total > config.max_unit_bytes:
-        pair.status = "too_large_profile_only"
-        pair.info["bytes"] = total
+        pair.status = "too_large"
         return pair
     try:
         try:
@@ -267,40 +260,31 @@ def compare_pair(repo_id: str, pair: UnitPair, old: Revision, new: Revision, tok
             raise
         except Exception as exc:
             raise DownloadFailed(str(exc)) from exc
-    except DownloadFailed as exc:
-        pair.status, pair.info["error"] = "download_failed", str(exc)[:300]
+    except DownloadFailed:
+        pair.status = "download_failed"
         return pair
-    except ParseError as exc:
-        pair.status, pair.info["error"] = "parse_failed", str(exc)[:300]
+    except ParseError:
+        pair.status = "parse_failed"
         return pair
     pair.result = diff_tables(old_table, new_table, config)
     pair.status = "ok"
     return pair
 
 
-def revision_rows(repo_id: str, old_rev: str, new_rev: str, pairs: list[UnitPair],
-                  config: EngineConfig = DEFAULT_CONFIG) -> tuple[list[dict], list[dict]]:
+def revision_rows(repo_id: str, old_rev: str, new_rev: str, pairs: list[UnitPair]) -> list[dict]:
     """
-    Converteix les parelles comparades en files de sortida.
+    Converteix els canvis de les parelles comparades en files de sortida.
 
     :param repo_id: repositori de Hugging Face.
     :param old_rev: commit antic.
     :param new_rev: commit nou.
     :param pairs: parelles ja comparades.
-    :param config: llindars del motor (se'n guarda el hash a cada fila).
-    :return: `(canvis, estats)`: una fila per canvi detectat i una fila per parella de taules.
+    :return: una fila per canvi, amb `dataset_id`, `version_from`,
+        `version_to`, `file_path` i `code`.
     """
-    changes, statuses = [], []
-    for p in pairs:
-        key = {"repo_id": repo_id, "old_rev": old_rev, "new_rev": new_rev,
-               "file_path": ",".join(p.new_files) or None,
-               "old_file_path": ",".join(p.old_files) if p.old_files != p.new_files else None}
-        result = p.result or DiffResult(p.status)
-        result.status = p.status
-        result.info = {**result.info, **p.info}
-        changes += changes_frame(result, key, ENGINE_VERSION, config.hash()).to_dict("records")
-        statuses += status_frame(result, {**key, "unit": p.key}).to_dict("records")
-    return changes, statuses
+    return [{"dataset_id": repo_id, "version_from": old_rev, "version_to": new_rev,
+             "file_path": ",".join(p.new_files), "code": c.code}
+            for p in pairs if p.result is not None for c in p.result.changes]
 
 
 def compare_revisions(repo_id: str, old_rev: str, new_rev: str, token: str | None, call: Call = direct_call,

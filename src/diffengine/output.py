@@ -1,21 +1,16 @@
 """
-Pas 5: com es representa un canvi i les taules de sortida.
+Pas 5: com es representa un canvi i la taula de sortida.
 
-- `Change`: un canvi detectat (codi, columna, subtipus, files afectades,
-  confiança i evidència). És una fila de `changes_<k>.csv`.
+- `Change`: un canvi detectat: codi de la taxonomia, columna i subtipus.
 - `DiffResult`: els canvis d'un parell de taules més el seu estat.
-- `changes_frame`, `status_frame`: les taules que escriu la Fase 2.
-- `legacy_frame`: el CSV en el format antic, per compatibilitat.
+- `classification_frame`: la taula que escriu la Fase 2
+  (`change_classification.csv`).
 - `TABULAR_CODES`, `CODE_DESCRIPTIONS`, `BREAKING_CODES`: la taxonomia.
 """
 
-import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 
 import pandas as pd
-
-ENGINE_VERSION = "2.3.0"
-"""Es desa a cada fila de sortida, amb el hash de la configuració."""
 
 # Els 14 codis tabulars de la taxonomia (C100, metadades, és fora d'abast).
 TABULAR_CODES = ("C210", "C221", "C222", "C223", "C311", "C312", "C321", "C322",
@@ -36,28 +31,22 @@ BREAKING_CODES = frozenset({"C210", "C222", "C223", "C311", "C321", "C410"})
 @dataclass
 class Change:
     """
+    :ivar code: codi de la taxonomia (`C223`, `C421`...).
     :ivar column: columna afectada (nom nou), o parell `a|b` per a C520.
     :ivar old_column: nom antic si és diferent (renoms).
-    :ivar n_affected: files o cel·les afectades, si aplica.
-    :ivar confidence: validesa de l'explicació o 1 - p de la prova.
-    :ivar evidence: dades de suport (mapatge, fórmula, estadístics).
+    :ivar subtype: què explica el canvi (p.e. C422 `had_nulls`, C322 `log`).
     """
 
     code: str
     column: str | None = None
     old_column: str | None = None
     subtype: str | None = None
-    n_affected: int | None = None
-    share_affected: float | None = None
-    confidence: float = 1.0
-    evidence: dict = field(default_factory=dict)
 
 
 @dataclass
 class DiffResult:
     status: str
     changes: list[Change] = field(default_factory=list)
-    info: dict = field(default_factory=dict)
 
     @property
     def codes(self) -> set[str]:
@@ -67,65 +56,21 @@ class DiffResult:
         return {c.code for c in self.changes}
 
 
-CHANGE_COLUMNS = ["repo_id", "old_rev", "new_rev", "file_path", "old_file_path", "code", "column", "old_column",
-                  "subtype", "n_affected", "share_affected", "confidence", "evidence_json", "engine_version",
-                  "config_hash"]
-"""Esquema de la taula de canvis (format llarg, una fila per canvi)."""
+CLASSIFICATION_COLUMNS = ["dataset_id", "version_from", "version_to", "file_path", "code", "description",
+                          "is_breaking"]
 
 
-def changes_frame(result: DiffResult, key: dict, engine_version: str, config_hash: str) -> pd.DataFrame:
+def classification_frame(rows: list[dict]) -> pd.DataFrame:
     """
-    Converteix els canvis d'una parella de taules en files de la taula de sortida.
+    La taula de sortida de la Fase 2: un codi per taula i parell de versions,
+    amb la descripció i si trenca. Si una taula té el mateix codi en diverses
+    columnes, surt un sol cop.
 
-    :param result: resultat de comparar la parella.
-    :param key: columnes que identifiquen la parella (`repo_id`, `old_rev`,
-        `new_rev`, `file_path`, `old_file_path`).
-    :param engine_version: versió del motor, per saber amb quin s'ha generat.
-    :param config_hash: hash de la configuració, per saber amb quins llindars.
-    :return: una fila per canvi, amb les columnes de `CHANGE_COLUMNS`.
+    :param rows: una fila per canvi, amb `dataset_id`, `version_from`,
+        `version_to`, `file_path` i `code`.
+    :return: la taula, sense files repetides.
     """
-    rows = []
-    for c in result.changes:
-        row = {**key, **asdict(c)}
-        row["evidence_json"] = json.dumps(row.pop("evidence"), default=str, sort_keys=True)
-        row["engine_version"] = engine_version
-        row["config_hash"] = config_hash
-        rows.append(row)
-    return pd.DataFrame(rows, columns=CHANGE_COLUMNS)
-
-
-def status_frame(result: DiffResult, key: dict) -> pd.DataFrame:
-    """
-    Fila de sortida amb l'estat d'una parella de taules i com s'han aparellat
-    les files.
-
-    :param result: resultat de comparar la parella.
-    :param key: columnes que identifiquen la parella.
-    :return: una taula d'una sola fila.
-    """
-    info = result.info
-    return pd.DataFrame([{
-        **key, "status": result.status,
-        "alignment_method": info.get("row_alignment"),
-        "key_columns": ",".join(info.get("key_columns", [])),
-        "matched_row_share": info.get("matched_row_share"),
-        "format_old": info.get("format_old"), "format_new": info.get("format_new"),
-        "detail": info.get("reason") or info.get("error"),
-    }])
-
-
-def legacy_frame(changes: pd.DataFrame) -> pd.DataFrame:
-    """
-    Converteix la taula de canvis al format antic (un codi per fitxer i
-    versions, amb descripció i si trenca), per compatibilitat.
-
-    :param changes: taula de canvis (`changes_frame`).
-    :return: la taula en el format antic, sense files repetides.
-    """
-    out = pd.DataFrame({
-        "dataset_id": changes["repo_id"], "version_from": changes["old_rev"], "version_to": changes["new_rev"],
-        "file_path": changes["file_path"], "code": changes["code"],
-    })
+    out = pd.DataFrame(rows, columns=CLASSIFICATION_COLUMNS[:5])
     out["description"] = out["code"].map(CODE_DESCRIPTIONS)
     out["is_breaking"] = out["code"].isin(BREAKING_CODES)
     return out.drop_duplicates().reset_index(drop=True)

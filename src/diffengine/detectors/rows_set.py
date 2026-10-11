@@ -8,12 +8,10 @@ les parelles segures. Per a les files eliminades es busca què tenen en comú
 les afegides, si són còpies de files que ja hi eren.
 """
 
-from bisect import bisect_left
 from functools import reduce
 
 import numpy as np
 import pandas as pd
-from scipy import stats
 
 from diffengine.detectors.common import Context, change
 from diffengine.load import NULL_TOKEN, NUMERIC, OPAQUE, TEXT, Table
@@ -23,10 +21,9 @@ from diffengine.rows import cell_tokens
 
 def detect_order(ctx: Context) -> list[Change]:
     """
-    Canvi d'ordre de les files (C410). Només es miren les parelles segures. Les
-    files desordenades són les que queden fora de la subseqüència creixent més
-    llarga. Si la versió nova està ordenada per una columna, el subtipus és
-    `sorted_by:<columna>`.
+    Canvi d'ordre de les files (C410): les parelles segures, ordenades per la
+    posició antiga, ja no van en ordre creixent de posició nova. Si la versió
+    nova està ordenada per una columna, el subtipus és `sorted_by:<columna>`.
 
     :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
     :return: zero o un canvi.
@@ -38,32 +35,10 @@ def detect_order(ctx: Context) -> list[Change]:
     seq = order[:, 1]
     if np.all(np.diff(seq) > 0):
         return []
-    lis = _longest_increasing_subsequence(seq)
-    sample = order if len(order) <= 5000 else order[np.linspace(0, len(order) - 1, 5000).astype(int)]
-    tau = stats.kendalltau(sample[:, 0], sample[:, 1]).statistic
     new_sorted = _sorted_by(ctx.new, [m.new for m in ctx.cols.matches])
     old_sorted = _sorted_by(ctx.old, [m.old for m in ctx.cols.matches if m.new == new_sorted]) if new_sorted else None
     subtype = f"sorted_by:{new_sorted}" if new_sorted and not old_sorted else None
-    return [change("C410", subtype=subtype, n_affected=len(seq) - lis, share_affected=1 - lis / len(seq),
-                   evidence={"kendall_tau": float(tau), "lis_share": lis / len(seq)})]
-
-
-def _longest_increasing_subsequence(seq: np.ndarray) -> int:
-    """
-    Longitud de la subseqüència creixent més llarga (les files que conserven
-    l'ordre relatiu).
-
-    :param seq: posicions noves de les files, en l'ordre antic.
-    :return: la longitud.
-    """
-    tails: list[int] = []
-    for v in seq:
-        i = bisect_left(tails, v)
-        if i == len(tails):
-            tails.append(v)
-        else:
-            tails[i] = v
-    return len(tails)
+    return [change("C410", subtype=subtype)]
 
 
 def _sorted_by(table: Table, columns: list[str]) -> str | None:
@@ -100,21 +75,19 @@ def detect_rows(ctx: Context) -> list[Change]:
         for flag, subtype in ((True, "duplicate_of_existing"), (False, "new")):
             n = int(np.sum(is_copy == flag))
             if n:
-                out.append(change("C421", subtype=subtype, n_affected=n, share_affected=n / max(ctx.new.n_rows, 1)))
+                out.append(change("C421", subtype=subtype))
 
     removed = ctx.rows.unmatched_old
     if len(removed):
         is_copy = np.isin(old_rows[removed], new_rows)
         if is_copy.any():
             n = int(is_copy.sum())
-            out.append(change("C422", subtype="duplicate_removed", n_affected=n,
-                              share_affected=n / max(ctx.old.n_rows, 1)))
+            out.append(change("C422", subtype="duplicate_removed"))
         rest = removed[~is_copy]
         if len(rest):
             kept = np.setdiff1d(np.arange(ctx.old.n_rows), removed)
-            subtype, evidence = _why_removed(ctx, rest, kept)
-            out.append(change("C422", subtype=subtype, n_affected=len(rest),
-                              share_affected=len(rest) / max(ctx.old.n_rows, 1), evidence=evidence))
+            subtype = _why_removed(ctx, rest, kept)
+            out.append(change("C422", subtype=subtype))
     return out
 
 
@@ -132,7 +105,7 @@ def _row_tokens(table: Table, columns: list[str]) -> np.ndarray:
     return reduce(lambda a, b: a + "\x1f" + b, (cell_tokens(table, c) for c in columns)).to_numpy()
 
 
-def _why_removed(ctx: Context, removed: np.ndarray, kept: np.ndarray) -> tuple[str, dict]:
+def _why_removed(ctx: Context, removed: np.ndarray, kept: np.ndarray) -> str:
     """
     Què tenen en comú les files eliminades: totes (`all_rows`), les que tenien
     algun buit (`had_nulls`), valors extrems d'una columna (`outlier`) o una regla
@@ -141,17 +114,17 @@ def _why_removed(ctx: Context, removed: np.ndarray, kept: np.ndarray) -> tuple[s
     :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
     :param removed: posicions de les files eliminades.
     :param kept: posicions de les files que es conserven.
-    :return: `(subtipus, evidència)`.
+    :return: el subtipus.
     """
     cfg, old = ctx.config, ctx.old
     cols = [m.old for m in ctx.cols.matches if old.columns[m.old].kind != OPAQUE]
     if not len(kept):
-        return "all_rows", {}
+        return "all_rows"
     if not len(removed) or not cols:
-        return "unexplained", {}
+        return "unexplained"
     nulls = old.values[cols].isna().any(axis=1).to_numpy()
     if nulls[removed].mean() >= cfg.row_subtype_min_validity and nulls[kept].mean() <= 1 - cfg.row_subtype_min_validity:
-        return "had_nulls", {}
+        return "had_nulls"
     for c in cols:
         if old.columns[c].kind != NUMERIC or c in ctx.identifiers:
             continue
@@ -161,15 +134,14 @@ def _why_removed(ctx: Context, removed: np.ndarray, kept: np.ndarray) -> tuple[s
             continue
         z = np.abs((x - np.nanmean(x)) / sd)
         if np.nanmean(z[removed] > 2.5) >= cfg.row_subtype_min_validity and np.nanmean(z[kept] > 2.5) <= 0.01:
-            return "outlier", {"column": c}
+            return "outlier"
     if len(removed) >= 5:
-        rule = _removal_rule(ctx, cols, removed, kept)
-        if rule:
-            return "predicate", {"rule": rule}
-    return "unexplained", {}
+        if _has_removal_rule(ctx, cols, removed, kept):
+            return "predicate"
+    return "unexplained"
 
 
-def _removal_rule(ctx: Context, cols: list[str], removed: np.ndarray, kept: np.ndarray) -> str | None:
+def _has_removal_rule(ctx: Context, cols: list[str], removed: np.ndarray, kept: np.ndarray) -> bool:
     """
     Entrena un arbre de decisió de profunditat 2 que separi les files eliminades
     de les conservades. Si l'encerta gairebé sempre, la regla explica l'eliminació.
@@ -178,9 +150,9 @@ def _removal_rule(ctx: Context, cols: list[str], removed: np.ndarray, kept: np.n
     :param cols: columnes que pot fer servir la regla.
     :param removed: posicions de les files eliminades.
     :param kept: posicions de les files que es conserven.
-    :return: la regla en text, o `None` si no n'hi ha cap de prou bona.
+    :return: `True` si hi ha una regla prou bona.
     """
-    from sklearn.tree import DecisionTreeClassifier, export_text
+    from sklearn.tree import DecisionTreeClassifier
 
     df = ctx.old.values[cols]
     feats = []
@@ -193,7 +165,7 @@ def _removal_rule(ctx: Context, cols: list[str], removed: np.ndarray, kept: np.n
             for v in values.iloc[removed].value_counts().index[:20]:
                 feats.append((values == v).astype(int).rename(f"{c}={v}"))
     if not feats:
-        return None
+        return False
     X = pd.concat(feats, axis=1)
     y = np.zeros(len(df), dtype=int)
     y[removed] = 1
@@ -203,6 +175,4 @@ def _removal_rule(ctx: Context, cols: list[str], removed: np.ndarray, kept: np.n
     tp = np.sum((pred == 1) & (y[idx] == 1))
     precision = tp / max(np.sum(pred == 1), 1)
     recall = tp / max(len(removed), 1)
-    if min(precision, recall) >= ctx.config.row_subtype_min_validity:
-        return export_text(tree, feature_names=list(X.columns), max_depth=2)
-    return None
+    return min(precision, recall) >= ctx.config.row_subtype_min_validity

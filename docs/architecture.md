@@ -151,13 +151,13 @@ Termes que defineix aquest codi:
 |---|---|---|
 | **Fitxer substantiu** | Fitxer amb dades reals, no metadades ni documentació. Es decideix per la ruta i l'extensió (secció 7.3). | funció `is_substantive_path` |
 | **Fitxer de dades tabular** | Fitxer substantiu i tabular (`.parquet`, `.csv`, `.tsv`, `.json`, `.jsonl`). És el que fa elegible un dataset i el que compara el motor. | funció `is_tabular_data_path` |
-| **Commit substantiu** | Commit que modifica almenys un fitxer de dades tabular. Cal el clon per saber-ho: sense clon, no compta. | funció `determine_commit_substantive_with_paths` |
-| **Sessió de treball** | Grup de commits substantius propers en el temps: ordenats per data, en comença una de nova quan dos consecutius estan separats per **més de 6 hores**. Evita comptar com a versions diferents els 5 commits que una eina de pujada fa en 10 minuts. Hi ha una sola implementació, compartida per totes les fases. | agrupat en la funció `cluster_commit_times` |
+| **Commit tabular** | Commit que modifica almenys un fitxer de dades tabular. Cal el clon per saber-ho: sense clon, no compta. | funció `is_tabular_commit` |
+| **Sessió de treball** | Grup de commits tabulars propers en el temps: ordenats per data, en comença una de nova quan dos consecutius estan separats per **més de 6 hores**. Evita comptar com a versions diferents els 5 commits que una eina de pujada fa en 10 minuts. Hi ha una sola implementació, compartida per totes les fases. | agrupat en la funció `cluster_commit_times` |
 | **Dataset elegible** | Dataset amb ≥2 versions reals, i per tant estudiable. Criteri A o B (secció 7.2). | definit a la funció `classify_dataset` |
-| **Criteri A** | ≥2 tags i ≥2 commits substantius. | funció `classify_dataset` |
-| **Criteri B** | ≥2 branques i commits substantius repartits en ≥2 sessions. | investigació de 2 sessions a la funció `has_time_dispersed_substantive_commits` |
+| **Criteri A** | ≥2 tags i ≥2 commits tabulars. | funció `eligibility_criterion` |
+| **Criteri B** | ≥2 branques i commits tabulars repartits en ≥2 sessions. | funció `eligibility_criterion` (sessions: `has_time_dispersed_substantive_commits`) |
 | **Versió** | Criteri A: cada tag. Criteri B: cada sessió (representada pel seu commit més recent). | extracció a `version_extractor.extract_versions_for_dataset` |
-| **Unitat de canvi** | Què es compara a la Fase 2. Criteri A: cada commit substantiu contra el commit anterior. Criteri B: el final de cada sessió contra el final de l'anterior. | classificat després de`classify_dataset` |
+| **Unitat de canvi** | Què es compara a la Fase 2. Criteri A: cada commit tabular contra el commit anterior. Criteri B: el final de cada sessió contra el final de l'anterior. | funció `change_units` |
 | **Fitxer tabular** | `.parquet`, `.csv`, `.tsv`, `.json` o `.jsonl`. L'únic tipus que es descarrega i es compara. | es defineix a la funció `diffengine.units.is_tabular_path` |
 | **Taula** | El que compara la Fase 2: un (subset, split) tal com el mostra el Hub. Els shards d'un split formen una sola taula. | `diffengine.units.resolve_units` (`docs/engine.md`) |
 | **Embut (funnel)** | Recompte de la Fase 0: mostra → elegibles / no elegibles / inaccessibles / errors. | contat a la funció `compute_funnel_stats` |
@@ -189,8 +189,8 @@ python src/run_pipeline.py --sample-size 50 --threads 4 --seed 42 --max-scanned 
 python src/run_pipeline.py --sample-size 2000 --threads 4 --seed 42                    # execució real
 
 pytest                                 # tests (no fan cap crida de xarxa)
-ruff check src tests experiments       # lint
-python experiments/run_eval.py                # avaluació del motor (experiments/report.md)
+ruff check src tests                   # lint
+python src/validate_census_income.py   # validació del motor amb la Taula 1 del paper
 ```
 
 - Cal `git` al sistema (la imatge Docker ja l'inclou).
@@ -206,7 +206,6 @@ python experiments/run_eval.py                # avaluació del motor (experiment
 ```
 src/                Codi del pipeline: un script per fase i el motor de detecció de canvis
   diffengine/       El motor, com a paquet de Python (s'explica a docs/engine.md)
-experiments/        Experiments del treball, fora del pipeline: avaluació del motor i estudi de Census Income
 tests/              Tests automàtics (pytest), sense xarxa
 data/               Resultats de les execucions (secció 10)
 docs/               Documentació (ordre de lectura: docs/README.md)
@@ -236,19 +235,7 @@ Compara dues versions d'un dataset en 5 passos. `engine.py` n'és l'índex.
 
 `config.py` té tots els llindars, agrupats pels mateixos passos.
 
-### 5.3 Experiments (`experiments/`)
-
-No formen part del pipeline: són les proves que justifiquen el motor.
-
-| Fitxer | Què fa |
-|---|---|
-| `mutations.py` | Genera casos de prova: aplica a una taula canvis coneguts (reanomenar, escalar, eliminar files...) i en guarda els codis que el motor hauria de trobar. |
-| `adapters.py` | Connecta el motor amb l'avaluació: rep un cas i retorna els codis que detecta. |
-| `run_eval.py` | Executa el motor sobre tots els casos i escriu precisió i recall per codi a `report.md`, comparant amb el motor anterior (`baseline_old_engine.json`). |
-| `census_variants.py` | Prova totes les combinacions de fitxers, revisions i D0 de Census Income per saber quines dades va fer servir el paper. Resultats a `census_variants/`. |
-| `survey_units.py` | Compta com es reparteixen les taules en fitxers als repositoris elegibles. Va servir per decidir que la unitat de comparació és la taula. Resultats a `survey/`. |
-
-### 5.4 Tests (`tests/`)
+### 5.3 Tests (`tests/`)
 
 Un fitxer per mòdul. L'API de Hugging Face sempre se simula: cap test necessita
 xarxa ni token. `conftest.py` afegeix `src/` al camí d'importació.
@@ -263,7 +250,7 @@ xarxa ni token. `conftest.py` afegeix `src/` al camí d'importació.
 | `test_diffengine_regressions.py` | El motor amb casos reals i coneguts, un test per cas |
 | `test_diffengine_units.py`, `test_diffengine_pairs.py`, `test_diffengine_load.py` | Passos 1 i 2 del motor |
 
-### 5.5 Infraestructura
+### 5.4 Infraestructura
 
 | Fitxer | Per a què |
 |---|---|
@@ -300,9 +287,8 @@ xarxa ni token. `conftest.py` afegeix `src/` al camí d'importació.
         ▼
  FASE 2  Classificació de canvis          eligibility_scan.run_classification
         │  per a cada elegible: compara versions consecutives de les
-        │  taules → codis de la taxonomia amb evidència
-        │  sortida: changes_*.csv/.parquet, change_pairs_*.csv,
-        │           change_classification_*.csv
+        │  taules → codis de la taxonomia
+        │  sortida: change_classification.csv
         ▼
  FASE 3  Esquema de dades               (pendent)
 ```
@@ -330,18 +316,17 @@ Què passa quan s'executa `python src/run_pipeline.py --sample-size 2000`:
 3. **Fase 1** (`version_extractor.run_extraction`). Per a cada elegible,
    `extract_versions_for_dataset` construeix la llista de versions: una per
    tag (Criteri A) o una per sessió de commits (Criteri B). Escriu
-   `versions_<k>.csv` (secció 8).
+   `versions.csv` (secció 8).
 4. **Fase 2** (`eligibility_scan.run_classification`). Per a cada elegible:
-   1. `classify_dataset(..., classify_changes=True)` torna a recórrer els
-      commits i forma les unitats de canvi: cada commit amb el seu anterior
-      (Criteri A, `classify_commit_tabular_changes`) o el final de cada
-      sessió amb el de l'anterior (Criteri B,
-      `classify_session_boundary_tabular_changes`).
-   2. Per a cada unitat, el motor (`diffengine.pairs.compare_revisions`)
-      compara les taules de les dues revisions i retorna els canvis i
-      l'estat de cada taula.
-   3. Escriu `changes_<k>.csv`/`.parquet`, `change_pairs_<k>.csv` i
-      `change_classification_<k>.csv` (secció 9).
+   1. `classify_dataset(..., classify_changes=True)` fa el mateix que a la
+      Fase 0 (troba els commits tabulars i confirma que encara és elegible)
+      i, amb aquesta mateixa llista, `change_units` forma les parelles de
+      revisions: cada commit tabular amb el seu anterior (Criteri A) o
+      l'últim commit de cada sessió amb el de l'anterior (Criteri B).
+   2. `compare_change_units` passa cada parella pel motor
+      (`diffengine.pairs.compare_revisions`), que compara les taules de les
+      dues revisions i retorna els canvis i l'estat de cada taula.
+   3. Escriu `change_classification.csv` (secció 9).
 5. **Resum.** L'orquestrador mostra quins fitxers ha generat cada fase.
    Totes les fallades queden a `failures.csv`.
 
@@ -395,14 +380,14 @@ Per a cada dataset de la mostra:
    cadascun, és no elegible i s'acaba aquí (el cas majoritari: una sola
    crida).
 2. Si no: `list_repo_commits` i clon bare (2.2).
-3. Es recorren fins a 50 commits, del més nou al més vell, i per a
-   cadascun es decideix si és substantiu: si toca algun fitxer de dades
-   tabular (7.3).
-4. Elegible si es compleix:
-   - **Criteri A**: ≥2 tags i ≥2 commits substantius; o
-   - **Criteri B**: ≥2 branques i els commits substantius formen ≥2
+3. `find_tabular_commits`: dels 50 commits més recents (`MAX_COMMITS`),
+   quins toquen algun fitxer de dades tabular (`is_tabular_commit`, 7.3).
+   Aquesta llista és l'única cosa que necessiten els passos següents i
+   la Fase 2.
+4. `eligibility_criterion`: elegible si es compleix
+   - **Criteri A**: ≥2 tags i ≥2 commits tabulars; o
+   - **Criteri B**: ≥2 branques i els commits tabulars formen ≥2
      sessions (separades per >6h).
-5. Sense classificació de canvis, retorna tan bon punt és elegible.
 
 Observacions:
 - Els commits que s'analitzen són els de la branca per defecte. El
@@ -527,18 +512,19 @@ mostra baixaria centenars de GB).
 
 ### 9.1 Què es compara
 
-1. Es tornen a recórrer els commits (fins a 50) i es guarden els
-   substantius amb els fitxers que toquen. Si el dataset ja no és elegible
-   (p.e. tots els commits amb dades són d'una sola sessió), no es compara.
-2. Es formen les **unitats de canvi** (decisió T-13):
-   - Criteri A: cada commit substantiu contra el commit anterior de
+1. Es tornen a buscar els commits tabulars i es torna a decidir
+   l'elegibilitat, exactament com a la Fase 0 (7.2). Si el dataset ja no és
+   elegible (el repositori pot haver canviat), no es compara.
+2. `change_units` forma les **unitats de canvi** (decisió T-13) a partir de
+   la mateixa llista de commits tabulars:
+   - Criteri A: cada commit tabular contra el commit anterior de
      l'historial.
    - Criteri B: el commit més recent de cada sessió contra el de la
      sessió anterior. Els commits dins d'una mateixa sessió no es
      comparen entre ells.
-3. Si cap fitxer tocat per la unitat és tabular, no es fa res més. Si no,
-   `classify_commit_tabular_changes` crida el motor amb les dues
-   revisions (`pairs.compare_revisions`):
+3. `compare_change_units` crida el motor amb les dues revisions de cada
+   unitat (`pairs.compare_revisions`). No cal tornar a mirar si els fitxers
+   són tabulars: les unitats només surten de commits tabulars. El motor:
    - cada revisió es resol en **taules (subset, split)** amb les regles
      de la llibreria `datasets` (els shards d'un split són una sola taula);
    - les taules s'aparellen entre revisions; les que tenen el mateix hash
@@ -546,7 +532,7 @@ mostra baixaria centenars de GB).
    - la resta es descarrega, es llegeix i es compara.
 4. Cada parell de taules acaba amb un **estat** (`ok`,
    `identical_content`, `absent_old`/`absent_new`, `download_failed`,
-   `parse_failed`, `too_large_profile_only`, i `excluded` per als fitxers
+   `parse_failed`, `too_large`, i `excluded` per als fitxers
    tabulars canviats que no són cap taula). Una fallada de descàrrega
    no es converteix mai en codis.
 
@@ -556,8 +542,8 @@ Per a cada parell de taules, el motor fa 5 passos: troba les taules que es
 comparen (1), les llegeix deduint el tipus de cada columna pels valors (2),
 aparella les columnes pel nom i pel contingut i les files per clau o per
 hash (3), i aplica un detector per família de codis (4). Cada canvi surt
-amb subtipus (p.e. C322 `standardization`, C422 `had_nulls`), files
-afectades, confiança i evidència (5). Tots els llindars són a
+amb el codi, la columna i el subtipus (p.e. C322 `standardization`, C422
+`had_nulls`), i s'escriu a `change_classification.csv` (5). Tots els llindars són a
 `diffengine/config.py`. Detall de cada pas: `docs/engine.md`.
 
 ### 9.3 Limitacions conegudes
@@ -574,21 +560,23 @@ incremental, mai sobreescriu) i hi desa tot:
 
 | Fitxer | Fase | Contingut |
 |---|---|---|
-| `eligibility_report_<N>_<k>.csv` | 0 | Una fila per dataset de la mostra: `dataset_id, num_tags, num_branches, num_commits_substantive, num_data_files, tabular_file_share, eligible, eligibility_reason, status, error_category, error`. `status` = `classified`, `access_restricted` (403) o `error`. |
-| `funnel_summary_<N>_<k>.json` | 0 | Resum de l'embut (secció 7.4): població recorreguda, elegibles per criteri, inaccessibles, errors, proporcions. |
-| `versions_<k>.csv` | 1 | Una fila per versió: `dataset_id, version_label, version_order, version_source, commit_sha, commit_date, authors, approx_size_bytes, session_commit_count, status`. |
-| `changes_<k>.csv` / `.parquet` | 2 | Una fila per canvi detectat: revisions, fitxer(s), `code`, `column`, `old_column`, `subtype`, files afectades, `confidence`, `evidence_json`, `engine_version`, `config_hash` (vegeu `docs/engine.md`, pas 5). |
-| `change_pairs_<k>.csv` | 2 | Una fila per parell de taules comparat, amb el seu `status` i com s'han aparellat les files. |
-| `change_classification_<k>.csv` | 2 | Format antic, derivat de `changes`: `dataset_id, version_from, version_to, file_path, code, description, is_breaking`. `version_from`/`version_to` són SHA de commit. |
+| `eligibility_report.csv` | 0 | Una fila per dataset de la mostra: `dataset_id, num_tags, num_branches, num_tabular_commits, num_data_files, tabular_file_share, eligible, eligibility_reason, status, error_category, error`. `status` = `classified`, `access_restricted` (403) o `error`. |
+| `funnel_summary.json` | 0 | Resum de l'embut (secció 7.4): població recorreguda, elegibles per criteri, inaccessibles, errors, proporcions. |
+| `versions.csv` | 1 | Una fila per versió: `dataset_id, version_label, version_order, version_source, commit_sha, commit_date, authors, approx_size_bytes, session_commit_count, status`. |
+| `change_classification.csv` | 2 | Una fila per taula, parell de versions i codi: `dataset_id, version_from, version_to, file_path, code, description, is_breaking`. `version_from`/`version_to` són SHA de commit. |
 | `failures.csv` | totes | Només si hi ha fallades: `timestamp, source, dataset_id, error_category, error_message, retries_attempted`. `source` indica la fase. |
 
-`N` = `--sample-size`; `<k>` = número que posa cada fase. Amb
-`--input-csv` no hi ha Fase 0 i el CSV d'entrada no es copia a la
-carpeta.
+L'únic número és el de la carpeta: a dins, els noms són fixos. Els scripts
+executats sols (`eligibility_scan.py`, `version_extractor.py`) també creen
+la seva carpeta (`eligibility_scan.new_run_dir`). Amb `--input-csv` no hi
+ha Fase 0 i el CSV d'entrada no es copia a la carpeta. Les execucions
+anteriors a aquest canvi (`run_1`–`run_13`) conserven els noms antics, amb
+número.
 
-La validació de Census Income escriu directament a `data/`
-(`census_income_*_<k>.csv`); els resultats de referència són a
-`data/census_income/`.
+La validació de Census Income escriu a `data/census_income/run_<id>/`
+(`diff_report.csv`, `classification.csv`, `paper_comparison.csv`,
+`paper_comparison_by_code.csv`). Els resultats de referència, d'abans del
+canvi, són els fitxers `_5` i `_9` de `data/census_income/`.
 
 ---
 
@@ -649,7 +637,7 @@ Límits fixos: 50 commits per dataset (`MAX_COMMITS` a la Fase 1), 500 MB per ta
 
 ### 13.1 Tests
 
-210 tests (secció 5.4). Cap necessita xarxa ni token: l'API de Hugging Face
+206 tests (secció 5.3). Cap necessita xarxa ni token: l'API de Hugging Face
 se simula amb `monkeypatch`.
 
 ### 13.2 Validació del motor amb Census Income
@@ -690,7 +678,7 @@ El motor troba tots els codis del paper. Cada fals positiu, explicat, a
   i build de la imatge Docker.
 - **Docstrings** en català, format Sphinx (`:param:`, `:return:`), curts:
   què fa la funció; el perquè de les decisions va a `decisions_tfg.txt`.
-- **Execucions numerades**: cap resultat es sobreescriu mai.
+- **Una carpeta numerada per execució**: cap resultat es sobreescriu mai.
 - **Resultats i errors separats**: cada fase té el seu CSV, i les
   fallades van sempre a `failures.csv`.
 

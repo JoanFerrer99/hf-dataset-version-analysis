@@ -21,9 +21,4 @@ from diffengine.detectors.rows_set import detect_order, detect_rows
 DETECTORS = (detect_column_set, detect_kinds, detect_values, detect_order, detect_rows, detect_missing,
              detect_correlation, detect_distribution)
 
-# Detectors que comparen files aparellades: la seva evidència diu com s'han aparellat.
-PAIRED_DETECTORS = {detect_values, detect_order, detect_rows, detect_missing}
-# Detectors de files: la confiança depèn de si l'aparellament és ambigu.
-ROW_DETECTORS = {detect_order, detect_rows}
-
-__all__ = ["DETECTORS", "PAIRED_DETECTORS", "ROW_DETECTORS", "Context", "find_identifiers"]
+__all__ = ["DETECTORS", "Context", "find_identifiers"]

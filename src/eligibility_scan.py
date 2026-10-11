@@ -21,18 +21,19 @@ treballa sobre una mostra.
 4. **Classificació** (`run_classification`): per als elegibles, compara
    versions consecutives amb el motor (`diffengine`) i escriu els canvis.
 
-Per llegir el codi: `classify_dataset` és el centre de tot.
+Per llegir el codi: `classify_dataset` és el centre de tot; les funcions
+que crida apareixen a sota en el mateix ordre.
 Detall: `docs/architecture.md`, seccions 7 i 9.
 
 Ús:
   python eligibility_scan.py --sample-size 2000 --threads 4 --seed 42
   python eligibility_scan.py --sample-size 200 --max-scanned 5000  # prova ràpida, esbiaixada
-  python eligibility_scan.py --classify-eligible ../data/eligibility_report_2000_5.csv
+  python eligibility_scan.py --classify-eligible ../data/run_12/eligibility_report.csv
 
-Output:
-  data/eligibility_report_<N>_<run_id>.csv, data/funnel_summary_<N>_<run_id>.json
-  data/changes_<run_id>.csv/.parquet, change_pairs_<run_id>.csv, change_classification_<run_id>.csv
-  data/failures.csv
+Output (cada execució en una carpeta nova, `data/run_<id>/`):
+  eligibility_report.csv, funnel_summary.json   (mostreig)
+  change_classification.csv                     (--classify-eligible)
+  failures.csv                                  (si hi ha fallades)
 """
 
 import functools
@@ -58,7 +59,7 @@ from huggingface_hub import HfApi, list_repo_commits, list_repo_refs
 
 import errors
 from diffengine import pairs, units
-from diffengine.output import CHANGE_COLUMNS, legacy_frame
+from diffengine.output import classification_frame
 from errors import ErrorCategory
 
 
@@ -98,14 +99,20 @@ SUBSTANTIVE_DATA_EXTENSIONS = (
 )
 
 MIN_SUBSTANTIVE_GAP_HOURS = 6.0
+MAX_COMMITS = 50  # commits revisats per dataset, del més nou al més vell
+ELIGIBILITY_REASONS = {
+    "A": "Criteri A: tags>=2 i >=2 commits amb dades tabulars",
+    "B": f"Criteri B: commits amb dades tabulars en >=2 sessions (separades >{MIN_SUBSTANTIVE_GAP_HOURS}h)",
+    None: "no elegible: cap criteri es compleix",
+}
 GIT_CLONE_TIMEOUT_S = 30
 GIT_SHOW_TIMEOUT_S = 10
 
 _git_missing_warned = False
 
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
+# Carpeta de l'execució en curs: `new_run_dir` la canvia per `data/run_<id>`.
+OUTPUT_DIR = DATA_DIR
 FAILURES_LOG_PATH = os.path.join(OUTPUT_DIR, "failures.csv")
 
 RETRY_CONFIG: dict = dict(errors.DEFAULT_RETRY_CONFIG)
@@ -193,33 +200,32 @@ def reservoir_sample_dataset_ids(
 
 def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes: bool = False) -> dict:
     """
-    Decideix si un dataset és elegible i, opcionalment, en classifica els
-    canvis.
+    Decideix si un dataset és elegible i, si es demana, en compara les versions.
 
-    - Criteri A: >=2 tags i >=2 commits substantius.
-    - Criteri B: >=2 branches i commits substantius en >=2 sessions.
-
-    Recorre fins a 50 commits sobre un clon bare. Sense `classify_changes`,
-    retorna tan bon punt el dataset és elegible.
+    Tot surt d'un sol recorregut: es busquen els commits tabulars
+    (`find_tabular_commits`), i amb aquesta llista
+      1. es decideix el criteri d'elegibilitat (`eligibility_criterion`), i
+      2. només si és elegible i `classify_changes`, es formen les parelles de
+         revisions (`change_units`) i es comparen (`compare_change_units`).
+    Cap pas posterior torna a mirar si els fitxers són tabulars: la llista ja
+    només en conté.
 
     :param dataset_id: dataset (`owner/name`).
     :param tags_only: només permet el Criteri A.
-    :param classify_changes: classifica també els canvis dels fitxers
-        tabulars. Unitat de canvi: commit vs el seu pare (Criteri A) o
-        límit entre sessions (Criteri B). Descarrega contingut real: només
-        per a datasets ja elegibles.
+    :param classify_changes: compara també les versions (Fase 2). Descarrega
+        contingut real.
     :return: fila del report: `dataset_id`, `num_tags`, `num_branches`,
-        `num_commits_substantive`, `eligible`, `eligibility_reason`,
-        `status` (`classified`/`access_restricted`/`error`),
-        `error_category`, `error` (truncat a 120 caràcters), `change_labels`
-        (una fila per canvi detectat) i `change_pairs` (estat de cada taula
-        comparada); totes dues `[]` si `classify_changes=False`.
+        `num_tabular_commits`, `num_data_files`, `tabular_file_share`,
+        `eligible`, `eligibility_reason`, `status`
+        (`classified`/`access_restricted`/`error`), `error_category`, `error`
+        (truncat a 120 caràcters) i `change_labels` (una fila per canvi; `[]`
+        si `classify_changes=False`).
     """
     result = {
         "dataset_id": dataset_id,
         "num_tags": 0,
         "num_branches": 0,
-        "num_commits_substantive": 0,
+        "num_tabular_commits": 0,
         "num_data_files": None,
         "tabular_file_share": None,
         "eligible": False,
@@ -228,7 +234,6 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
         "error_category": "",
         "error": "",
         "change_labels": [],
-        "change_pairs": [],
     }
 
     try:
@@ -236,84 +241,31 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
             list_repo_refs, repo_id=dataset_id, repo_type="dataset", token=HF_TOKEN,
             **RETRY_CONFIG,
         )
-        tags = refs.tags if refs.tags else []
-        branches = refs.branches if refs.branches else []
-        result["num_tags"] = len(tags)
-        result["num_branches"] = len(branches)
+        n_tags, n_branches = len(refs.tags or []), len(refs.branches or [])
+        result["num_tags"], result["num_branches"] = n_tags, n_branches
 
-        commits_scanned = 0
-        num_commits_substantive = 0
-        substantive_times: list[datetime] = []
-        substantive_commits: list[tuple[int, object, list[str]]] = []
-
-        if len(tags) >= 2 or (not tags_only and len(branches) >= 2):
-            commits = errors.with_retry(
+        criterion = None
+        if n_tags >= 2 or (not tags_only and n_branches >= 2):
+            commits = list(errors.with_retry(
                 list_repo_commits, repo_id=dataset_id, repo_type="dataset", token=HF_TOKEN,
                 **RETRY_CONFIG,
-            )
+            ))[:MAX_COMMITS]
             with bare_clone(dataset_id) as clone_dir:
                 if clone_dir is not None:
                     result["num_data_files"], result["tabular_file_share"] = tabular_file_share(
                         list_files_at_head(clone_dir) or []
                     )
-                for i, commit in enumerate(commits):
-                    commits_scanned += 1
+                tabular = find_tabular_commits(commits, clone_dir)
+            result["num_tabular_commits"] = len(tabular)
+            criterion = eligibility_criterion(n_tags, n_branches, [commits[i] for i in tabular], tags_only)
 
-                    is_substantive, changed_paths = determine_commit_substantive_with_paths(commit, clone_dir)
-                    if is_substantive:
-                        num_commits_substantive += 1
-                        commit_time = getattr(commit, "created_at", None)
-                        if commit_time is not None:
-                            substantive_times.append(commit_time)
-                        if classify_changes and changed_paths:
-                            substantive_commits.append((i, commit, changed_paths))
+            if criterion and classify_changes:
+                result["change_labels"] = compare_change_units(
+                    dataset_id, change_units(commits, tabular, criterion), HF_TOKEN, RETRY_CONFIG,
+                )
 
-                    if not result["eligible"]:
-                        if len(tags) >= 2 and num_commits_substantive >= 2:
-                            result["eligible"] = True
-                            result["eligibility_reason"] = "Criteri A: tags>=2 i >=2 commits amb dades tabulars"
-                        elif not tags_only and len(branches) >= 2 and has_time_dispersed_substantive_commits(
-                            substantive_times
-                        ):
-                            result["eligible"] = True
-                            result["eligibility_reason"] = (
-                                "Criteri B: commits amb dades tabulars en >=2 sessions "
-                                f"(separades >{MIN_SUBSTANTIVE_GAP_HOURS}h)"
-                            )
-
-                    if result["eligible"] and not classify_changes:
-                        result["num_commits_substantive"] = num_commits_substantive
-                        return result
-
-                    if commits_scanned >= 50:
-                        break
-
-            # Només es classifiquen els elegibles: si els commits amb dades són tots d'una
-            # sola sessió de pujada, no hi ha dues versions que comparar.
-            if classify_changes and result["eligible"] and substantive_commits:
-                if result["eligibility_reason"].startswith("Criteri B"):
-                    changes, statuses = classify_session_boundary_tabular_changes(
-                        dataset_id, substantive_commits, HF_TOKEN, RETRY_CONFIG,
-                    )
-                    result["change_labels"] += changes
-                    result["change_pairs"] += statuses
-                else:
-                    for i, commit, changed_paths in substantive_commits:
-                        if i + 1 < len(commits):
-                            parent_commit = commits[i + 1]
-                            changes, statuses = classify_commit_tabular_changes(
-                                dataset_id, changed_paths, parent_commit.commit_id, commit.commit_id, HF_TOKEN,
-                                RETRY_CONFIG,
-                            )
-                            result["change_labels"] += changes
-                            result["change_pairs"] += statuses
-
-        result["num_commits_substantive"] = num_commits_substantive
-        if not result["eligible"]:
-            result["eligibility_reason"] = (
-                "ineligible: tags<2 i "
-                f"(branches<2 o substantive_commits<2 amb {commits_scanned} commits revisats)"
-            )
+        result["eligible"] = criterion is not None
+        result["eligibility_reason"] = ELIGIBILITY_REASONS[criterion]
 
     except Exception as exc:
         category = errors.classify_error(exc)
@@ -474,109 +426,111 @@ def list_files_at_head(clone_dir: str) -> list[str] | None:
         return None
 
 
-def determine_commit_substantive_with_paths(commit, clone_dir: str | None) -> tuple[bool, list[str] | None]:
+def is_tabular_commit(commit, clone_dir: str | None) -> bool:
     """
-    Un commit és substantiu (compta per a l'elegibilitat i per a les versions)
-    si toca algun fitxer de dades tabular (`is_tabular_data_path`).
+    Un commit compta (per a l'elegibilitat i per a les versions) si toca algun
+    fitxer de dades tabular (`is_tabular_data_path`).
 
     Cal saber quins fitxers toca, i això només ho dona el clon. Sense clon, o
-    si `git show` falla, el commit no compta: el títol no diu si el fitxer
-    tocat és tabular.
+    si `git show` falla, el commit no compta.
 
     :param commit: commit de `list_repo_commits`.
     :param clone_dir: clon bare, o `None`.
-    :return: `(és_substantiu, fitxers_tocats)`; `fitxers_tocats` és `None` sense clon.
+    :return: `True` si toca dades tabulars.
     """
     if clone_dir is None:
-        return False, None
+        return False
     changed_paths = get_changed_files(clone_dir, commit.commit_id)
-    if changed_paths is None:
-        return False, None
-    return any(is_tabular_data_path(p) for p in changed_paths), changed_paths
+    return bool(changed_paths) and any(is_tabular_data_path(p) for p in changed_paths)
 
 
-def determine_commit_substantive(commit, clone_dir: str | None) -> bool:
-    """Com `determine_commit_substantive_with_paths`, només el booleà."""
-    return determine_commit_substantive_with_paths(commit, clone_dir)[0]
-
-
-def classify_commit_tabular_changes(
-    dataset_id: str, changed_paths: list[str], version_from: str, version_to: str, hf_token: str | None,
-    retry_config: dict,
-) -> tuple[list[dict], list[dict]]:
+def find_tabular_commits(commits: list, clone_dir: str | None) -> list[int]:
     """
-    Classifica una unitat de canvi amb el motor v2 (`src/diffengine`):
-    compara taula a taula (subset, split) les dues revisions. Si cap fitxer
-    tocat és tabular, no es consulta res.
+    Posicions dels commits que toquen dades tabulars. Es guarda la posició, i
+    no el commit, perquè el Criteri A necessita el commit anterior
+    (`commits[i + 1]`, la llista va del més nou al més vell).
 
-    :param changed_paths: fitxers tocats (del clon bare).
-    :param version_from: SHA de la revisió anterior.
-    :param version_to: SHA de la revisió posterior.
+    :param commits: commits de `list_repo_commits`, del més nou al més vell.
+    :param clone_dir: clon bare, o `None`.
+    :return: posicions dins de `commits`, en el mateix ordre.
+    """
+    return [i for i, commit in enumerate(commits) if is_tabular_commit(commit, clone_dir)]
+
+
+def eligibility_criterion(n_tags: int, n_branches: int, tabular_commits: list, tags_only: bool = False) -> str | None:
+    """
+    Aplica els dos criteris d'elegibilitat, per ordre.
+
+    :param n_tags: nombre de tags del repositori.
+    :param n_branches: nombre de branques.
+    :param tabular_commits: commits que toquen dades tabulars.
+    :param tags_only: només permet el Criteri A.
+    :return: `"A"`, `"B"` o `None` (no elegible).
+    """
+    if n_tags >= 2 and len(tabular_commits) >= 2:
+        return "A"
+    if not tags_only and n_branches >= 2 and has_time_dispersed_substantive_commits(
+        [getattr(c, "created_at", None) for c in tabular_commits]
+    ):
+        return "B"
+    return None
+
+
+def group_commits_into_sessions(commits: list) -> list[list]:
+    """
+    Agrupa commits en sessions amb `cluster_commit_times`.
+
+    :param commits: commits amb `created_at`; els que no en tenen s'ignoren.
+    :return: sessions de la més recent a la més antiga (sense ordre dins de cada sessió).
+    """
+    by_time: dict[datetime, list] = {}
+    for c in commits:
+        if getattr(c, "created_at", None) is not None:
+            by_time.setdefault(c.created_at, []).append(c)
+    clusters = cluster_commit_times(list(by_time))
+    return [[c for t in cluster for c in by_time[t]] for cluster in reversed(clusters)]
+
+
+def change_units(commits: list, tabular: list[int], criterion: str) -> list[tuple[str, str]]:
+    """
+    Les parelles de revisions que es comparen (unitats de canvi, decisió T-13):
+
+    - Criteri A: cada commit tabular contra el commit anterior de l'historial.
+      El commit més vell de la llista no té anterior conegut i no es compara.
+    - Criteri B: el commit més recent de cada sessió contra el de la sessió
+      anterior. Els commits d'una mateixa sessió no es comparen entre ells.
+
+    :param commits: commits de `list_repo_commits`, del més nou al més vell.
+    :param tabular: posicions dels commits tabulars (`find_tabular_commits`).
+    :param criterion: `"A"` o `"B"`.
+    :return: parelles `(SHA antic, SHA nou)`, de la més recent a la més antiga.
+    """
+    if criterion == "A":
+        return [(commits[i + 1].commit_id, commits[i].commit_id) for i in tabular if i + 1 < len(commits)]
+    sessions = group_commits_into_sessions([commits[i] for i in tabular])
+    latest = [max(session, key=lambda c: c.created_at) for session in sessions]
+    return [(older.commit_id, newer.commit_id) for newer, older in zip(latest, latest[1:])]
+
+
+def compare_change_units(
+    dataset_id: str, units_to_compare: list[tuple[str, str]], hf_token: str | None, retry_config: dict,
+) -> list[dict]:
+    """
+    Compara amb el motor (`diffengine.pairs.compare_revisions`) cada parella
+    de revisions, taula a taula (subset, split).
+
+    :param dataset_id: dataset (`owner/name`).
+    :param units_to_compare: parelles `(SHA antic, SHA nou)` de `change_units`.
+    :param hf_token: token de Hugging Face.
     :param retry_config: configuració de reintent (també per a les descàrregues).
-    :return: `(canvis, estats)`: una fila per canvi i una fila d'estat per taula.
+    :return: una fila per canvi (`dataset_id`, `version_from`, `version_to`, `file_path`, `code`).
     """
-    if not any(units.is_tabular_path(p) for p in changed_paths):
-        return [], []
     retry = functools.partial(errors.with_retry, **retry_config)
-    compared = pairs.compare_revisions(dataset_id, version_from, version_to, hf_token, call=retry)
-    return pairs.revision_rows(dataset_id, version_from, version_to, compared)
-
-
-def group_substantive_commits_into_sessions(
-    substantive_commits: list[tuple[int, object, list[str]]],
-) -> list[list[tuple[int, object, list[str]]]]:
-    """
-    Agrupa commits substantius en sessions amb `cluster_commit_times`.
-
-    :param substantive_commits: triples `(índex, commit, fitxers_tocats)`;
-        els commits sense `created_at` s'ignoren.
-    :return: sessions de la més recent a la més antiga (sense ordre dins
-        de cada sessió).
-    """
-    dated = [t for t in substantive_commits if getattr(t[1], "created_at", None) is not None]
-    if not dated:
-        return []
-
-    by_time: dict[datetime, list[tuple[int, object, list[str]]]] = {}
-    for triple in dated:
-        by_time.setdefault(triple[1].created_at, []).append(triple)
-
-    time_clusters = cluster_commit_times([triple[1].created_at for triple in dated])
-    return [
-        [triple for t in time_cluster for triple in by_time[t]]
-        for time_cluster in reversed(time_clusters)
-    ]
-
-
-def classify_session_boundary_tabular_changes(
-    dataset_id: str, substantive_commits: list[tuple[int, object, list[str]]], hf_token: str | None,
-    retry_config: dict,
-) -> tuple[list[dict], list[dict]]:
-    """
-    Classificació per al Criteri B: per cada parell de sessions consecutives
-    compara el commit més recent de cada una, sobre la unió dels fitxers
-    tocats a la sessió posterior. Els commits dins d'una sessió no es
-    comparen entre ells.
-
-    :return: `(canvis, estats)` acumulats de `classify_commit_tabular_changes`.
-    """
-    sessions = group_substantive_commits_into_sessions(substantive_commits)
-    if len(sessions) < 2:
-        return [], []
-
     labels: list[dict] = []
-    statuses: list[dict] = []
-    for newer_session, older_session in zip(sessions, sessions[1:]):
-        version_to_commit = max(newer_session, key=lambda triple: triple[1].created_at)[1]
-        version_from_commit = max(older_session, key=lambda triple: triple[1].created_at)[1]
-        changed_paths = sorted({path for _, _, paths in newer_session for path in paths})
-        changes, pair_statuses = classify_commit_tabular_changes(
-            dataset_id, changed_paths, version_from_commit.commit_id, version_to_commit.commit_id,
-            hf_token, retry_config,
-        )
-        labels += changes
-        statuses += pair_statuses
-    return labels, statuses
+    for old_rev, new_rev in units_to_compare:
+        compared = pairs.compare_revisions(dataset_id, old_rev, new_rev, hf_token, call=retry)
+        labels += pairs.revision_rows(dataset_id, old_rev, new_rev, compared)
+    return labels
 
 
 def has_time_dispersed_substantive_commits(
@@ -689,44 +643,39 @@ def compute_funnel_stats(counts: FunnelCounts) -> dict:
         "attempts_per_eligible": round(denom_attempts / counts.eligible, 1) if counts.eligible else None,
     }
 
-def get_next_run_id(output_dir: str, sample_size: int) -> int:
+def new_run_dir(parent: str | None = None) -> str:
     """
-    Següent número de run per a aquest `sample_size`, a partir dels
-    `funnel_summary_<sample_size>_<id>.json` existents.
+    Crea la carpeta d'una execució nova, `run_<id>` amb el número següent, i
+    hi dirigeix tota la sortida d'aquest mòdul (`OUTPUT_DIR` i
+    `FAILURES_LOG_PATH`). Com que cada execució té la seva carpeta, els
+    fitxers de dins tenen noms fixos i mai se sobreescriu res.
 
-    :return: id més alt + 1 (1 si no n'hi ha cap).
+    :param parent: on es crea (per defecte, `data/`).
+    :return: la ruta de la carpeta creada.
     """
-    max_id = 0
-    prefix = f"funnel_summary_{sample_size}_"
-
-    for filename in os.listdir(output_dir):
-        if filename.startswith(prefix) and filename.endswith(".json"):
-            try:
-                id_str = filename[len(prefix):-5]
-                current_id = int(id_str)
-                if current_id > max_id:
-                    max_id = current_id
-            except ValueError:
-                pass
-
-    return max_id + 1
+    global OUTPUT_DIR, FAILURES_LOG_PATH
+    parent = parent or DATA_DIR
+    os.makedirs(parent, exist_ok=True)
+    ids = [int(n[4:]) for n in os.listdir(parent) if n.startswith("run_") and n[4:].isdigit()]
+    run_dir = os.path.join(parent, f"run_{max(ids, default=0) + 1}")
+    os.makedirs(run_dir)
+    OUTPUT_DIR, FAILURES_LOG_PATH = run_dir, os.path.join(run_dir, "failures.csv")
+    return run_dir
 
 
-def write_results(rows: list[dict], run_id: int, sample_size: int, total_scanned: int) -> tuple[str, str, dict]:
+def write_results(rows: list[dict], total_scanned: int) -> tuple[str, str, dict]:
     """
-    Escriu el report per dataset (CSV, sense `change_labels`) i el resum de
-    l'embut (JSON).
+    Escriu a `OUTPUT_DIR` el report per dataset (`eligibility_report.csv`,
+    sense `change_labels`) i el resum de l'embut (`funnel_summary.json`).
 
     :param rows: files de `classify_dataset`.
-    :param run_id: número de run.
-    :param sample_size: mida demanada (va al nom dels fitxers).
     :param total_scanned: mida de la població recorreguda.
     :return: `(csv_path, json_path, summary)`.
     """
     df = pd.DataFrame(rows)
 
-    csv_path = os.path.join(OUTPUT_DIR, f"eligibility_report_{sample_size}_{run_id}.csv")
-    df.drop(columns=["change_labels", "change_pairs"], errors="ignore").to_csv(csv_path, index=False, encoding="utf-8")
+    csv_path = os.path.join(OUTPUT_DIR, "eligibility_report.csv")
+    df.drop(columns=["change_labels"], errors="ignore").to_csv(csv_path, index=False, encoding="utf-8")
 
     total = len(rows)
     eligible = int(df["eligible"].sum())
@@ -752,7 +701,7 @@ def write_results(rows: list[dict], run_id: int, sample_size: int, total_scanned
         **compute_funnel_stats(counts),
     }
 
-    json_path = os.path.join(OUTPUT_DIR, f"funnel_summary_{sample_size}_{run_id}.json")
+    json_path = os.path.join(OUTPUT_DIR, "funnel_summary.json")
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
 
@@ -799,8 +748,7 @@ def run_sampling(
     log.info(f"Classificació completada: {len(rows)} datasets processats.")
 
     log.info("FASE 3: Escrivint resultats...")
-    run_id = get_next_run_id(OUTPUT_DIR, sample_size)
-    csv_path, json_path, summary = write_results(rows, run_id, sample_size, total_scanned)
+    csv_path, json_path, summary = write_results(rows, total_scanned)
 
     print(f"\n{'='*65}")
     print(f"  RESUM EMBUT — mostra de {summary['sample_size']} datasets aleatoris")
@@ -815,73 +763,33 @@ def run_sampling(
     return csv_path, json_path, summary
 
 
-def _next_classification_run_id(output_dir: str) -> int:
-    """Com `get_next_run_id`, per a `change_classification_<id>.csv`."""
-    prefix = "change_classification_"
-    max_id = 0
-    for filename in os.listdir(output_dir):
-        if filename.startswith(prefix) and filename.endswith(".csv"):
-            try:
-                max_id = max(max_id, int(filename[len(prefix):-4]))
-            except ValueError:
-                pass
-    return max_id + 1
-
-
 def run_classification(input_csv: str) -> str:
     """
     Fase 2: classifica els canvis de cada dataset elegible del CSV amb
-    `classify_dataset(..., classify_changes=True)` (motor v2).
+    `classify_dataset(..., classify_changes=True)` i escriu
+    `change_classification.csv` a `OUTPUT_DIR`: una fila per taula, parell de
+    versions i codi (`dataset_id, version_from, version_to, file_path, code,
+    description, is_breaking`).
 
-    Escriu, amb el mateix `<id>`:
-      - `changes_<id>.csv` i `.parquet`: una fila per canvi, amb columna,
-        subtipus, evidència i confiança.
-      - `change_pairs_<id>.csv`: estat de cada taula comparada.
-      - `change_classification_<id>.csv`: export compatible amb el CSV antic
-        (`dataset_id, version_from, version_to, file_path, code, description,
-        is_breaking`).
-
-    :param input_csv: `eligibility_report_*.csv`.
-    :return: ruta de `change_classification_<id>.csv`.
+    :param input_csv: un `eligibility_report.csv`.
+    :return: ruta de `change_classification.csv`.
     """
     df = pd.read_csv(input_csv)
     eligible = df[df["eligible"] == True]  # noqa: E712
     log.info(f"Classificant canvis de {len(eligible)} datasets elegibles de {input_csv}...")
 
     all_changes: list[dict] = []
-    all_pairs: list[dict] = []
-    n_failed = 0
-    for _, row in eligible.iterrows():
-        dataset_id = row["dataset_id"]
+    for dataset_id in eligible["dataset_id"]:
         log.info(f"  - {dataset_id}")
         result = classify_dataset(dataset_id, classify_changes=True)
         if result["status"] != "classified":
-            n_failed += 1
             log.warning(f"    Fallada ({result['status']}): {dataset_id}")
             continue
         all_changes.extend(result["change_labels"])
-        all_pairs.extend(result["change_pairs"])
 
-    run_id = _next_classification_run_id(OUTPUT_DIR)
-    changes = pd.DataFrame(all_changes, columns=CHANGE_COLUMNS)
-    changes.to_csv(os.path.join(OUTPUT_DIR, f"changes_{run_id}.csv"), index=False, encoding="utf-8")
-    changes.to_parquet(os.path.join(OUTPUT_DIR, f"changes_{run_id}.parquet"), index=False)
-    pd.DataFrame(all_pairs).to_csv(os.path.join(OUTPUT_DIR, f"change_pairs_{run_id}.csv"), index=False,
-                                   encoding="utf-8")
-    output_csv = os.path.join(OUTPUT_DIR, f"change_classification_{run_id}.csv")
-    legacy_frame(changes).to_csv(output_csv, index=False, encoding="utf-8")
-
-    statuses = pd.Series([p.get("status") for p in all_pairs]).value_counts().to_dict()
-    print(f"\n{'=' * 65}")
-    print("  RESUM CLASSIFICACIÓ DE CANVIS")
-    print(f"{'=' * 65}")
-    print(f"  Datasets elegibles           {len(eligible)}")
-    print(f"  Datasets fallats             {n_failed}")
-    print(f"  Taules comparades            {len(all_pairs)} {statuses}")
-    print(f"  Canvis detectats             {len(all_changes)}")
-    print(f"{'=' * 65}")
-    print(f"\n  CSV: {output_csv}\n")
-
+    output_csv = os.path.join(OUTPUT_DIR, "change_classification.csv")
+    classification_frame(all_changes).to_csv(output_csv, index=False, encoding="utf-8")
+    log.info(f"Classificació escrita a {output_csv}")
     return output_csv
 
 
@@ -902,7 +810,7 @@ def parse_args() -> argparse.Namespace:
         "--classify-eligible", default=None, metavar="CSV",
         help=(
             "Classifica els canvis (C210-C530) dels datasets elegibles d'aquest CSV "
-            "(eligibility_report_*.csv) EN LLOC de fer un mostreig nou -- "
+            "(eligibility_report.csv) EN LLOC de fer un mostreig nou -- "
             "ignora --sample-size/--max-scanned/--threads/--seed/--tags-only. "
             "Útil per reclassificar un CSV d'un run previ sense tornar a "
             "mostrejar; per encadenar mostreig+extracció+classificació en una "
@@ -987,6 +895,7 @@ if __name__ == "__main__":
         max_wait_s=args.retry_max_wait,
     )
 
+    new_run_dir()
     if args.classify_eligible:
         run_classification(args.classify_eligible)
     else:

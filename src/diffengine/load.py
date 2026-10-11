@@ -39,6 +39,7 @@ NULL_TOKEN = "\x00null"
 @dataclass
 class Column:
     """
+    :ivar name: nom de la columna.
     :ivar kind: `numeric`, `categorical`, `text` o `opaque`.
     :ivar integer: per a numèriques, si tots els valors no nuls són enters.
     :ivar raw_dtype: dtype físic (pandas/arrow) o `str` per a CSV.

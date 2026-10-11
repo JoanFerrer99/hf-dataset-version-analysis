@@ -2,15 +2,12 @@
 Tots els llindars i decisions provisionals del motor, en un sol lloc.
 
 Cada camp porta el seu valor per defecte i el perquè. Les decisions
-provisionals (P*, U*) s'expliquen a `docs/open_decisions.md`. Cada fila de
-sortida guarda el hash d'aquesta configuració, per saber amb quins llindars
-s'ha generat. Per provar uns altres valors:
+provisionals (P*, U*) s'expliquen a `docs/open_decisions.md`. Per provar
+uns altres valors:
 `dataclasses.replace(DEFAULT_CONFIG, alpha=0.05)`.
 """
 
-import hashlib
-import json
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
@@ -19,7 +16,7 @@ class EngineConfig:
     concat_shards: bool = True
     """U1: concatena els shards (hf_shards / numbered) d'una taula si comparteixen esquema."""
     max_unit_bytes: int = 500 * 1024**2
-    """U4: per sobre, la taula es marca `too_large_profile_only`."""
+    """U4: per sobre, la taula es marca `too_large` i no es compara."""
 
     # --- Pas 2: llegir cada taula -------------------------------------------
     missing_tokens: tuple[str, ...] = ("", "?", "NA", "N/A", "n/a", "NaN", "nan", "null", "NULL", "None", "none", "-")
@@ -73,15 +70,6 @@ class EngineConfig:
     """C530: distància mínima entre distribucions (KS per a numèriques, variació total per a categòriques)."""
     alpha: float = 0.01
     """Nivell de significació de les proves (filtre secundari: decideix la mida d'efecte)."""
-
-    def hash(self) -> str:
-        """
-        Identificador curt de la configuració, per guardar-lo a cada fila de sortida.
-
-        :return: els 12 primers caràcters del SHA-256 dels valors.
-        """
-        payload = json.dumps(asdict(self), sort_keys=True, default=list).encode()
-        return hashlib.sha256(payload).hexdigest()[:12]
 
 
 DEFAULT_CONFIG = EngineConfig()

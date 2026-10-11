@@ -15,8 +15,7 @@ correccions ja són a la versió actual.**
 Des d'aquella versió (3 d'octubre), el document s'ha actualitzat amb el
 motor nou i la nova organització del repositori:
 
-- `notebooks/` ara és `src/` (eren scripts, no notebooks), i els
-  experiments són a `experiments/`.
+- `notebooks/` ara és `src/` (eren scripts, no notebooks).
 - La secció 5 descriu també els mòduls del motor de detecció de canvis
   (`src/diffengine/`), ordenats com les perspectives de la taxonomia.
 - La secció 13.2 té el resultat actual de Census Income.
@@ -126,7 +125,7 @@ o tots tres. Ara:
 
 - comparem **els tres concatenats**, perquè la targeta diu que són un sol
   dataset partit;
-- hem provat també cada fitxer per separat (`experiments/census_variants/`):
+- hem provat també cada fitxer per separat:
   els tres donen **exactament els mateixos codis**, així que la tria no
   canvia el resultat.
 

@@ -36,8 +36,6 @@ class ColumnMatch:
     old: str
     new: str
     method: str
-    validity: float = 1.0
-    detail: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -95,7 +93,7 @@ def align_by_name(old: Table, new: Table) -> ColumnAlignment:
     return ColumnAlignment(matches, removed, added)
 
 
-def _score(old: Table, new: Table, o: str, n: str, rows: RowAlignment, config: EngineConfig) -> tuple[float, str, dict]:
+def _score(old: Table, new: Table, o: str, n: str, rows: RowAlignment, config: EngineConfig) -> tuple[float, str]:
     """
     Puntua si una columna eliminada i una d'afegida són la mateixa. Prova, en
     ordre: si tenen exactament els mateixos valors; si es corresponen fila a fila
@@ -108,10 +106,10 @@ def _score(old: Table, new: Table, o: str, n: str, rows: RowAlignment, config: E
     :param n: nom de la columna nova.
     :param rows: aparellament de files.
     :param config: llindars del motor.
-    :return: `(puntuació, mètode, detall)`; puntuació 0 si no són la mateixa columna.
+    :return: `(puntuació, mètode)`; puntuació 0 si no són la mateixa columna.
     """
     if old.columns[o].kind == OPAQUE or new.columns[n].kind == OPAQUE:
-        return 0.0, "", {}
+        return 0.0, ""
     ta_all, tb_all = cell_tokens(old, o), cell_tokens(new, n)
     many_values = min(ta_all.nunique(), tb_all.nunique()) >= 20
     if many_values:
@@ -119,7 +117,7 @@ def _score(old: Table, new: Table, o: str, n: str, rows: RowAlignment, config: E
         # encara que les files no s'hagin pogut aparellar bé.
         overlap = value_overlap(ta_all, tb_all)
         if overlap >= config.column_match_min_validity:
-            return overlap, "identical", {"by": "value_multiset"}
+            return overlap, "identical"
     found = _score_on_pairs(old, new, o, n, rows, config, ta_all, tb_all)
     if found[0] or not many_values:
         return found
@@ -128,15 +126,15 @@ def _score(old: Table, new: Table, o: str, n: str, rows: RowAlignment, config: E
     shared = len(set(ta_all) & set(tb_all)) / tb_all.nunique()
     same_kind = (old.columns[o].kind == NUMERIC) == (new.columns[n].kind == NUMERIC)
     if same_kind and shared >= config.same_column_min_shared_values:
-        distance, _, measure = distribution_distance(old.values[o].dropna(), new.values[n].dropna(),
+        distance, _, _ = distribution_distance(old.values[o].dropna(), new.values[n].dropna(),
                                                      old.columns[o].kind == NUMERIC)
         if distance < config.c530_min_distance:
-            return shared, "same_distribution", {"shared_values": shared, measure: distance}
-    return 0.0, "", {}
+            return shared, "same_distribution"
+    return 0.0, ""
 
 
 def _score_on_pairs(old: Table, new: Table, o: str, n: str, rows: RowAlignment, config: EngineConfig,
-                    ta_all: pd.Series, tb_all: pd.Series) -> tuple[float, str, dict]:
+                    ta_all: pd.Series, tb_all: pd.Series) -> tuple[float, str]:
     """
     Puntua dues columnes comparant-les fila a fila sobre les files aparellades.
     Si no hi ha prou files aparellades, compara les freqüències dels valors.
@@ -149,29 +147,29 @@ def _score_on_pairs(old: Table, new: Table, o: str, n: str, rows: RowAlignment, 
     :param config: llindars del motor.
     :param ta_all: valors de la columna antiga, com a text.
     :param tb_all: valors de la columna nova, com a text.
-    :return: `(puntuació, mètode, detall)`; puntuació 0 si no ho semblen.
+    :return: `(puntuació, mètode)`; puntuació 0 si no ho semblen.
     """
     reliable = rows.reliable_pairs
     if len(reliable) >= 10:
         a_idx, b_idx = reliable[:, 0], reliable[:, 1]
         same = float(np.mean(ta_all.iloc[a_idx].to_numpy() == tb_all.iloc[b_idx].to_numpy()))
         if same >= config.column_match_min_validity:
-            return same, "identical", {}
+            return same, "identical"
         x, y = paired_values(old, o, a_idx), paired_values(new, n, b_idx)
         if old.columns[o].kind == NUMERIC and new.columns[n].kind == NUMERIC:
             fit = fit_numeric(x.to_numpy(float), y.to_numpy(float), config.column_match_min_validity)
             if fit is not None:
-                return fit.validity, "transform", {"fit": fit.kind, **fit.params}
+                return fit.validity, "transform"
         ok, validity = is_bijection(x, y, config.column_match_min_validity)
         if ok and x.nunique() > 1:
-            return validity, "bijection", {}
-        return 0.0, "", {}
+            return validity, "bijection"
+        return 0.0, ""
     # Sense files aparellades: perfil de freqüències sense etiquetes + cardinalitat.
     fa = old.values[o].value_counts(normalize=True, dropna=False).sort_values().to_numpy()
     fb = new.values[n].value_counts(normalize=True, dropna=False).sort_values().to_numpy()
     if len(fa) == len(fb) and len(fa) > 1 and np.allclose(fa, fb, atol=0.01):
-        return 0.9, "bijection", {"label_free": True}
-    return 0.0, "", {}
+        return 0.9, "bijection"
+    return 0.0, ""
 
 
 def _binary_tokens(table: Table, column: str) -> pd.Series | None:
@@ -247,20 +245,19 @@ def align_by_content(old: Table, new: Table, ca: ColumnAlignment, rows: RowAlign
     _find_one_hot(old, new, ca, rows, config)
     if ca.removed and ca.added:
         scores = np.zeros((len(ca.removed), len(ca.added)))
-        details = {}
+        details = {}  # (i, j) -> mètode
         for i, o in enumerate(ca.removed):
             for j, n in enumerate(ca.added):
-                score, method, detail = _score(old, new, o, n, rows, config)
+                score, method = _score(old, new, o, n, rows, config)
                 if score:
                     name_sim = difflib.SequenceMatcher(None, str(o).lower(), str(n).lower()).ratio()
                     scores[i, j] = score + 1e-3 * name_sim
-                    details[(i, j)] = (score, method, detail)
+                    details[(i, j)] = method
         if scores.any():
             ri, ci = linear_sum_assignment(-scores)
             accepted = [(i, j) for i, j in zip(ri, ci) if (i, j) in details]
             for i, j in accepted:
-                score, method, detail = details[(i, j)]
-                ca.matches.append(ColumnMatch(ca.removed[i], ca.added[j], method, score, detail))
+                ca.matches.append(ColumnMatch(ca.removed[i], ca.added[j], details[(i, j)]))
             removed_i = {i for i, _ in accepted}
             added_j = {j for _, j in accepted}
             ca.removed = [c for i, c in enumerate(ca.removed) if i not in removed_i]

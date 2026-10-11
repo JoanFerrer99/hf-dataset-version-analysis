@@ -21,7 +21,7 @@ registrats.
 
 **Per què no "un fitxer = un dataset":** enquesta sobre els 69
 repositoris elegibles de totes les execucions (151 revisions; detall a
-`experiments/survey/summary.md`, script `experiments/survey_units.py`):
+l'script `survey_units.py`, que ja no és al repositori; queda a l'historial de git, commit `d084ff7`):
 
 - **24 dels 50** repositoris amb dades tabulars tenen almenys una taula
   repartida en diversos fitxers: 13 taules d'episodis numerats (LeRobot),
@@ -60,7 +60,7 @@ regles de `datasets` ja excloen la major part (vegeu U1).
 
 Una taula LeRobot pot tenir centenars d'episodis. **Per defecte:** límit
 de bytes per taula (`max_unit_bytes`, la suma de les dues versions); per
-sobre, estat `too_large_profile_only` i **cap codi**. Les taules amb el
+sobre, estat `too_large` i **cap codi**. Les taules amb el
 mateix contingut a les dues revisions (hash LFS o blob de git) no es
 descarreguen. Encara no hi ha perfil en caché per fitxer ni codis de perfil
 per a les taules massa grans. Aquest límit només s'aplica al pipeline: la

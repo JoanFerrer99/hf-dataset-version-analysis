@@ -34,7 +34,7 @@ jobs:
           pip install ruff
 
       - name: Lint (ruff)
-        run: ruff check src tests experiments
+        run: ruff check src tests
 
       - name: Tests (pytest)
         env:

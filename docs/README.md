@@ -12,8 +12,6 @@
 
 Altres:
 
-- `../experiments/report.md`: avaluació del motor amb casos generats
-  (motor anterior contra motor actual).
 - `decisions_tfg.txt`: registre de totes les decisions del projecte, amb el
   seu perquè. El codi s'hi refereix pels identificadors (T-xx, M-xx, A-xx).
 - `GIT_FLOW.md`: model de branques i convencions de commit.

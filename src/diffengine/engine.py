@@ -28,7 +28,7 @@ import pandas as pd
 
 from diffengine.columns import ColumnAlignment, align_by_content, align_by_name, classify_leftovers
 from diffengine.config import DEFAULT_CONFIG, EngineConfig
-from diffengine.detectors import DETECTORS, PAIRED_DETECTORS, ROW_DETECTORS, Context, find_identifiers
+from diffengine.detectors import DETECTORS, Context, find_identifiers
 from diffengine.load import NUMERIC, ParseError, Table, load_table
 from diffengine.output import Change, DiffResult
 from diffengine.rows import RowAlignment, align_rows
@@ -55,8 +55,8 @@ def diff_bytes(old_data: bytes, old_ext: str, new_data: bytes, new_ext: str,
     try:
         old = load_table(old_data, old_ext, config)      # Pas 2
         new = load_table(new_data, new_ext, config)
-    except ParseError as exc:
-        return DiffResult("parse_failed", info={"error": str(exc)[:300]})
+    except ParseError:
+        return DiffResult("parse_failed")
     return diff_tables(old, new, config)
 
 
@@ -67,13 +67,11 @@ def diff_tables(old: Table, new: Table, config: EngineConfig = DEFAULT_CONFIG) -
     :param old: taula de la versió antiga.
     :param new: taula de la versió nova.
     :param config: llindars del motor.
-    :return: resultat amb estat `ok`, la llista de canvis i un resum de com s'han aparellat les files.
+    :return: resultat amb estat `ok` i la llista de canvis.
     """
     cols, rows = match_columns_and_rows(old, new, config)   # Pas 3
     changes = detect_changes(old, new, cols, rows, config)  # Pas 4
-    info = {**_alignment_summary(rows), "stable_columns": rows.stable_columns,
-            "format_old": old.fmt, "format_new": new.fmt, "dialect_old": old.dialect, "dialect_new": new.dialect}
-    return DiffResult("ok", changes, info)
+    return DiffResult("ok", changes)
 
 
 # --- Pas 3: aparellar columnes i files ----------------------------------------------
@@ -114,9 +112,7 @@ def match_columns_and_rows(old: Table, new: Table,
 def detect_changes(old: Table, new: Table, cols: ColumnAlignment, rows: RowAlignment,
                    config: EngineConfig) -> list[Change]:
     """
-    Executa tots els detectors sobre el que s'ha aparellat. Als canvis que
-    depenen de les files aparellades s'hi afegeix com s'han aparellat, i se'n
-    rebaixa la confiança si l'aparellament és dubtós.
+    Executa tots els detectors, en ordre, sobre el que s'ha aparellat.
 
     :param old: taula de la versió antiga.
     :param new: taula de la versió nova.
@@ -127,50 +123,10 @@ def detect_changes(old: Table, new: Table, cols: ColumnAlignment, rows: RowAlign
     """
     ctx = Context(old, new, cols, rows, config)
     find_identifiers(ctx)
-    alignment = _alignment_summary(rows)
-    changes = []
-    for detector in DETECTORS:
-        found = detector(ctx)
-        for c in found:
-            if detector in PAIRED_DETECTORS:
-                c.evidence = {**alignment, **c.evidence}
-            if detector in ROW_DETECTORS:
-                c.confidence = min(c.confidence, _row_confidence(c, old, new, rows))
-        changes += found
-    return changes
+    return [change for detector in DETECTORS for change in detector(ctx)]
 
 
 # --- Detalls ------------------------------------------------------------------------
-
-
-def _alignment_summary(rows: RowAlignment) -> dict:
-    """
-    Resum curt de com s'han aparellat les files, per guardar-lo com a evidència.
-
-    :param rows: resultat de l'aparellament de files.
-    :return: diccionari amb el mètode, la columna clau, la proporció aparellada i la proporció dubtosa.
-    """
-    return {"row_alignment": rows.method, "key_columns": rows.key_columns,
-            "matched_row_share": round(rows.matched_share, 4), "ambiguous_share": round(rows.ambiguous_share, 4)}
-
-
-def _row_confidence(change: Change, old: Table, new: Table, rows: RowAlignment) -> float:
-    """
-    Confiança d'un canvi de files: la proporció de parelles no dubtoses. La part
-    del canvi que es dedueix només de comptar files és segura: si la taula perd
-    100 files, almenys 100 s'han eliminat.
-
-    :param change: el canvi del qual es calcula la confiança.
-    :param old: taula de la versió antiga.
-    :param new: taula de la versió nova.
-    :param rows: resultat de l'aparellament de files.
-    :return: un valor entre 0 i 1.
-    """
-    unambiguous = 1 - rows.ambiguous_share
-    surplus = {"C421": new.n_rows - old.n_rows, "C422": old.n_rows - new.n_rows}.get(change.code, 0)
-    if surplus > 0 and change.n_affected:
-        return max(unambiguous, min(1.0, surplus / change.n_affected))
-    return unambiguous
 
 
 def _adopt_kind_of_empty_columns(old: Table, new: Table, pairs: list[tuple[str, str]]) -> None:
