@@ -235,11 +235,14 @@ saber amb quins llindars s'ha generat.
 | Una taula que perdia 12.919 files tenia el C422 amb confiança 0 | La diferència de recompte és segura; subtipus `all_rows` si no en queda cap |
 | C520 per 5 files en una taula de 600 | Prova estadística per a totes les mesures i regla de Cochran |
 
-A la mateixa execució, el diff donava 30 etiquetes en 3 datasets, i el
+Amb la mateixa entrada, el diff donava 30 etiquetes en 3 datasets, i el
 motor actual dona 35 canvis en 3 datasets, cadascun amb la seva explicació.
 A més, el motor actual llegeix dades que el diff no llegia (els `.jsonl` de
-`ckwolfe/benchmarks-viz-tiles`, els 500 episodis de `Ray0v0/...`) i
-registra un estat per a cada una de les 78 taules de 7 datasets.
+`ckwolfe/benchmarks-viz-tiles`) i registra un estat per a cada taula: 70
+taules de 5 datasets a `data/run_12`, l'execució de referència amb el codi
+actual. Els altres 6 elegibles de `run_8` ja no ho són amb el criteri
+tabular: 4 no tenen cap taula, i 2 tenen totes les pujades de dades en una
+sola sessió.
 
 ## 6. Guia per programar-hi
 

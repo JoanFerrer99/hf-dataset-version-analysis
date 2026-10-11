@@ -779,6 +779,25 @@ class TestClassifyDatasetWithChangeClassification:
         assert result["eligible"] is True
         assert result["num_commits_substantive"] == 4  # tots 4, no només els 2 necessaris
 
+    def test_ineligible_dataset_is_not_classified(self, monkeypatch, tmp_path):
+        # Commits amb dades, però tots en una sola sessió (patró de pujada
+        # LeRobot) i sense tags: no és elegible i no s'ha de comparar res.
+        now = datetime(2026, 1, 1, 12, 0, 0)
+        commits = [_FakeCommit(f"Add episode {i}", created_at=now - timedelta(minutes=i)) for i in range(5)]
+        monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(branches=["main", "dev"]))
+        monkeypatch.setattr(es, "list_repo_commits", lambda **kw: commits)
+        _files_by_title(monkeypatch)
+        calls = []
+        monkeypatch.setattr(es, "classify_commit_tabular_changes", lambda *a, **kw: calls.append(a) or ([], []))
+        monkeypatch.setattr(es, "classify_session_boundary_tabular_changes",
+                            lambda *a, **kw: calls.append(a) or ([], []))
+        monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
+
+        result = es.classify_dataset("org/ds", classify_changes=True)
+
+        assert result["eligible"] is False
+        assert calls == []
+
     def test_classify_changes_calls_classifier_with_parent_as_before(self, monkeypatch, tmp_path):
         commits = [
             _FakeCommit("Add batch 2", commit_id="c2"),

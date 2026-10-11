@@ -288,7 +288,9 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
                     if commits_scanned >= 50:
                         break
 
-            if classify_changes and substantive_commits:
+            # Només es classifiquen els elegibles: si els commits amb dades són tots d'una
+            # sola sessió de pujada, no hi ha dues versions que comparar.
+            if classify_changes and result["eligible"] and substantive_commits:
                 if result["eligibility_reason"].startswith("Criteri B"):
                     changes, statuses = classify_session_boundary_tabular_changes(
                         dataset_id, substantive_commits, HF_TOKEN, RETRY_CONFIG,
