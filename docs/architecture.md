@@ -204,57 +204,83 @@ python experiments/run_eval.py                # avaluació del motor (experiment
 ## 5. Estructura del repositori
 
 ```
-src/            Codi del pipeline (scripts Python)
-  diffengine/   Motor de detecció de canvis (paquet; docs/engine.md)
-experiments/    Experiments del treball: avaluació del motor i estudi de Census Income
-tests/          Tests pytest, un fitxer per mòdul; l'API sempre simulada
-data/           Resultats de les execucions (vegeu secció 10)
-docs/           Documentació (índex i ordre de lectura: docs/README.md)
-Dockerfile, docker-compose.yml, requirements.txt, ruff.toml
-.github/workflows/  CI: lint + tests + build de la imatge
+src/                Codi del pipeline: un script per fase i el motor de detecció de canvis
+  diffengine/       El motor, com a paquet de Python (s'explica a docs/engine.md)
+experiments/        Experiments del treball, fora del pipeline: avaluació del motor i estudi de Census Income
+tests/              Tests automàtics (pytest), sense xarxa
+data/               Resultats de les execucions (secció 10)
+docs/               Documentació (ordre de lectura: docs/README.md)
 ```
 
-Scripts de `src/`, en l'ordre en què s'executen:
+### 5.1 Scripts del pipeline (`src/`)
 
-| Fitxer | Què fa |
-|---|---|
-| `run_pipeline.py` | **Orquestrador**: executa Fase 0 → 1 → 2 i desa tot en una carpeta per execució |
-| `eligibility_scan.py` | Fase 0 (mostreig i elegibilitat) i Fase 2 (classificació de canvis) |
-| `version_extractor.py` | Fase 1 (extreu les metadades de la seqüència de versions) |
-| `diffengine/` | Motor que compara dues revisions taula a taula i en treu els codis |
-| `errors.py` | Reintents, classificació d'errors, registre de fallades |
-| `validate_census_income.py` | Valida el motor contra la Taula 1 del paper (Census Income); s'executa a part |
+| Fitxer | Què fa | S'executa |
+|---|---|---|
+| `run_pipeline.py` | **Orquestrador.** Crea una carpeta nova per a l'execució i encadena les Fases 0, 1 i 2. | Sí, és el punt d'entrada habitual |
+| `eligibility_scan.py` | Fase 0 (mostra aleatòria i elegibilitat) i Fase 2 (classificació de canvis dels elegibles). Conté també el clon de git i el criteri de quins fitxers compten. | Sí, sol o des de l'orquestrador |
+| `version_extractor.py` | Fase 1: la llista ordenada de versions de cada elegible, amb data, autors i mida. | Sí, sol o des de l'orquestrador |
+| `errors.py` | Reintents davant els límits de l'API, classificació dels errors i registre de fallades a `failures.csv`. La fan servir totes les fases. | No, és una llibreria |
+| `validate_census_income.py` | Valida el motor amb la Taula 1 del paper (Census Income). | Sí, a part del pipeline |
 
-Mòduls de `src/diffengine/`, en l'ordre dels 5 passos del motor
-(`engine.py` n'és l'índex; explicació a `docs/engine.md`):
+### 5.2 El motor (`src/diffengine/`)
+
+Compara dues versions d'un dataset en 5 passos. `engine.py` n'és l'índex.
 
 | Pas | Què fa | Mòduls |
 |---|---|---|
 | 1 | Trobar les taules que es comparen i quina va amb quina | `units.py`, `pairs.py` |
 | 2 | Llegir cada taula i saber el tipus de cada columna | `load.py` |
 | 3 | Aparellar columnes i files (3a columnes pel nom, 3b files, 3c columnes pel contingut) | `columns.py`, `rows.py`, `transforms.py` |
-| 4 | Detectar els canvis: un fitxer per perspectiva de la taxonomia (C2xx, C3xx, C4xx, C5xx) | `detectors/` |
+| 4 | Detectar els canvis, amb un fitxer per perspectiva de la taxonomia: `columns_set.py` (C2xx), `column_kind.py` (C3xx), `rows_set.py` (C4xx), `data.py` (C5xx); `common.py` és el que comparteixen | `detectors/` |
 | 5 | Escriure el resultat | `output.py` |
 
 `config.py` té tots els llindars, agrupats pels mateixos passos.
 
-Scripts d'`experiments/` (no formen part del pipeline):
+### 5.3 Experiments (`experiments/`)
+
+No formen part del pipeline: són les proves que justifiquen el motor.
 
 | Fitxer | Què fa |
 |---|---|
-| `run_eval.py` (+ `mutations.py`, `adapters.py`) | Avalua el motor amb casos generats per mutació; escriu `experiments/report.md` |
-| `census_variants.py` | Quines dades va comparar el paper a la Taula 1 (`experiments/census_variants/`) |
-| `survey_units.py` | Enquesta de com es reparteixen les taules en fitxers als repositoris elegibles |
+| `mutations.py` | Genera casos de prova: aplica a una taula canvis coneguts (reanomenar, escalar, eliminar files...) i en guarda els codis que el motor hauria de trobar. |
+| `adapters.py` | Connecta el motor amb l'avaluació: rep un cas i retorna els codis que detecta. |
+| `run_eval.py` | Executa el motor sobre tots els casos i escriu precisió i recall per codi a `report.md`, comparant amb el motor anterior (`baseline_old_engine.json`). |
+| `census_variants.py` | Prova totes les combinacions de fitxers, revisions i D0 de Census Income per saber quines dades va fer servir el paper. Resultats a `census_variants/`. |
+| `survey_units.py` | Compta com es reparteixen les taules en fitxers als repositoris elegibles. Va servir per decidir que la unitat de comparació és la taula. Resultats a `survey/`. |
 
-Puntualitzacions:
+### 5.4 Tests (`tests/`)
 
-- **La Fase 2 viu a `eligibility_scan.py`, no a `diffengine/`.**
-  `diffengine` sap comparar dues revisions donades. Qui decideix *quines*
-  revisions comparar és
-  `classify_dataset`, que ja recorre els commits per decidir
-  l'elegibilitat (decisió T-08).
-- **`eligibility_scan.py` surt amb error en importar-lo si no troba
-  `HF_TOKEN`.** Per això la CI defineix un token fictici per als tests.
+Un fitxer per mòdul. L'API de Hugging Face sempre se simula: cap test necessita
+xarxa ni token. `conftest.py` afegeix `src/` al camí d'importació.
+
+| Fitxer | Comprova |
+|---|---|
+| `test_eligibility_scan.py` | Mostreig, criteri de fitxers, elegibilitat, embut i Fase 2 |
+| `test_version_extractor.py` | Versions per tags i per sessions |
+| `test_run_pipeline.py` | L'orquestrador i la carpeta de cada execució |
+| `test_errors.py` | Reintents i classificació d'errors |
+| `test_validate_census_income.py`, `test_census_income_labels.py` | Puntuació contra el paper i transcripció de la Taula 1 (`fixtures/`) |
+| `test_diffengine_regressions.py` | El motor amb casos reals i coneguts, un test per cas |
+| `test_diffengine_units.py`, `test_diffengine_pairs.py`, `test_diffengine_load.py` | Passos 1 i 2 del motor |
+
+### 5.5 Infraestructura
+
+| Fitxer | Per a què |
+|---|---|
+| `requirements.txt` | Dependències amb versió fixada |
+| `ruff.toml` | Regles de lint |
+| `Dockerfile`, `docker-compose.yml` | Imatge per executar el pipeline sense instal·lar res; `docker-compose` hi defineix un servei per script (`run-pipeline`, `eligibility-scan`, `version-extractor`) |
+| `.github/workflows/ci.yml` | A cada push: lint, tests i construcció de la imatge |
+| `.github/workflows/docker-publish.yml` | Publica la imatge |
+
+**Detalls a tenir en compte:**
+
+- **La Fase 2 viu a `eligibility_scan.py`, no a `diffengine/`.** El motor
+  sap comparar dues revisions; qui decideix *quines* es comparen és
+  `classify_dataset`, que ja recorre els commits per decidir l'elegibilitat
+  (decisió T-08).
+- **`eligibility_scan.py` surt amb error si no troba `HF_TOKEN`.** Per això la
+  CI defineix un token fictici per als tests.
 
 ---
 
@@ -265,8 +291,8 @@ Puntualitzacions:
         │
         ▼
  FASE 0  Mostreig i elegibilitat          eligibility_scan.run_sampling
-        │  mostra aleatòria de N (2000 p.e.) → quins tenen ≥2 versions reals amb canvis a dades tabulars
-        │  sortida: eligibility_report_*.csv  (~0.5% elegibles)
+        │  mostra aleatòria de N (2000 p.e.) → quins tenen ≥2 versions amb canvis a dades tabulars
+        │  sortida: eligibility_report_*.csv, funnel_summary_*.json
         ▼
  FASE 1  Extracció de versions            version_extractor.run_extraction
         │  per a cada elegible: llista ordenada de versions amb data,
@@ -281,8 +307,48 @@ Puntualitzacions:
  FASE 3  Esquema de dades               (pendent)
 ```
 
-Les Fases 1 i 2 només treballen amb els elegibles: ~11 datasets de
-2000, no tota la mostra. És el que fa viable descarregar contingut.
+Les Fases 1 i 2 només treballen amb els elegibles (una desena de 2.000), no
+amb tota la mostra. És el que fa viable descarregar contingut.
+
+### 6.1 Recorregut d'una execució, pas a pas
+
+Què passa quan s'executa `python src/run_pipeline.py --sample-size 2000`:
+
+1. **Preparació** (`run_pipeline.run_full_pipeline`). Crea la carpeta
+   `data/run_<id>/` amb el número següent (mai se sobreescriu res) i hi
+   dirigeix la sortida de totes les fases.
+2. **Fase 0** (`eligibility_scan.run_sampling`):
+   1. `iter_all_dataset_ids` recorre tots els datasets de Hugging Face, i
+      `reservoir_sample_dataset_ids` en guarda una mostra aleatòria de N
+      (secció 7.1).
+   2. Per a cada dataset de la mostra, en paral·lel (`--threads`),
+      `classify_dataset` decideix si és elegible (secció 7.2). Per mirar
+      quins fitxers toca cada commit, `bare_clone` en fa un clon de git
+      sense contingut i `get_changed_files` ho consulta en local.
+   3. `write_results` escriu el report per dataset i el resum de l'embut
+      (`compute_funnel_stats`, secció 7.4).
+3. **Fase 1** (`version_extractor.run_extraction`). Per a cada elegible,
+   `extract_versions_for_dataset` construeix la llista de versions: una per
+   tag (Criteri A) o una per sessió de commits (Criteri B). Escriu
+   `versions_<k>.csv` (secció 8).
+4. **Fase 2** (`eligibility_scan.run_classification`). Per a cada elegible:
+   1. `classify_dataset(..., classify_changes=True)` torna a recórrer els
+      commits i forma les unitats de canvi: cada commit amb el seu anterior
+      (Criteri A, `classify_commit_tabular_changes`) o el final de cada
+      sessió amb el de l'anterior (Criteri B,
+      `classify_session_boundary_tabular_changes`).
+   2. Per a cada unitat, el motor (`diffengine.pairs.compare_revisions`)
+      compara les taules de les dues revisions i retorna els canvis i
+      l'estat de cada taula.
+   3. Escriu `changes_<k>.csv`/`.parquet`, `change_pairs_<k>.csv` i
+      `change_classification_<k>.csv` (secció 9).
+5. **Resum.** L'orquestrador mostra quins fitxers ha generat cada fase.
+   Totes les fallades queden a `failures.csv`.
+
+Opcions útils: `--input-csv <report>` salta la Fase 0 i fa servir un report
+existent; `--skip-version-extraction` i `--skip-classification` ometen les
+Fases 1 i 2; `--max-scanned` limita el recorregut (només per a proves, perquè
+esbiaixa la mostra).
 
 ---
 
@@ -462,7 +528,8 @@ mostra baixaria centenars de GB).
 ### 9.1 Què es compara
 
 1. Es tornen a recórrer els commits (fins a 50) i es guarden els
-   substantius amb els fitxers que toquen.
+   substantius amb els fitxers que toquen. Si el dataset ja no és elegible
+   (p.e. tots els commits amb dades són d'una sola sessió), no es compara.
 2. Es formen les **unitats de canvi** (decisió T-13):
    - Criteri A: cada commit substantiu contra el commit anterior de
      l'historial.
@@ -495,7 +562,7 @@ afectades, confiança i evidència (5). Tots els llindars són a
 
 ### 9.3 Limitacions conegudes
 
-`docs/engine.md` §8. Les decisions d'etiquetatge encara provisionals
+`docs/engine.md`, secció 7. Les decisions d'etiquetatge encara provisionals
 (p.e. si valor → nul és C510 o C312/C322) són a `docs/open_decisions.md`.
 
 ---
@@ -538,8 +605,9 @@ La validació de Census Income escriu directament a `data/`
     queda marcat i se'n continua amb el següent.
   - **Parcial** (una descàrrega, la mida d'una versió): es conserva la
     resta i es marca la fila afectada.
-- Si el clon falla, no s'atura res: es fa servir l'heurística de títol.
-  Si `git` no està instal·lat, s'avisa un sol cop per execució.
+- Si el clon falla, no s'atura res, però sense clon no es pot saber quins
+  fitxers toca cada commit i el dataset no pot ser elegible. Si `git` no
+  està instal·lat, s'avisa un sol cop per execució.
 
 ---
 
@@ -570,9 +638,9 @@ descàrregues es fan.
   pesava 78): per això el salt per hash, el límit de bytes per taula
   (`max_unit_bytes`) i el filtre d'elegibles.
 - Comparar una taula de `r` files i `c` columnes: majoritàriament O(r·c)
-  per passada, vectoritzat (`docs/engine.md` §5).
+  per passada, vectoritzat (`docs/engine.md`, secció 6).
 
-Límits fixos: 50 commits per dataset (`MAX_COMMITS`), 500 MB per taula,
+Límits fixos: 50 commits per dataset (`MAX_COMMITS` a la Fase 1), 500 MB per taula,
 30 s per clonar, 10 s per `git show`.
 
 ---
@@ -581,9 +649,8 @@ Límits fixos: 50 commits per dataset (`MAX_COMMITS`), 500 MB per taula,
 
 ### 13.1 Tests
 
-`tests/` té un fitxer per mòdul (215 tests). L'API de HF sempre se
-simula amb `monkeypatch`: els tests no necessiten xarxa ni token real.
-`tests/conftest.py` afegeix `src/` al `sys.path`.
+210 tests (secció 5.4). Cap necessita xarxa ni token: l'API de Hugging Face
+se simula amb `monkeypatch`.
 
 ### 13.2 Validació del motor amb Census Income
 
