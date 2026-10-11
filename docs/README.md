@@ -5,19 +5,15 @@
 | 1 | `../README.md` | Instal·lació i com executar el pipeline |
 | 2 | `architecture.md` | Què fa el projecte, com és el pipeline (Fases 0–2) i on és cada cosa |
 | 3 | `taxonomy.md` | Els codis de canvi (C100–C530) del paper |
-| 4 | `engine.md` | Com el motor detecta cada codi, capa per capa |
-| 5 | `../experiments/report.md` | Avaluació del motor amb casos generats (motor anterior contra nou) |
-| 6 | `census_income_paper_method.md` | Validació amb la Taula 1 del paper: amb quines dades i quin criteri |
-| 7 | `falsos_positius.md` | **Tots els desacords amb el paper, explicats, i les preguntes obertes** |
-| 8 | `open_decisions.md` | Decisions provisionals del motor (P*, U*), pendents de confirmar |
-| 9 | `engine_changes.md` | Què ha canviat respecte al motor anterior i una execució real comparada |
-| 10 | `decisions_tfg.txt` | Registre de totes les decisions del projecte, amb el seu perquè |
+| 4 | `engine.md` | El motor de detecció de canvis: d'on venim (el motor de diffs), la idea del motor actual i el recorregut d'una comparació pas a pas |
+| 5 | `validacio_census_income.md` | Com es valida el motor amb la Taula 1 del paper, el resultat i cada desacord explicat |
+| 6 | `open_decisions.md` | Decisions provisionals del motor (P*, U*), pendents de confirmar |
+| 7 | `reunio_census_income.md` | Resposta al feedback del director i resum per a la reunió |
 
 Altres:
 
-- `reunio_census_income.md`: resum d'una pàgina de la validació amb Census Income, per a la reunió.
-
+- `../experiments/report.md`: avaluació del motor amb casos generats
+  (motor anterior contra motor actual).
+- `decisions_tfg.txt`: registre de totes les decisions del projecte, amb el
+  seu perquè. El codi s'hi refereix pels identificadors (T-xx, M-xx, A-xx).
 - `GIT_FLOW.md`: model de branques i convencions de commit.
-- `historic/`: documents de fases anteriors, que es conserven com a
-  registre (auditoria del motor anterior, històries d'usuari de Taiga,
-  notes d'investigació). No descriuen el codi actual.

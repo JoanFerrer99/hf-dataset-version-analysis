@@ -48,7 +48,7 @@ fora d'abast.
 s'emetia C421/C422. Una taula nova sencera no és "afegir files" a una
 taula existent. **Confirmat.** El FN de C421 a Census D7 no ve d'aquí: la
 validació de Census compara fitxers directament, sense aparellar taules
-(vegeu `docs/falsos_positius.md`).
+(vegeu `docs/validacio_census_income.md`).
 
 ## U3. Fitxers tabulars que no són dades
 
@@ -95,7 +95,7 @@ Decisions del prompt original que **no s'apliquen**, per decisió de Joan:
 ## Preguntes amb evidència de Census Income (Taula 1 del paper)
 
 Totes les preguntes sobre els desacords amb la Taula 1, cadascuna
-comprovada amb les dades, són a `docs/falsos_positius.md`.
+comprovada amb les dades, són a `docs/validacio_census_income.md`.
 
 ## Preguntes d'etiquetatge trobades en construir l'avaluació
 

@@ -37,7 +37,7 @@ UCI_ADULT_BASE_URL = "https://archive.ics.uci.edu/ml/machine-learning-databases/
 
 # D0 = `adult.data` (32.561 files), el fitxer de la UCI amb què compara el paper:
 # la Taula 1 marca C421 o C422 segons si la versió té més o menys files que aquest
-# (vegeu `docs/census_income_paper_method.md`). La UCI també publica `adult.test`
+# (vegeu `docs/validacio_census_income.md`). La UCI també publica `adult.test`
 # (16.281 files), que D3, D4, D6 i D7 barregen amb `adult.data`.
 D0_FILES: tuple[str, ...] = ("adult.data",)
 D0_STRIP_LABEL_DOT = True

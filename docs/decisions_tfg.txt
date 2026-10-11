@@ -3,6 +3,12 @@ DECISIONS DEL TFG — How do HuggingFace Datasets Change?
 Joan [Cognom]  |  Grau en Enginyeria Informàtica (GEI) — Esp. Enginyeria del Software
 Director: Alberto Abelló (UPC - FIB)
 Última actualització: agost 2026
+
+Nota (octubre 2026): els documents de docs/historic/ (Taiga, auditoria del
+motor anterior, notes d'investigació) i alguns resultats antics de data/ es
+van treure del repositori per deixar només el que és vigent. Es poden
+consultar a l'historial de git (commit 1c7f1e9 o anteriors). Les referències
+d'aquest registre a aquells fitxers es mantenen tal com eren.
 ================================================================================
 
 Aquest document registra totes les decisions tècniques, metodològiques i

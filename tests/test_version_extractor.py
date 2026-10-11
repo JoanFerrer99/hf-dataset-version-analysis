@@ -316,50 +316,6 @@ class TestFetchTreeSizeBytes:
         assert calls["n"] == 2
 
 
-class TestFetchTreePaths:
-    def test_returns_file_paths_ignoring_folders(self, monkeypatch):
-        monkeypatch.setattr(
-            ve, "list_repo_tree",
-            lambda **kw: iter([
-                _FakeRepoFile(10, path="data/train.csv"),
-                _FakeRepoFolder(),
-                _FakeRepoFile(5, path="data/test.parquet"),
-            ]),
-        )
-        paths = ve.fetch_tree_paths("org/ds", "tok", NO_RETRY_CONFIG)
-        assert paths == ["data/train.csv", "data/test.parquet"]
-
-    def test_lazy_failure_on_iteration_is_retried_not_missed(self, monkeypatch):
-        # Mateix motiu que TestFetchTreeSizeBytes -- list_repo_tree és un
-        # generador, l'excepció surt en ITERAR-lo, no en cridar-lo.
-        calls = {"n": 0}
-
-        def flaky_list_repo_tree(**kwargs):
-            calls["n"] += 1
-            attempt = calls["n"]
-
-            def gen():
-                if attempt == 1:
-                    raise make_http_error(429)
-                yield _FakeRepoFile(42, path="data/train.csv")
-
-            return gen()
-
-        monkeypatch.setattr(ve, "list_repo_tree", flaky_list_repo_tree)
-        paths = ve.fetch_tree_paths("org/ds", "tok", NO_RETRY_CONFIG)
-        assert paths == ["data/train.csv"]
-        assert calls["n"] == 2
-
-    def test_empty_tree_is_empty_list(self, monkeypatch):
-        monkeypatch.setattr(ve, "list_repo_tree", lambda **kw: iter([]))
-        assert ve.fetch_tree_paths("org/ds", "tok", NO_RETRY_CONFIG) == []
-
-
-# ---------------------------------------------------------------------------
-# run_extraction — una fallada de dataset no n'atura d'altres
-# ---------------------------------------------------------------------------
-
-
 class TestRunExtraction:
     def test_one_dataset_failure_does_not_stop_the_others(self, monkeypatch, tmp_path):
         input_csv = tmp_path / "eligibility_report.csv"

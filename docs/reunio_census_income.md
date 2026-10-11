@@ -1,7 +1,7 @@
 # Reunió: resposta al feedback i estat de la validació
 
 Resposta als dos correus i resum de l'estat del treball. Els detalls són a
-`docs/falsos_positius.md` i a `docs/census_income_paper_method.md`.
+`docs/validacio_census_income.md` i `docs/engine.md`.
 
 ---
 
@@ -22,40 +22,18 @@ motor nou i la nova organització del repositori:
 - La secció 13.2 té el resultat actual de Census Income.
 - `docs/README.md` dona l'ordre de lectura de tota la documentació.
 
-## 2. La sortida de l'escaneig d'elegibilitat
+## 2. L'escaneig d'elegibilitat: què hem canviat
 
-Exemple real (`data/run_8/funnel_summary_2000_8.json`):
-
-```
-eligible                          11
-ineligible                      1894
-access_restricted                 87
-errors                             8
-eligible_proportion           0.0058
-eligible_proportion_of_attempts 0.0055
-estimated_eligible_in_population 6197
-```
-
-**a) Mostrar com es calcula cada proporció.** D'acord. Quedaria així:
+**a) Les fórmules.** Afegides a `architecture.md` (secció 7.4), amb
+l'exemple de `run_8`:
 
 ```
 eligible_proportion                0.0058 (11/1905)   elegibles / classificats sense error
 eligible_proportion_of_attempts    0.0055 (11/2000)   elegibles / tots els intents
 ```
 
-**b) `estimated_eligible_in_population`.** És respecte a la **població
-recorreguda** (`population_scanned`), no a tot Hugging Face. En una
-execució completa coincideixen (a `run_8`, 1.068.504 datasets); amb
-`--max-scanned` no. Es calcula com `eligible_proportion × population_scanned`
-(0,0058 × 1.068.504 ≈ 6.197). D'acord a canviar-ho:
-
-- **Nom explícit:** `estimated_eligible_in_scanned_population`.
-- **Per decidir la mida de la mostra, millor la proporció sobre tots els
-  intents**, com dius: els inaccessibles i els errors també es perden.
-
-Però el número que realment importa per fixar la mostra és un altre: **quants
-datasets acaben comparats**. No tots els elegibles tenen dades tabulars per
-comparar:
+**b) Només compten els datasets tabulars.** El problema de fons de
+l'estimació era que molts elegibles no tenien res per comparar. A `run_8`:
 
 | `run_8` (mostra de 2.000) | Datasets | Sobre els intents |
 |---|---|---|
@@ -63,36 +41,47 @@ comparar:
 | Amb alguna taula comparada | 4 | 0,20% |
 | Amb algun canvi detectat | 3 | 0,15% |
 
-Els altres 7 elegibles no tenen res a comparar:
-- 4 no toquen cap fitxer tabular (per exemple, repositoris d'àudio o
-  d'imatge);
-- 2 només tenen taules que apareixen o desapareixen senceres entre
-  versions;
-- 1 té el mateix contingut a les dues versions. **Proposta:** afegir a la sortida la
-proporció de datasets comparats sobre els intents i la mida de mostra
-necessària per a un objectiu: **mostra ≈ objectiu / proporció**. Amb un
-0,20%, per comparar 50 datasets calen uns 25.000 intents. És una estimació
-feta amb una sola execució. La proporció d'elegibles varia entre el 0,35% i
-el 0,85% segons l'execució (sis execucions de 2.000), així que caldria un
-marge.
+Dels 7 elegibles sense res a comparar, 4 no tocaven cap fitxer tabular
+(repositoris d'àudio, d'imatge...), 2 només tenien taules que apareixien o
+desapareixien senceres, i 1 tenia el mateix contingut a les dues versions.
 
-**c) `eligible` i `eligible_total`.** Sí, són redundants: valen sempre el
-mateix, perquè tots dos són el nombre de files amb `eligible = True` del
-report. Hi són per com ha crescut el codi, no perquè signifiquin coses
-diferents:
+Per això ara **un commit només compta per a l'elegibilitat si toca un
+fitxer de dades tabular** (`.parquet`, `.csv`, `.tsv`, `.json`, `.jsonl`),
+amb la mateixa definició que fa servir el motor. Un dataset de vídeo o
+d'àudio ja no és elegible. Com a informació complementària, el report
+porta per a cada dataset la proporció de fitxers de dades que són tabulars
+(`tabular_file_share`), però no decideix res.
+
+**c) L'estimació, sobre tots els intents.** Ara és:
+
+- `estimated_eligible_in_scanned_population` = elegibles / tots els intents
+  × població recorreguda. El nom diu que és la població **recorreguda**
+  (que coincideix amb tot Hugging Face només si no s'ha fet servir
+  `--max-scanned`).
+- `attempts_per_eligible` = tots els intents / elegibles. **És el número
+  per fixar la mostra**: per tenir N datasets elegibles cal una mostra
+  d'unes N × `attempts_per_eligible`. Els inaccessibles, els errors i els no
+  elegibles hi queden inclosos.
+
+Amb `run_8` (criteri antic): 2.000 / 11 = 181,8 intents per elegible. Amb
+el criteri tabular, cada elegible té dades per comparar, però la proporció
+serà més baixa. Una nova execució de la Fase 0 ho dirà; la proporció
+d'elegibles ja variava entre el 0,35% i el 0,85% segons l'execució (sis
+execucions de 2.000), així que caldrà un marge.
+
+**d) `eligible` i `eligible_total`.** Eren redundants: valien sempre el
+mateix, perquè tots dos eren el nombre de files amb `eligible = True` del
+report. Hi eren per com havia crescut el codi:
 
 - **`eligible`** (juliol) forma part de l'**embut**. Amb `ineligible`,
   `access_restricted` i `errors` suma la mida de la mostra (a `run_8`:
-  11 + 1.894 + 87 + 8 = 2.000), i és el numerador de les dues proporcions.
+  11 + 1.894 + 87 + 8 = 2.000), i és el numerador de les proporcions.
 - **`eligible_total`** (setembre) es va afegir en crear l'orquestrador
-  (`run_pipeline.py`), que el llegeix per saber si cal executar les Fases 1
-  i 2 (si és 0, s'aturen). També es va posar al costat del desglossament
-  per criteri: `eligible_Criteri_A` + `eligible_Criteri_B` (a `run_8`,
-  4 + 7 = 11).
+  (`run_pipeline.py`), que el llegia per saber si calia executar les
+  Fases 1 i 2, i es va posar al costat del desglossament per criteri
+  (`eligible_Criteri_A` + `eligible_Criteri_B`: a `run_8`, 4 + 7 = 11).
 
-**Què farem:** deixar només `eligible`, fer que l'orquestrador llegeixi
-aquest camp, i mantenir el desglossament per criteri amb la suma explícita
-(`11 = 4 (A) + 7 (B)`).
+Ara només hi ha `eligible`, i l'orquestrador llegeix aquest camp.
 
 ## 3. D6: quin fitxer i què hi ha
 
@@ -201,17 +190,16 @@ Així es pot puntuar amb els mateixos scripts. Els casos que més ajudarien
 són els que la Taula 1 no cobreix: C322 (canvis numèrics), C520
 (correlacions) i C510 quan s'omplen valors absents.
 
-## 6. Què farem
+## 6. Què queda per fer
 
-1. A la sortida de l'escaneig: les fórmules al costat de cada proporció, el
-   nom `estimated_eligible_in_scanned_population`, treure `eligible_total`,
-   i la proporció de datasets comparats amb la mida de mostra necessària.
+1. Una nova execució de la Fase 0 amb el criteri tabular, per tenir la
+   proporció d'elegibles i `attempts_per_eligible` reals.
 2. Integrar el joc de proves del nou company quan arribi.
 
 ## 7. Preguntes
 
-1. **Mida de la mostra:** quants datasets comparats voldries tenir? Amb la
-   proporció actual (0,20% dels intents) es pot calcular la mostra.
+1. **Mida de la mostra:** quants datasets comparats voldries tenir? Amb
+   `attempts_per_eligible` es pot calcular la mostra.
 2. **Les files de la Taula 1 es van etiquetar comptant-les?** D3, D4 i D6
    també tenen files noves (d'`adult.test`), i D7 també n'elimina.
 3. **S'havien d'etiquetar els canvis que la targeta no documenta?** Per

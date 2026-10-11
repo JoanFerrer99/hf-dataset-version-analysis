@@ -98,7 +98,7 @@ class TestComputeAgreementMetrics:
 
     def test_mixed_agreement_matches_known_real_result(self):
         # Regressio: reprodueix exactament el resultat real verificat
-        # manualment sobre data/census_income_diff_report_3.csv (Decisio T-18).
+        # manualment amb el motor anterior (Decisio T-18).
         comparison_df = pd.DataFrame([
             {"tp": 2, "fn": 0, "fp": 0}, {"tp": 2, "fn": 0, "fp": 0},
             {"tp": 4, "fn": 2, "fp": 3}, {"tp": 5, "fn": 1, "fp": 2},

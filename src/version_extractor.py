@@ -201,26 +201,6 @@ def fetch_tree_size_bytes(dataset_id: str, commit_sha: str, hf_token: str | None
     return sum_tree_size(entries)
 
 
-def fetch_tree_paths(dataset_id: str, hf_token: str | None, retry_config: dict) -> list[str]:
-    """
-    Rutes de tots els fitxers (no carpetes) de la revisió actual. Mateix
-    patró de generador que `fetch_tree_size_bytes`. Usada per
-    `extension_report.py`.
-    """
-    entries = errors.with_retry(
-        lambda: list(
-            list_repo_tree(repo_id=dataset_id, repo_type="dataset", recursive=True, token=hf_token)
-        ),
-        **retry_config,
-    )
-    return [e.path for e in entries if getattr(e, "size", None) is not None]
-
-
-# ---------------------------------------------------------------------------
-# Extracció per dataset
-# ---------------------------------------------------------------------------
-
-
 def _extract_tag_versions(dataset_id: str, hf_token: str | None, retry_config: dict) -> list[dict]:
     """
     Una versió per tag (Criteri A). Si falla la metadada d'un tag, la versió
