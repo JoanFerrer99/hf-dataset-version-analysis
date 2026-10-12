@@ -234,31 +234,19 @@ data/               Resultats de les execucions (secció 10)
 docs/               Documentació (ordre de lectura: docs/README.md)
 ```
 
-### 5.1 Scripts del pipeline (`src/`)
+### 5.1 Fitxers del pipeline (`src/`)
 
-| Fitxer | Què fa | S'executa |
+| Fitxer | Què fa |
 |---|---|---|
-| `run_pipeline.py` | **Orquestrador.** Crea una carpeta nova per a l'execució i encadena les Fases 0, 1 i 2. | Sí, és el punt d'entrada habitual |
-| `eligibility_scan.py` | Fase 0 (mostra aleatòria i elegibilitat) i Fase 2 (classificació de canvis dels elegibles). Conté també el clon de git i el criteri de quins fitxers compten. | Sí, sol o des de l'orquestrador |
-| `version_extractor.py` | Fase 1: la llista ordenada de versions de cada elegible, amb data, autors i mida. | Sí, sol o des de l'orquestrador |
-| `errors.py` | Reintents davant els límits de l'API, classificació dels errors i registre de fallades a `failures.csv`. La fan servir totes les fases. | No, és una llibreria |
-| `validate_census_income.py` | Valida el motor amb la Taula 1 del paper (Census Income). | Sí, a part del pipeline |
+| `run_pipeline.py` | **Orquestrador.** Crea una carpeta nova per a l'execució i encadena les Fases 0, 1 i 2. |
+| `eligibility_scan.py` | Fase 0 (mostra aleatòria i elegibilitat) i Fase 2 (classificació de canvis dels elegibles). Conté també el clon de git i el criteri de quins fitxers compten. |
+| `version_extractor.py` | Fase 1: la llista ordenada de versions de cada elegible, amb data, autors i mida. |
+| `errors.py` | Reintents davant els límits de l'API, classificació dels errors i registre de fallades a `failures.csv`. És una llibreria que es fa servir totes les fases. |
+| `validate_census_income.py` | Valida el motor amb la Taula 1 del paper (Census Income). |
+| carpeta /diffengine |Compara dues versions d'un dataset en 5 passos. `engine.py` n'és l'índex. |
 
-### 5.2 El motor (`src/diffengine/`)
 
-Compara dues versions d'un dataset en 5 passos. `engine.py` n'és l'índex.
-
-| Pas | Què fa | Mòduls |
-|---|---|---|
-| 1 | Trobar les taules que es comparen i quina va amb quina | `units.py`, `pairs.py` |
-| 2 | Llegir cada taula i saber el tipus de cada columna | `load.py` |
-| 3 | Aparellar columnes i files (3a columnes pel nom, 3b files, 3c columnes pel contingut) | `columns.py`, `rows.py`, `transforms.py` |
-| 4 | Detectar els canvis, amb un fitxer per perspectiva de la taxonomia: `columns_set.py` (C2xx), `column_kind.py` (C3xx), `rows_set.py` (C4xx), `data.py` (C5xx); `common.py` és el que comparteixen | `detectors/` |
-| 5 | Escriure el resultat | `output.py` |
-
-`config.py` té tots els llindars, agrupats pels mateixos passos.
-
-### 5.3 Tests (`tests/`)
+### 5.2 Tests (`tests/`)
 
 Un fitxer per mòdul. L'API de Hugging Face sempre se simula: cap test necessita
 xarxa ni token. `conftest.py` afegeix `src/` al camí d'importació.
@@ -319,48 +307,6 @@ xarxa ni token. `conftest.py` afegeix `src/` al camí d'importació.
 
 Les Fases 1 i 2 només treballen amb els elegibles (una desena de 2.000), no
 amb tota la mostra. És el que fa viable descarregar contingut.
-
-### 6.1 Recorregut d'una execució, pas a pas
-
-Què passa quan s'executa `python src/run_pipeline.py --sample-size 2000`:
-
-1. **Preparació** (`run_pipeline.run_full_pipeline`). Crea la carpeta
-   `data/run_<id>/` amb el número següent (mai se sobreescriu res) i hi
-   dirigeix la sortida de totes les fases.
-2. **Fase 0** (`eligibility_scan.run_sampling`):
-   1. `iter_all_dataset_ids` recorre tots els datasets de Hugging Face, i
-      `reservoir_sample_dataset_ids` en guarda una mostra aleatòria de N
-      (secció 7.1).
-   2. Per a cada dataset de la mostra, en paral·lel (`--threads`),
-      `classify_dataset` decideix si és elegible amb tres filtres, del més
-      barat al més car (secció 7.2): té ≥2 tags o ≥2 branques
-      (`list_repo_refs`)? la versió actual té fitxers de dades tabulars
-      (`list_current_files`)? i els seus commits toquen dades tabulars
-      prou vegades? Per a l'últim, `bare_clone` fa un clon de git sense
-      contingut i `get_changed_files` mira en local quins fitxers toca
-      cada commit.
-   3. `write_results` escriu el report per dataset, el resum de l'embut
-      (`compute_funnel_stats`, secció 7.4) i `tabular_commits.csv`: els
-      commits tabulars de cada elegible, amb la data, els autors i el commit
-      anterior. Les Fases 1 i 2 els llegeixen d'aquí i no tornen a llistar
-      commits ni a clonar.
-3. **Fase 1** (`version_extractor.run_extraction`). Per a cada elegible,
-   `extract_versions_for_dataset` construeix la llista de versions: una per
-   tag (Criteri A) o una per sessió dels commits tabulars que va desar la
-   Fase 0 (Criteri B). Escriu `versions.csv` (secció 8).
-4. **Fase 2** (`eligibility_scan.run_classification`). Per a cada elegible:
-   1. `load_tabular_commits` llegeix els commits tabulars que va desar la
-      Fase 0, i `change_units` en forma les parelles de revisions: cada
-      commit tabular amb el seu anterior (Criteri A) o l'últim commit de
-      cada sessió amb el de l'anterior (Criteri B).
-   2. `compare_change_units` passa cada parella pel motor
-      (`diffengine.pairs.compare_revisions`). El motor resol cada revisió
-      en taules (uneix els shards de cada split, secció 2.2), aparella les
-      taules d'una revisió amb les de l'altra, i compara cada parella.
-      Retorna els canvis de cada taula.
-   3. Escriu `change_classification.csv` (secció 9).
-5. **Resum.** L'orquestrador mostra quins fitxers ha generat cada fase.
-   Totes les fallades queden a `failures.csv`.
 
 Opcions útils: `--input-csv <report>` salta la Fase 0 i fa servir un report
 existent; `--skip-version-extraction` i `--skip-classification` ometen les
@@ -433,13 +379,6 @@ car. Si no en passa un, no és elegible, el motiu queda al report
    - **Criteri B**: ≥2 branques i els commits tabulars formen ≥2 sessions
      (separades per més de 6 hores).
 
-Els filtres 1 i 3 són els criteris d'elegibilitat de sempre. El 2 evita
-llistar commits i clonar un repositori que avui no té cap taula; té un
-efecte: un dataset que tenia taules però les ha esborrades totes a la
-versió actual ja no és elegible. A `run_8` va ser el cas d'un sol dataset
-(`the-oligarch/Molab-checkpoints`, fitxers de mètriques d'entrenament), i
-no tenia cap canvi detectable.
-
 
 ### 7.3 Quins fitxers compten (`is_tabular_data_path`)
 
@@ -488,14 +427,13 @@ títol no diu si el fitxer tocat és tabular.
   (elegibles, no elegibles, inaccessibles i errors).
 - `estimated_eligible_in_scanned_population` = `eligible_proportion_of_attempts`
   × `population_scanned`: quants elegibles hi hauria a tota la població
-  recorreguda (no a tot Hugging Face, si s'ha fet servir `--max-scanned`).
+  recorreguda
 - `attempts_per_eligible` = tots els intents / elegibles: quants datasets
   cal provar per obtenir-ne un d'elegible. **Serveix per fixar la mostra**:
   per tenir N datasets elegibles, i per tant amb dades tabulars per
   comparar, cal una mostra d'unes N × `attempts_per_eligible`.
 
-Per exemple, amb la sortida de `run_8`, la primera execució amb el criteri
-tabular (octubre de 2026):
+Un possible exemple d'execució és el següent:
 
 ```
 eligible                                     8
@@ -555,11 +493,9 @@ mostra baixaria centenars de GB).
 1. `load_tabular_commits` llegeix els commits tabulars de cada elegible
    que va desar la Fase 0 (`tabular_commits.csv`, a la mateixa carpeta que
    el report). Es comparen exactament els commits que van fer elegible el
-   dataset, sense tornar a consultar l'historial. Només si el report és
-   d'una execució anterior i no té aquest fitxer, es torna a fer la Fase 0
-   per a aquell dataset (`find_tabular_commits_again`).
-2. `change_units` forma les **unitats de canvi** (decisió T-13) a partir de
-   la mateixa llista de commits tabulars:
+   dataset, sense tornar a consultar l'historial.
+2. `change_units` forma les **unitats de canvi** a partir de la mateixa llista de
+  commits tabulars:
    - Criteri A: cada commit tabular contra el commit anterior de
      l'historial.
    - Criteri B: el commit més recent de cada sessió contra el de la
@@ -584,18 +520,17 @@ mostra baixaria centenars de GB).
 
 ### 9.2 El motor (`diffengine/`)
 
-Per a cada parell de taules, el motor fa 5 passos: troba les taules que es
-comparen (1), les llegeix deduint el tipus de cada columna pels valors (2),
-aparella les columnes pel nom i pel contingut i les files per clau o per
-hash (3), i aplica un detector per família de codis (4). Cada canvi surt
-amb subtipus (p.e. C322 `standardization`, C422 `had_nulls`), files
-afectades, confiança i evidència (5). Tots els llindars són a
-`diffengine/config.py`. Detall de cada pas: `docs/engine.md`.
+Compara dues versions d'un dataset en 5 passos. `engine.py` n'és l'índex.
 
-### 9.3 Limitacions conegudes
+| Pas | Què fa | Mòduls |
+|---|---|---|
+| 1 | Trobar les taules que es comparen i quina va amb quina | `units.py`, `pairs.py` |
+| 2 | Llegir cada taula i saber el tipus de cada columna | `load.py` |
+| 3 | Aparellar columnes i files (3a columnes pel nom, 3b files, 3c columnes pel contingut) | `columns.py`, `rows.py`, `transforms.py` |
+| 4 | Detectar els canvis, amb un fitxer per perspectiva de la taxonomia: `columns_set.py` (C2xx), `column_kind.py` (C3xx), `rows_set.py` (C4xx), `data.py` (C5xx); `common.py` és el que comparteixen | `detectors/` |
+| 5 | Escriure el resultat | `output.py` |
 
-`docs/engine.md`, secció 7. Les decisions d'etiquetatge encara provisionals
-(p.e. si valor → nul és C510 o C312/C322) són a `docs/open_decisions.md`.
+`config.py` té tots els llindars, agrupats pels mateixos passos.
 
 ---
 

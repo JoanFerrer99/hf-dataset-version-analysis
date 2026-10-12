@@ -112,10 +112,7 @@ SUBSTANTIVE_DATA_EXTENSIONS = (
 
 MIN_SUBSTANTIVE_GAP_HOURS = 6.0
 MAX_COMMITS = 50  # commits revisats per dataset, del més nou al més vell
-TABULAR_COMMITS_FILE = "tabular_commits.csv"  # commits tabulars dels elegibles, al costat del report
-# Camps de `classify_dataset` que no s'escriuen al report: els commits van a `tabular_commits.csv`,
-# i el nombre de fitxers de dades i la proporció tabular (només dels candidats) es calculen per
-# decidir el filtre 2, però de moment no es mostren enlloc.
+TABULAR_COMMITS_FILE = "tabular_commits.csv"
 INTERNAL_FIELDS = ("tabular_commits", "num_data_files", "tabular_file_share")
 
 # Motiu que queda al report: el criteri que es compleix, o el filtre on s'atura el dataset.
@@ -236,13 +233,7 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
 
     :param dataset_id: dataset (`owner/name`).
     :param tags_only: només permet el Criteri A.
-    :return: fila del report: `dataset_id`, `num_tags`, `num_branches`,
-        `num_tabular_commits`, `eligible`, `eligibility_reason`, `status`
-        (`classified`/`access_restricted`/`error`), `error_category` i `error`
-        (truncat a 120 caràcters). També porta camps que no s'escriuen al
-        report (`INTERNAL_FIELDS`): `tabular_commits` (llista de
-        `TabularCommit`, buida si no és elegible), `num_data_files` i
-        `tabular_file_share`.
+    :return: diccionari amb els camps del report + interns sobre els commits tabulars
     """
     result = {
         "dataset_id": dataset_id,
