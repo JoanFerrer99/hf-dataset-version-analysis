@@ -2,8 +2,9 @@
 Tots els llindars i decisions provisionals del motor, en un sol lloc.
 
 Cada camp porta el seu valor per defecte i el perquè. Les decisions
-provisionals (P*, U*) s'expliquen a `docs/open_decisions.md`. Per provar
-uns altres valors:
+provisionals (P*, U*) s'expliquen a `docs/open_decisions.md`, i les ja
+tancades (U1, U2, P12) a `docs/decisions_tfg.txt` (T-20). Per provar uns
+altres valors:
 `dataclasses.replace(DEFAULT_CONFIG, alpha=0.05)`.
 """
 

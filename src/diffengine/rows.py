@@ -41,8 +41,9 @@ class RowAlignment:
     :ivar key_columns: columnes clau (noms antics) si `method == "key"`.
     :ivar ambiguous: per a cada parella de `pairs`, si s'ha fet per ordre
         d'ocurrència dins d'un grup de files iguals (pot ser incorrecta).
-    :ivar partial: per a cada parella, si s'ha fet sense totes les columnes
-        (fila editada): la identitat és probable, no segura.
+    :ivar partial: per a cada parella, si no està confirmada en totes les
+        columnes: s'ha fet sense alguna (fila editada) o alguna cel·la passa de
+        buida a tenir valor o al revés. La identitat és probable, no segura.
     """
 
     pairs: np.ndarray
@@ -258,7 +259,29 @@ def align_rows(old: Table, new: Table, matches: list[tuple[str, str]], config: E
     matcher.match_edited_in_one_column()
     matcher.match_edited_in_two_columns()
     matcher.reject_contested_pairs()
-    return matcher.result()
+    result = matcher.result()
+    result.partial |= _null_changed(old, new, matches, result.pairs)
+    return result
+
+
+def _null_changed(old: Table, new: Table, matches: list[tuple[str, str]], pairs: np.ndarray) -> np.ndarray:
+    """
+    Parelles amb alguna cel·la que passa de buida a tenir valor, o al revés. Una
+    cel·la buida no pot confirmar que les dues files siguin la mateixa: p.e. una
+    fila amb `?` eliminada i una fila nova que coincideix amb ella en la resta de
+    columnes (Census Income D7). Aquestes parelles no es fan servir per jutjar
+    l'ordre (C410).
+
+    :param old: taula de la versió antiga.
+    :param new: taula de la versió nova.
+    :param matches: parelles de columnes `(nom antic, nom nou)`.
+    :param pairs: parelles de files `(fila antiga, fila nova)`.
+    :return: per a cada parella, `True` si alguna cel·la canvia entre buida i amb valor.
+    """
+    changed = np.zeros(len(pairs), dtype=bool)
+    for o, n in matches:
+        changed |= old.values[o].isna().to_numpy()[pairs[:, 0]] != new.values[n].isna().to_numpy()[pairs[:, 1]]
+    return changed
 
 
 def _align_by_key(old: Table, new: Table, key: tuple[str, str]) -> RowAlignment:

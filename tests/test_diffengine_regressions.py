@@ -1,7 +1,8 @@
 """
-Casos FP/FN coneguts del motor antic (prompt del motor v2), un test per cas.
-Les decisions que en canvien l'expectativa són a `docs/open_decisions.md`
-(C100 fora d'abast: cas 8; P8: cas 15; C530 sense target: casos 16 i 17).
+Casos FP/FN coneguts del motor antic (prompt del motor v2) i casos reals trobats
+després (Census Income, execucions del pipeline), un test per cas. Les decisions
+que en canvien l'expectativa: P8 (cas 15) a `docs/open_decisions.md`; C100 fora
+d'abast (cas 8) i C530 sense target (casos 16 i 17) a `docs/decisions_tfg.txt` (T-20).
 Els casos 11 i 13 (fallada de descàrrega, dos fitxers) són del pas 1 (trobar les taules):
 `tests/test_diffengine_pairs.py`.
 """
@@ -270,3 +271,20 @@ def test_27_numbers_written_as_text_are_not_a_recoding(base):
     got = labels(parquet_bytes(old), parquet_bytes(new), ".parquet", ".parquet")
     assert ("C311", "to_numeric") in got
     assert "C312" not in {c for c, _ in got}
+
+
+def test_28_removed_null_rows_matching_new_rows_are_not_a_reorder(base):
+    """Census Income D7: s'eliminen les files amb un buit i s'afegeixen files noves al final. Si
+    alguna fila nova coincideix amb una d'eliminada en tota la resta, la parella no és segura
+    (la cel·la buida no ho confirma) i no és un canvi d'ordre."""
+    # Sense cap columna clau, com a D7: les files s'aparellen per hash.
+    old = base.drop(columns="id").assign(score=base["score"].round())
+    old.loc[old.index[::10], "workclass"] = None
+    removed = old[old["workclass"].isna()]
+    reappears = removed.iloc[:3].assign(workclass="Private")
+    new = pd.concat([old.dropna(subset=["workclass"]), reappears], ignore_index=True)
+    # Com a D7, les categòriques passen a nombres: no serveixen per aparellar files.
+    new["workclass"] = new["workclass"].map({"Private": 0, "Gov": 1, "Self": 2, "Unknown": 3})
+    got = codes(csv_bytes(old), csv_bytes(new))
+    assert "C410" not in got
+    assert {"C422", "C510"} <= got

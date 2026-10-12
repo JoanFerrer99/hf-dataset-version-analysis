@@ -81,9 +81,9 @@ en shards (`train-00000-of-00003.parquet`…), en episodis (LeRobot,
 centenars de parquets), en subconjunts i particions (train/test), o barrejar
 dades amb metadades.
 
-**Solució.** La unitat de comparació és la **taula (subset, split)** tal com
-la mostra el Hub (decisió U1, confirmada). Per saber quines taules hi ha,
-`units.resolve_units` fa servir les mateixes regles que la llibreria
+**Solució.** La unitat de comparació és la **taula** tal com
+la mostra el Hub (decisió U1, confirmada). Per saber quines taules hi ha, a la funció
+`units.resolve_units` es fa servir les mateixes regles que la llibreria
 `datasets`: recrea l'arbre de fitxers com a fitxers buits en un directori
 temporal (sense descarregar res) i li demana a `datasets` quines particions
 hi veu. Els shards d'una partició són una sola taula. Dos casos s'han hagut
@@ -108,7 +108,7 @@ exactament el mateix contingut (mateix hash de git), no es descarreguen.
 |---|---|
 | `ok` | Comparat |
 | `identical_content` | Mateix contingut a les dues revisions: no es descarrega |
-| `absent_old`, `absent_new` | La taula sencera apareix o desapareix (no és C421/C422: no s'afegeixen files a una taula existent, decisió U2) |
+| `absent_old`, `absent_new` | La taula sencera apareix o desapareix|
 | `download_failed`, `parse_failed` | No s'ha pogut descarregar o llegir; mai es converteix en codis |
 | `too_large` | Massa gran (`max_unit_bytes`); no es compara |
 | `excluded` | Fitxer tabular que ha canviat però no és cap taula (metadades, fora de cap partició) |
@@ -145,6 +145,12 @@ subpassos, que s'alternen com a màxim dues vegades
 Les columnes amb el mateix nom, exacte o normalitzat (`marital-status` =
 `marital.status`), són la mateixa. Les altres queden pendents per al 3c.
 
+El nom té prioritat sobre el contingut. A Census Income D3/D4, la columna
+`education` passa a tenir els valors d'`education-num`, que desapareix. El
+motor ho llegeix pel nom, com la Taula 1 del paper i com ho veuria un
+pipeline que llegeix les columnes pel nom: `education` canvia de tipus i de
+valors (C311 + C312), i `education-num` s'elimina (C222).
+
 #### 3b. Files (`rows.align_rows`)
 
 Es prova, en aquest ordre:
@@ -158,13 +164,18 @@ Es prova, en aquest ordre:
    dels seus valors. Dues files amb el mateix hash són la mateixa fila.
 3. **Files editades en una columna.** Les que queden sense parella es
    tornen a comparar sense una de les columnes; si ara coincideixen, és la
-   mateixa fila amb una cel·la editada. Només s'accepta si no pot ser
-   casualitat.
+   mateixa fila amb una cel·la editada.
 4. **Files editades en dues columnes**, només entre les 6 columnes que més
    canvien.
 5. **Parelles dubtoses.** Si diverses files són idèntiques, quina va amb
    quina és ambigu; aquestes parelles es marquen i no s'usen per comparar
    valors ni l'ordre.
+6. **Parelles no confirmades.** Si en una parella alguna cel·la passa de
+   buida a tenir valor, o al revés, la cel·la buida no confirma que siguin
+   la mateixa fila. Aquestes parelles serveixen per comparar valors, però
+   no per jutjar l'ordre (C410). És el cas de Census Income D7: 14 files
+   d'`adult.data` amb un `?`, que D7 elimina, coincideixen en les columnes
+   numèriques amb files d'`adult.test` que D7 afegeix al final.
 
 Les columnes que són comptadors de posició (`index`, `episode_index` a
 LeRobot) no entren al hash, perquè una inserció al mig les renumera totes
@@ -195,7 +206,7 @@ distribució). Les fan servir el 3c i el pas 4.
 ### Pas 4 — Detectar els canvis (`detectors/`)
 
 Amb tot aparellat, cada detector busca uns codis. Hi ha un fitxer per cada
-perspectiva de la taxonomia del paper (§4):
+perspectiva de la taxonomia del paper:
 
 | Fitxer | Perspectiva | Codis | Com |
 |---|---|---|---|
@@ -206,8 +217,8 @@ perspectiva de la taxonomia del paper (§4):
 
 Els detectors comparteixen un `Context` (`detectors/common.py`) on uns
 deixen anotacions per als altres. Per exemple, si una columna s'explica per
-una transformació (C322), el detector de distribució no hi afegeix un C530
-(P8). Les columnes que identifiquen files (claus, comptadors) no es tracten
+una transformació (C322), el detector de distribució no hi afegeix un C530.
+Les columnes que identifiquen files (claus, comptadors) no es tracten
 com a variables.
 
 ### Pas 5 — Escriure el resultat (`output.py`)
@@ -215,7 +226,7 @@ com a variables.
 `pairs.revision_rows` converteix els canvis en files, i
 `output.classification_frame` escriu `change_classification.csv`: una fila
 per taula, parell de versions i codi, amb la descripció del codi i si
-trenca (`is_breaking`). Si una taula té el mateix codi en diverses
+trenca el pipeline (`is_breaking`). Si una taula té el mateix codi en diverses
 columnes, surt un sol cop. La columna i el subtipus de cada canvi queden a
 l'objecte `Change`; els fan servir els tests i la validació de Census
 Income (`classification.csv`).
@@ -228,41 +239,7 @@ passa a nul és C510), P3 (un canvi de tipus es codifica pel tipus antic),
 P5 (els canvis de format es reporten) i P8 (una transformació no genera
 també C530).
 
-## 5. Com sabem que funciona
-
-- **Casos generats.** Durant el desenvolupament, 47 mutacions conegudes
-  (reanomenar, escalar, eliminar files…) aplicades a una taula sintètica i
-  a UCI Adult, soles o combinades. Al conjunt reservat, el pitjor F1 per
-  codi va passar de 0,34 amb el diff a 0,98. L'script ja no és al
-  repositori (queda a l'historial de git, commit `d084ff7`); els casos
-  que importaven són a `tests/test_diffengine_regressions.py`.
-- **Census Income** (la Taula 1 del paper). El motor troba els 26 codis que
-  marca el paper; el diff, 18 (`docs/validacio_census_income.md`).
-- **Dades reals.** Una execució del pipeline amb els 11 elegibles de
-  `run_8` va destapar vuit problemes que els casos generats no cobrien.
-  Cadascun s'ha verificat obrint les dades, s'ha corregit i té el seu
-  test:
-
-| Què passava | Correcció |
-|---|---|
-| Els repositoris LeRobot (més vídeos que parquets) no es comparaven | Les seves taules es resolen per separat (P11) |
-| Els repositoris amb `dataset_infos.json` no es resolien | Aquest fitxer de metadades ja no es recrea |
-| Si `datasets` fallava, el repositori es perdia en silenci | Cada fitxer tabular passa a ser una taula |
-| A `stlee601/cube_pick1`, inserir episodis renumerava `index` i aparellava frames diferents | Els comptadors de posició no són clau ni entren al hash; si canvien, C322 `renumbered` (P10) |
-| `gripper_width` (un escalar dins d'un array) no es comparava | Els arrays d'un element es llegeixen com a escalars |
-| Una taula regravada s'aparellava només per `timestamp` i `frame_index`, que es repeteixen a cada episodi | Una parella dubtosa es descarta si un vector o una imatge la desmenteix |
-| Una taula que perdia totes les files (12.919) no explicava el C422 | Subtipus `all_rows` si no en queda cap |
-| C520 per 5 files en una taula de 600 | Prova estadística per a totes les mesures i regla de Cochran |
-
-Amb la mateixa entrada, el diff donava 30 etiquetes en 3 datasets, i el
-motor actual dona 35 canvis en 3 datasets, cadascun amb la seva explicació.
-A més, el motor actual llegeix dades que el diff no llegia (els `.jsonl` de
-`ckwolfe/benchmarks-viz-tiles`): 70 taules de 5 datasets a `data/run_12`,
-l'execució de referència. Els altres 6 elegibles de `run_8` ja no ho són amb el criteri
-tabular: 4 no tenen cap taula, i 2 tenen totes les pujades de dades en una
-sola sessió.
-
-## 6. Guia per programar-hi
+## 5. Guia per programar-hi
 
 - **Punts d'entrada:** `engine.diff_bytes` (dos fitxers), `engine.diff_tables`
   (dues taules ja carregades), `pairs.compare_revisions` +
@@ -280,18 +257,6 @@ pairs ─→ engine ─→ detectors ─→ columns ─→ transforms ─→ loa
   └─→ units            └─→ output
 ```
 
-- **Canviar un llindar:** només a `config.py`.
-- **Afegir un detector:** una funció `detect_x(ctx) -> list[Change]` al
-  fitxer de la seva perspectiva, afegida a `DETECTORS`
-  (`detectors/__init__.py`), i un test a
-  `tests/test_diffengine_regressions.py` amb el codi esperat.
-- **Tests:** `tests/test_diffengine_regressions.py` té un test per cada cas
-  real o conegut; `test_diffengine_units.py`, `test_diffengine_pairs.py` i
-  `test_diffengine_load.py` cobreixen els passos 1 i 2.
-- **Cost:** per a una taula de `r` files i `c` columnes, gairebé tot és
-  proporcional a `r × c`. Les taules amb el mateix contingut no es
-  descarreguen, i les que passen de 500 MB no es comparen.
-
 ## 7. Límits coneguts
 
 - **Els vectors i les imatges no es comparen**: només serveixen per aparellar
@@ -299,8 +264,10 @@ pairs ─→ engine ─→ detectors ─→ columns ─→ transforms ─→ loa
 - **Files gairebé idèntiques**: si una fila desapareix i n'apareix una altra
   igual en tot excepte una cel·la, el motor les aparella com si fossin la
   mateixa fila editada. A Census Income D7 passa amb 14 files d'`adult.data`
-  i d'`adult.test`, i en surt un C410 de més: és l'únic error del motor a
-  Census Income.
+  i d'`adult.test`. Com que la cel·la que les diferencia és buida en una de
+  les dues, la parella no compta per a l'ordre i no en surt cap codi de
+  més; només el recompte intern de files eliminades i afegides es desvia
+  en 14.
 - **Renoms sense cap relació de contingut** (canvien el nom i tots els
   valors): surten com a C221 + C222.
 - **Taules massa grans** (més de 500 MB): només estat, sense codis.

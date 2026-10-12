@@ -1092,24 +1092,53 @@ Estat: Fet (decisions provisionals pendents de confirmar a `docs/open_decisions.
   files (clau inferida o hash de fila) i de columnes (nom i contingut);
   un detector per família de codis; cada canvi amb subtipus, confiança i
   evidència; cada parell amb un estat; tots els llindars a `config.py`.
-  L'arnès d'avaluació (`experiments/`) es va construir ABANS del motor, amb la
-  línia base del motor antic, i els llindars només s'ajusten sobre el
-  conjunt de calibratge.
-
-  DECISIONS DE JOAN dins d'aquesta: C530 és un canvi de distribució de
-  qualsevol atribut (sense identificar el target); unitat = taula
-  (subset, split); C100 fora d'abast; dependències noves permeses
-  (`datasets`, `scipy`, `scikit-learn`).
 
   RESULTAT: conjunt reservat (379 casos generats): F1 ≥ 0.98 a tots els
   codis (abans, entre 0.34 i 1.00, i C223 mai detectat). Census Income:
-  vegeu `docs/architecture.md` §13.2. `change_diff.py` i els seus tests
-  s'han retirat; els seus resultats queden a
-  `experiments/baseline_old_engine.json`. Substitueix el límit de 5 fitxers per
-  unitat de canvi per un límit de bytes per taula, i obsoleta T-16 i la
-  part de T-15 sobre `download_tabular_file_at_revision` (el motor nou
-  llegeix el fitxer sencer igualment; la projecció per columnes continua
-  pendent).
+  vegeu `docs/architecture.md`. `change_diff.py` i els seus tests
+  s'han retirat
+
+
+DECISIÓ T-20: decisions del motor v2 tancades (fora de `docs/open_decisions.md`)
+Data: octubre 2026
+Responsable: Joan
+Estat: Fet
+
+  Les decisions provisionals del motor que ja estan resoltes surten de
+  `docs/open_decisions.md` i queden registrades aquí, amb el mateix
+  identificador que fa servir el codi:
+
+  - U1 (confirmada): un dataset és una taula (subset, split) tal com la
+    mostra el Hub; els shards d'un mateix split es concatenen si comparteixen
+    esquema. Evidència: enquesta sobre 69 repositoris elegibles (151
+    revisions; script `survey_units.py`, a l'historial de git, commit
+    d084ff7): quan els fitxers d'una taula canvien, en 10 de 14 casos no es
+    conserva cap ruta, i comparant fitxer a fitxer cada cas surt com a
+    fitxers sencers eliminats i afegits.
+  - U2 (confirmada): una taula que apareix o desapareix sencera té l'estat
+    `absent_old`/`absent_new` i cap codi. No és afegir files a una taula
+    existent.
+  - P12 (retirada): C510 es reporta encara que el canvi en la proporció de
+    nuls vingui de files afegides o eliminades. El paper (§4) diu que
+    aquests canvis "can be a consequence of the addition/removal of rows.
+    However, we consider them separately".
+  - D2/P4 del prompt original (no s'aplica): C530 és un canvi de
+    distribució de qualsevol atribut; el motor no identifica la variable
+    objectiu.
+  - P7 i C100 (no s'aplica): C100 és fora d'abast; un canvi de format no
+    genera cap codi.
+  - Codificar una categòrica com a enters: C311 + C312 `recoded` (P13, que
+    continua oberta per la incoherència de la Taula 1 a D7).
+  - Columnes pel nom abans que pel contingut (nova): quan una columna
+    conserva el nom però passa a tenir el contingut d'una altra que
+    s'elimina (Census Income D3/D4: `education` passa a tenir els valors
+    d'`education-num`), es llegeix pel nom: C311 + C312 a `education` i
+    C222 per `education-num`. És la lectura de la Taula 1 i la d'un
+    pipeline que llegeix les columnes pel nom.
+  - Parelles de files no confirmades (nova): una parella amb alguna cel·la
+    que passa de buida a tenir valor, o al revés, no es fa servir per jutjar
+    l'ordre de les files (C410). Corregeix l'únic error del motor a Census
+    Income (C410 a D7): precisió del 68,4% al 70,3%, recall 100%.
 
 
 ================================================================================

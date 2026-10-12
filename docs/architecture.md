@@ -19,7 +19,7 @@ El projecte construeix un **pipeline automàtic** que:
 
 ---
 
-## 2. Conceptes previs (fora del projecte)
+## 2. Conceptes previs
 
 ### 2.1 Un "dataset" de Hugging Face és un repositori Git
 
@@ -151,8 +151,8 @@ Termes que defineix aquest codi:
 |---|---|---|
 | **Fitxer substantiu** | Fitxer amb dades reals, no metadades ni documentació. Es decideix per la ruta i l'extensió (secció 7.3). | funció `is_substantive_path` |
 | **Fitxer de dades tabular** | Fitxer substantiu i tabular (`.parquet`, `.csv`, `.tsv`, `.json`, `.jsonl`). És el que fa elegible un dataset i el que compara el motor. | funció `is_tabular_data_path` |
-| **Commit tabular** | Commit que modifica almenys un fitxer de dades tabular. Cal el clon per saber-ho: sense clon, no compta. | funció `is_tabular_commit` |
-| **Sessió de treball** | Grup de commits tabulars propers en el temps: ordenats per data, en comença una de nova quan dos consecutius estan separats per **més de 6 hores**. Evita comptar com a versions diferents els 5 commits que una eina de pujada fa en 10 minuts. Hi ha una sola implementació, compartida per totes les fases. | agrupat en la funció `cluster_commit_times` |
+| **Commit substantiu** | Commit que modifica almenys un fitxer de dades tabular. Cal el clon per saber-ho: sense clon, no compta. | funció `determine_commit_substantive_with_paths` |
+| **Sessió de treball** | Grup de commits substantius propers en el temps: ordenats per data, en comença una de nova quan dos consecutius estan separats per **més de 6 hores**. Evita comptar com a versions diferents els 5 commits que una eina de pujada fa en 10 minuts. Hi ha una sola implementació, compartida per totes les fases. | agrupat en la funció `cluster_commit_times` |
 | **Dataset elegible** | Dataset amb ≥2 versions reals, i per tant estudiable. Criteri A o B (secció 7.2). | definit a la funció `classify_dataset` |
 | **Criteri A** | ≥2 tags i ≥2 commits tabulars. | funció `eligibility_criterion` |
 | **Criteri B** | ≥2 branques i commits tabulars repartits en ≥2 sessions. | funció `eligibility_criterion` (sessions: `has_time_dispersed_substantive_commits`) |
@@ -188,9 +188,6 @@ echo "HF_TOKEN=hf_..." > .env          # token de HF amb rol "Read"
 python src/run_pipeline.py --sample-size 50 --threads 4 --seed 42 --max-scanned 5000  # prova ràpida
 python src/run_pipeline.py --sample-size 2000 --threads 4 --seed 42                    # execució real
 
-pytest                                 # tests (no fan cap crida de xarxa)
-ruff check src tests                   # lint
-python src/validate_census_income.py   # validació del motor amb la Taula 1 del paper
 ```
 
 - Cal `git` al sistema (la imatge Docker ja l'inclou).
@@ -380,24 +377,15 @@ Per a cada dataset de la mostra:
    cadascun, és no elegible i s'acaba aquí (el cas majoritari: una sola
    crida).
 2. Si no: `list_repo_commits` i clon bare (2.2).
-3. `find_tabular_commits`: dels 50 commits més recents (`MAX_COMMITS`),
-   quins toquen algun fitxer de dades tabular (`is_tabular_commit`, 7.3).
-   Aquesta llista és l'única cosa que necessiten els passos següents i
-   la Fase 2.
-4. `eligibility_criterion`: elegible si es compleix
-   - **Criteri A**: ≥2 tags i ≥2 commits tabulars; o
-   - **Criteri B**: ≥2 branques i els commits tabulars formen ≥2
+3. Es recorren fins a 50 commits, del més nou al més vell, i per a
+   cadascun es decideix si és substantiu: si toca algun fitxer de dades
+   tabular (7.3).
+4. Elegible si es compleix:
+   - **Criteri A**: ≥2 tags i ≥2 commits substantius; o
+   - **Criteri B**: ≥2 branques i els commits substantius formen ≥2
      sessions (separades per >6h).
+5. Sense classificació de canvis, retorna tan bon punt és elegible.
 
-Observacions:
-- Els commits que s'analitzen són els de la branca per defecte. El
-  nombre de branques del Criteri B només fa de filtre d'entrada.
-- `--tags-only` només permet el Criteri A.
-- Per què el Criteri B exigeix sessions separades: la primera versió del
-  criteri comptava commits, i una validació manual de 13 elegibles va
-  donar només un 38.5% de precisió. Les eines de pujada generen molts
-  commits seguits que no són versions diferents (decisió M-02). Amb
-  sessions, la mateixa revisió va donar 11/11.
 
 ### 7.3 Quins fitxers compten (`is_tabular_data_path`)
 
@@ -409,10 +397,6 @@ condicions:
   `.tsv`, `.json` o `.jsonl`, excepte els JSON de metadades del Hub i de
   LeRobot. És la mateixa definició que fa servir el motor de la Fase 2, de
   manera que tot dataset elegible té alguna cosa que el motor pot comparar.
-
-Fins a l'octubre de 2026 comptava qualsevol fitxer de dades (vídeo, àudio,
-imatges, tensors). A `run_8`, 7 dels 11 elegibles no tenien res tabular per
-comparar; per això es va restringir.
 
 `is_substantive_path` decideix si un fitxer és dades, en aquest ordre:
 
@@ -434,12 +418,6 @@ la ruta va ser l'únic senyal consistent (decisió M-04).
 compta. Abans es mirava el títol del commit ("readme", "typo"...), però un
 títol no diu si el fitxer tocat és tabular.
 
-**Informació complementària: `tabular_file_share`.** Al report, cada
-dataset porta `num_data_files` (fitxers de dades a la revisió actual) i
-`tabular_file_share` (quina proporció són tabulars). Es calcula sobre el clon,
-sense cap crida de xarxa, i no decideix l'elegibilitat: serveix per veure,
-per exemple, que un repositori de vídeo amb un parquet d'índex té una
-proporció tabular molt baixa.
 
 ### 7.4 Sortida i mètriques
 
@@ -462,7 +440,7 @@ proporció tabular molt baixa.
   per tenir N datasets elegibles, i per tant amb dades tabulars per
   comparar, cal una mostra d'unes N × `attempts_per_eligible`.
 
-Per exemple, amb la sortida de `run_8`:
+Per exemple, de la següent sortida:
 
 ```
 eligible                                    11
@@ -542,8 +520,8 @@ Per a cada parell de taules, el motor fa 5 passos: troba les taules que es
 comparen (1), les llegeix deduint el tipus de cada columna pels valors (2),
 aparella les columnes pel nom i pel contingut i les files per clau o per
 hash (3), i aplica un detector per família de codis (4). Cada canvi surt
-amb el codi, la columna i el subtipus (p.e. C322 `standardization`, C422
-`had_nulls`), i s'escriu a `change_classification.csv` (5). Tots els llindars són a
+amb subtipus (p.e. C322 `standardization`, C422 `had_nulls`), files
+afectades, confiança i evidència (5). Tots els llindars són a
 `diffengine/config.py`. Detall de cada pas: `docs/engine.md`.
 
 ### 9.3 Limitacions conegudes
@@ -560,23 +538,21 @@ incremental, mai sobreescriu) i hi desa tot:
 
 | Fitxer | Fase | Contingut |
 |---|---|---|
-| `eligibility_report.csv` | 0 | Una fila per dataset de la mostra: `dataset_id, num_tags, num_branches, num_tabular_commits, num_data_files, tabular_file_share, eligible, eligibility_reason, status, error_category, error`. `status` = `classified`, `access_restricted` (403) o `error`. |
-| `funnel_summary.json` | 0 | Resum de l'embut (secció 7.4): població recorreguda, elegibles per criteri, inaccessibles, errors, proporcions. |
-| `versions.csv` | 1 | Una fila per versió: `dataset_id, version_label, version_order, version_source, commit_sha, commit_date, authors, approx_size_bytes, session_commit_count, status`. |
-| `change_classification.csv` | 2 | Una fila per taula, parell de versions i codi: `dataset_id, version_from, version_to, file_path, code, description, is_breaking`. `version_from`/`version_to` són SHA de commit. |
+| `eligibility_report_<N>_<k>.csv` | 0 | Una fila per dataset de la mostra: `dataset_id, num_tags, num_branches, num_commits_substantive, num_data_files, tabular_file_share, eligible, eligibility_reason, status, error_category, error`. `status` = `classified`, `access_restricted` (403) o `error`. |
+| `funnel_summary_<N>_<k>.json` | 0 | Resum de l'embut (secció 7.4): població recorreguda, elegibles per criteri, inaccessibles, errors, proporcions. |
+| `versions_<k>.csv` | 1 | Una fila per versió: `dataset_id, version_label, version_order, version_source, commit_sha, commit_date, authors, approx_size_bytes, session_commit_count, status`. |
+| `changes_<k>.csv` / `.parquet` | 2 | Una fila per canvi detectat: revisions, fitxer(s), `code`, `column`, `old_column`, `subtype`, files afectades, `confidence`, `evidence_json`, `engine_version`, `config_hash` (vegeu `docs/engine.md`, pas 5). |
+| `change_pairs_<k>.csv` | 2 | Una fila per parell de taules comparat, amb el seu `status` i com s'han aparellat les files. |
+| `change_classification_<k>.csv` | 2 | Format antic, derivat de `changes`: `dataset_id, version_from, version_to, file_path, code, description, is_breaking`. `version_from`/`version_to` són SHA de commit. |
 | `failures.csv` | totes | Només si hi ha fallades: `timestamp, source, dataset_id, error_category, error_message, retries_attempted`. `source` indica la fase. |
 
-L'únic número és el de la carpeta: a dins, els noms són fixos. Els scripts
-executats sols (`eligibility_scan.py`, `version_extractor.py`) també creen
-la seva carpeta (`eligibility_scan.new_run_dir`). Amb `--input-csv` no hi
-ha Fase 0 i el CSV d'entrada no es copia a la carpeta. Les execucions
-anteriors a aquest canvi (`run_1`–`run_13`) conserven els noms antics, amb
-número.
+`N` = `--sample-size`; `<k>` = número que posa cada fase. Amb
+`--input-csv` no hi ha Fase 0 i el CSV d'entrada no es copia a la
+carpeta.
 
-La validació de Census Income escriu a `data/census_income/run_<id>/`
-(`diff_report.csv`, `classification.csv`, `paper_comparison.csv`,
-`paper_comparison_by_code.csv`). Els resultats de referència, d'abans del
-canvi, són els fitxers `_5` i `_9` de `data/census_income/`.
+La validació de Census Income escriu directament a `data/`
+(`census_income_*_<k>.csv`); els resultats de referència són a
+`data/census_income/`.
 
 ---
 
@@ -637,7 +613,7 @@ Límits fixos: 50 commits per dataset (`MAX_COMMITS` a la Fase 1), 500 MB per ta
 
 ### 13.1 Tests
 
-206 tests (secció 5.3). Cap necessita xarxa ni token: l'API de Hugging Face
+210 tests (secció 5.4). Cap necessita xarxa ni token: l'API de Hugging Face
 se simula amb `monkeypatch`.
 
 ### 13.2 Validació del motor amb Census Income
@@ -651,18 +627,19 @@ negatiu (FN) si només el paper, fals positiu (FP) si només el motor.
 Cada versió es compara amb `adult.data` de la UCI (D0), a una revisió
 fixada; com es va determinar, a `docs/validacio_census_income.md`.
 
-Resultat actual (`data/census_income/census_income_paper_comparison_by_code_9.csv`):
-**precisió 68,4%, recall 100%, F1 81,3%**. El motor anterior, amb les
+Resultat actual (`data/census_income/run_2/paper_comparison_by_code.csv`):
+**precisió 70,3%, recall 100%, F1 82,5%**. El motor anterior, amb les
 mateixes dades: 72,0% / 69,2% / 70,6%.
 
 | Codi | TP | FN | FP | Lectura |
 |---|---|---|---|---|
 | C210, C221, C223, C312, C530 | 2, 1, 7, 3, 1 | 0 | 0 | Encert total |
 | C421 | 1 | 0 | 3 | D3, D4 i D6 tenen files d'`adult.test`; el paper compta files i no les veu |
-| C410 | 4 | 0 | 3 | D4 i D6, ordre aleatori real; D7, 14 files mal aparellades (error del motor) |
-| C222, C311, C422, C510 | 2, 2, 3, 0 | 0 | 2, 1, 1, 2 | Canvis reals que la targeta no documenta i el C311 de D7 |
+| C410 | 4 | 0 | 2 | D4 i D6, ordre aleatori real (a D3, mateixes files que D4, el paper sí el marca) |
+| C222, C311, C422, C510 | 2, 2, 3, 0 | 0 | 2, 1, 1, 2 | Columnes eliminades que la targeta no esmenta, el C311 de D7 (a D3/D4 el paper el marca), files amb `?` eliminades a D7, i els `?` que desapareixen a D6 i D7 |
 
-El motor troba tots els codis del paper. Cada fals positiu, explicat, a
+El motor troba tots els codis del paper, i cap dels 11 falsos positius és un
+error del motor. Cadascun, explicat amb les dades, a
 `docs/validacio_census_income.md`.
 
 ---

@@ -54,7 +54,7 @@ CENSUS_INCOME_COLUMN_NAMES = [
 ]
 
 # Fitxer i revisió de cada versió (la més recent abans del paper; vegeu
-# `docs/validacio_census_income.md`, secció 3).
+# `docs/validacio_census_income.md`, secció 2).
 CENSUS_INCOME_SOURCES = {
     "D1": {"repo_id": "scikit-learn/adult-census-income", "filename": "adult.csv",
            "revision": "2a7ff8e6a6cd74fa596ed6622937081c52255fcb"},
@@ -256,12 +256,7 @@ if __name__ == "__main__":
     comparison_df.to_csv(comparison_path, index=False)
     by_code_df.to_csv(by_code_path, index=False)
 
-    print(f"\n{'=' * 65}")
-    print("  RE-VALIDACIÓ CENSUS INCOME (motor actual, inclou C410)")
-    print(f"{'=' * 65}")
-    print(detectability_df[["version", "codes_detected", "paper_row_total", "C410"]].to_string(index=False))
-    print(f"{'=' * 65}")
-    print("\n  COMPARATIVA AMB LA TAULA 1 DEL PAPER (transcrita a mà, PAPER_GROUND_TRUTH)")
+    print("\n  COMPARATIVA AMB LA TAULA DEL PAPER (PAPER_GROUND_TRUTH)")
     print(f"{'=' * 65}")
     print(comparison_df.to_string(index=False))
     print("\n  Per codi:")
