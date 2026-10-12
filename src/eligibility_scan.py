@@ -8,18 +8,30 @@ treballa sobre una mostra.
 1. **Mostreig** (`reservoir_sample_dataset_ids`): mostra aleatòria uniforme
    de tota la població amb l'algorisme de reservori, sense carregar-la mai
    sencera a memòria.
-2. **Elegibilitat** (`classify_dataset`): un dataset és elegible si té
-   - Criteri A: >=2 tags i >=2 commits que toquen dades tabulars; o
-   - Criteri B: >=2 branques i commits que toquen dades tabulars repartits
-     en >=2 sessions de treball (separades per més de 6 hores).
-   Per saber quins fitxers toca cada commit es fa un clon de git sense
-   contingut (`bare_clone`) i `git show` en local, sense crides a l'API.
+2. **Elegibilitat** (`classify_dataset`), en tres filtres, del més barat al
+   més car; un dataset que no passa un filtre ja no arriba al següent:
+   1. Té >=2 tags o >=2 branques? Una crida a l'API (`list_repo_refs`).
+   2. La versió actual té algun fitxer de dades tabular? Una crida a l'API
+      (`list_current_files`) que dona la llista de fitxers, sense clonar
+      res. D'aquí surt també quina part dels fitxers de dades són tabulars
+      (`tabular_file_share`), que queda al report.
+   3. Els commits toquen dades tabulars prou vegades?
+      - Criteri A: >=2 tags i >=2 commits que toquen dades tabulars; o
+      - Criteri B: >=2 branques i commits que toquen dades tabulars
+        repartits en >=2 sessions de treball (separades per més de 6 hores).
+      Per saber quins fitxers toca cada commit es fa un clon de git sense
+      contingut i limitat als últims commits (`bare_clone`), i `git show`
+      en local, sense crides a l'API.
    Només compten els fitxers de dades tabulars (`is_tabular_data_path`):
    són els únics que el motor pot comparar.
-3. **Resum de l'embut** (`compute_funnel_stats`): proporció d'elegibles i
-   quants intents calen per elegible, per fixar la mida de la mostra.
-4. **Classificació** (`run_classification`): per als elegibles, compara
-   versions consecutives amb el motor (`diffengine`) i escriu els canvis.
+3. **Resultats** (`write_results`): el report per dataset, el resum de
+   l'embut (`compute_funnel_stats`: proporció d'elegibles i quants intents
+   calen per elegible, per fixar la mida de la mostra) i la llista de
+   commits tabulars de cada elegible (`tabular_commits.csv`).
+4. **Classificació** (`run_classification`, Fase 2): per als elegibles,
+   compara versions consecutives amb el motor (`diffengine`) i escriu els
+   canvis. Llegeix els commits tabulars que ha desat la Fase 0: no torna a
+   llistar commits ni a clonar.
 
 Per llegir el codi: `classify_dataset` és el centre de tot; les funcions
 que crida apareixen a sota en el mateix ordre.
@@ -31,7 +43,7 @@ Detall: `docs/architecture.md`, seccions 7 i 9.
   python eligibility_scan.py --classify-eligible ../data/run_8/eligibility_report.csv
 
 Output (cada execució en una carpeta nova, `data/run_<id>/`):
-  eligibility_report.csv, funnel_summary.json   (mostreig)
+  eligibility_report.csv, funnel_summary.json, tabular_commits.csv   (mostreig)
   change_classification.csv                     (--classify-eligible)
   failures.csv                                  (si hi ha fallades)
 """
@@ -55,7 +67,7 @@ from typing import Iterable, Iterator
 import pandas as pd
 from dotenv import load_dotenv
 from tqdm import tqdm
-from huggingface_hub import HfApi, list_repo_commits, list_repo_refs
+from huggingface_hub import HfApi, dataset_info, list_repo_commits, list_repo_refs
 
 import errors
 from diffengine import pairs, units
@@ -100,10 +112,19 @@ SUBSTANTIVE_DATA_EXTENSIONS = (
 
 MIN_SUBSTANTIVE_GAP_HOURS = 6.0
 MAX_COMMITS = 50  # commits revisats per dataset, del més nou al més vell
+TABULAR_COMMITS_FILE = "tabular_commits.csv"  # commits tabulars dels elegibles, al costat del report
+# Camps de `classify_dataset` que no s'escriuen al report: els commits van a `tabular_commits.csv`,
+# i el nombre de fitxers de dades i la proporció tabular (només dels candidats) es calculen per
+# decidir el filtre 2, però de moment no es mostren enlloc.
+INTERNAL_FIELDS = ("tabular_commits", "num_data_files", "tabular_file_share")
+
+# Motiu que queda al report: el criteri que es compleix, o el filtre on s'atura el dataset.
 ELIGIBILITY_REASONS = {
     "A": "Criteri A: tags>=2 i >=2 commits amb dades tabulars",
     "B": f"Criteri B: commits amb dades tabulars en >=2 sessions (separades >{MIN_SUBSTANTIVE_GAP_HOURS}h)",
-    None: "no elegible: cap criteri es compleix",
+    "no_version_marks": "no elegible: menys de 2 tags i menys de 2 branques",
+    "no_tabular_files": "no elegible: cap fitxer de dades tabular a la versió actual",
+    "no_tabular_commits": "no elegible: no hi ha prou commits amb dades tabulars",
 }
 GIT_CLONE_TIMEOUT_S = 30
 GIT_SHOW_TIMEOUT_S = 10
@@ -198,42 +219,44 @@ def reservoir_sample_dataset_ids(
     log.info(f"Escaneig completat: {n_seen} datasets vistos, {len(reservoir)} a la mostra.")
     return reservoir, n_seen
 
-def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes: bool = False) -> dict:
+def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
     """
-    Decideix si un dataset és elegible i, si es demana, en compara les versions.
+    Decideix si un dataset és elegible (Fase 0).
 
-    Tot surt d'un sol recorregut: es busquen els commits tabulars
-    (`find_tabular_commits`), i amb aquesta llista
-      1. es decideix el criteri d'elegibilitat (`eligibility_criterion`), i
-      2. només si és elegible i `classify_changes`, es formen les parelles de
-         revisions (`change_units`) i es comparen (`compare_change_units`).
-    Cap pas posterior torna a mirar si els fitxers són tabulars: la llista ja
-    només en conté.
+    Passos, del més barat al més car (si un falla, el dataset no és elegible i
+    no es fa cap pas més):
+      1. `list_repo_refs`: ha de tenir >=2 tags o >=2 branques.
+      2. `list_current_files`: la versió actual ha de tenir algun fitxer de
+         dades tabular (`tabular_file_share` > 0).
+      3. `list_repo_commits` i un clon sense contingut (`bare_clone`):
+         `find_tabular_commits` troba els commits que toquen dades tabulars, i
+         `eligibility_criterion` decideix si es compleix el Criteri A o el B.
+         Si és elegible, aquests commits es guarden (`tabular_commits`): són
+         els que fan servir les Fases 1 i 2, sense tornar-los a buscar.
 
     :param dataset_id: dataset (`owner/name`).
     :param tags_only: només permet el Criteri A.
-    :param classify_changes: compara també les versions (Fase 2). Descarrega
-        contingut real.
     :return: fila del report: `dataset_id`, `num_tags`, `num_branches`,
-        `num_tabular_commits`, `num_data_files`, `tabular_file_share`,
-        `eligible`, `eligibility_reason`, `status`
-        (`classified`/`access_restricted`/`error`), `error_category`, `error`
-        (truncat a 120 caràcters) i `change_labels` (una fila per canvi; `[]`
-        si `classify_changes=False`).
+        `num_tabular_commits`, `eligible`, `eligibility_reason`, `status`
+        (`classified`/`access_restricted`/`error`), `error_category` i `error`
+        (truncat a 120 caràcters). També porta camps que no s'escriuen al
+        report (`INTERNAL_FIELDS`): `tabular_commits` (llista de
+        `TabularCommit`, buida si no és elegible), `num_data_files` i
+        `tabular_file_share`.
     """
     result = {
         "dataset_id": dataset_id,
         "num_tags": 0,
         "num_branches": 0,
         "num_tabular_commits": 0,
-        "num_data_files": None,
-        "tabular_file_share": None,
         "eligible": False,
         "eligibility_reason": "",
         "status": "classified",
         "error_category": "",
         "error": "",
-        "change_labels": [],
+        "tabular_commits": [],
+        "num_data_files": None,
+        "tabular_file_share": None,
     }
 
     try:
@@ -244,28 +267,33 @@ def classify_dataset(dataset_id: str, tags_only: bool = False, classify_changes:
         n_tags, n_branches = len(refs.tags or []), len(refs.branches or [])
         result["num_tags"], result["num_branches"] = n_tags, n_branches
 
-        criterion = None
-        if n_tags >= 2 or (not tags_only and n_branches >= 2):
-            commits = list(errors.with_retry(
-                list_repo_commits, repo_id=dataset_id, repo_type="dataset", token=HF_TOKEN,
-                **RETRY_CONFIG,
-            ))[:MAX_COMMITS]
-            with bare_clone(dataset_id) as clone_dir:
-                if clone_dir is not None:
-                    result["num_data_files"], result["tabular_file_share"] = tabular_file_share(
-                        list_files_at_head(clone_dir) or []
-                    )
-                tabular = find_tabular_commits(commits, clone_dir)
-            result["num_tabular_commits"] = len(tabular)
-            criterion = eligibility_criterion(n_tags, n_branches, [commits[i] for i in tabular], tags_only)
+        # Pas 1: sense 2 marques de versió (tags o branques), no hi ha res a comparar.
+        if n_tags < 2 and (tags_only or n_branches < 2):
+            result["eligibility_reason"] = ELIGIBILITY_REASONS["no_version_marks"]
+            return result
 
-            if criterion and classify_changes:
-                result["change_labels"] = compare_change_units(
-                    dataset_id, change_units(commits, tabular, criterion), HF_TOKEN, RETRY_CONFIG,
-                )
+        # Pas 2: quins fitxers té la versió actual i quina part de les dades és tabular (es guarda,
+        # però no s'escriu). Sense cap fitxer de dades tabular, no cal llistar els commits ni clonar.
+        result["num_data_files"], result["tabular_file_share"] = tabular_file_share(list_current_files(dataset_id))
+        if not result["tabular_file_share"]:
+            result["eligibility_reason"] = ELIGIBILITY_REASONS["no_tabular_files"]
+            return result
 
-        result["eligible"] = criterion is not None
+        # Pas 3: quins dels últims commits toquen dades tabulars, i quin criteri es compleix.
+        commits = list(errors.with_retry(
+            list_repo_commits, repo_id=dataset_id, repo_type="dataset", token=HF_TOKEN,
+            **RETRY_CONFIG,
+        ))[:MAX_COMMITS]
+        with bare_clone(dataset_id) as clone_dir:
+            tabular = find_tabular_commits(commits, clone_dir)
+        result["num_tabular_commits"] = len(tabular)
+        criterion = eligibility_criterion(n_tags, n_branches, [commits[i] for i in tabular], tags_only)
+        if criterion is None:
+            result["eligibility_reason"] = ELIGIBILITY_REASONS["no_tabular_commits"]
+            return result
+        result["eligible"] = True
         result["eligibility_reason"] = ELIGIBILITY_REASONS[criterion]
+        result["tabular_commits"] = tabular_commit_records(commits, tabular)
 
     except Exception as exc:
         category = errors.classify_error(exc)
@@ -324,11 +352,25 @@ def is_tabular_data_path(path: str) -> bool:
     return is_substantive_path(path) and units.is_tabular_path(path)
 
 
+def list_current_files(dataset_id: str) -> list[str]:
+    """
+    Fitxers de la versió actual del repositori, amb una sola crida a l'API
+    (`dataset_info`), sense clonar res. Dona la mateixa llista que el clon
+    (comprovat amb els 29 candidats de `run_8`) i triga uns 0,2 s.
+
+    :param dataset_id: dataset (`owner/name`).
+    :return: rutes dels fitxers dins del repositori.
+    """
+    info = errors.with_retry(dataset_info, repo_id=dataset_id, token=HF_TOKEN, **RETRY_CONFIG)
+    return [sibling.rfilename for sibling in (info.siblings or [])]
+
+
 def tabular_file_share(paths: list[str]) -> tuple[int, float | None]:
     """
-    Informació complementària (no decideix l'elegibilitat): de tots els
-    fitxers de dades d'un repositori, quina proporció són tabulars. Un
-    repositori de vídeo amb un parquet d'índex tindrà una proporció baixa.
+    De tots els fitxers de dades d'un repositori, quina proporció són
+    tabulars. Si és 0 (o no hi ha cap fitxer de dades), el dataset no és
+    elegible i no es clona. La proporció queda al report: un repositori de
+    vídeo amb un parquet d'índex tindrà una proporció baixa.
 
     :param paths: fitxers del repositori.
     :return: `(fitxers de dades, proporció tabular)`; proporció `None` si no hi ha dades.
@@ -342,14 +384,22 @@ def tabular_file_share(paths: list[str]) -> tuple[int, float | None]:
 @contextmanager
 def bare_clone(dataset_id: str) -> Iterator[str | None]:
     """
-    Clona el repositori amb `git clone --bare --filter=blob:none`: només
-    l'historial (commits, arbres, noms de fitxer), cap contingut. El token
-    va per variables d'entorn de git, no a la línia d'ordres, perquè no
-    surti a `ps`. El directori temporal s'esborra en sortir.
+    Clona el repositori sense cap contingut i només amb l'historial recent:
+
+    - `--bare`: sense còpia de treball (cap fitxer desplegat).
+    - `--filter=blob:none`: sense el contingut de cap fitxer; només els
+      commits i els arbres (quins fitxers hi ha a cada commit).
+    - `--depth=MAX_COMMITS + 1`: només els últims 50 commits, els que es
+      revisen, més el pare del més vell, que cal per saber què va canviar.
+      Amb un historial llarg, el clon fa la meitat de mida o menys.
+
+    El token va per variables d'entorn de git, no a la línia d'ordres, perquè
+    no surti a `ps`. El directori temporal s'esborra en sortir.
 
     :param dataset_id: dataset (`owner/name`).
-    :yield: ruta del clon, o `None` si ha fallat (el cridant recorre a
-        l'heurística de títol). Si falta `git`, s'avisa un sol cop per procés.
+    :yield: ruta del clon, o `None` si ha fallat. Sense clon no se sap quins
+        fitxers toca cada commit, i cap commit compta. Si falta `git`, s'avisa
+        un sol cop per procés.
     """
     global _git_missing_warned
 
@@ -364,7 +414,7 @@ def bare_clone(dataset_id: str) -> Iterator[str | None]:
     }
     try:
         result = subprocess.run(
-            ["git", "clone", "--bare", "--filter=blob:none", "--quiet", url, tmp_dir],
+            ["git", "clone", "--bare", "--filter=blob:none", f"--depth={MAX_COMMITS + 1}", "--quiet", url, tmp_dir],
             env=env, capture_output=True, timeout=GIT_CLONE_TIMEOUT_S,
         )
         if result.returncode != 0:
@@ -374,7 +424,7 @@ def bare_clone(dataset_id: str) -> Iterator[str | None]:
         if not _git_missing_warned:
             log.error(
                 "bare_clone: 'git' no és al PATH es desactiva per a TOTA la " \
-                "resta de l'escaneig i es recorre a l'heurística de títol per a cada dataset. "
+                "resta de l'escaneig: sense clon, cap commit compta i cap dataset pot ser elegible. "
                 "Instal·la 'git' al sistema/imatge Docker."
             )
             _git_missing_warned = True
@@ -414,18 +464,6 @@ def get_changed_files(clone_dir: str, commit_sha: str) -> list[str] | None:
         return None
 
 
-def list_files_at_head(clone_dir: str) -> list[str] | None:
-    """Tots els fitxers de la revisió actual, llegits del clon bare (sense xarxa)."""
-    try:
-        result = subprocess.run(
-            ["git", "ls-tree", "-r", "--name-only", "HEAD"],
-            cwd=clone_dir, capture_output=True, text=True, timeout=GIT_SHOW_TIMEOUT_S,
-        )
-        return result.stdout.splitlines() if result.returncode == 0 else None
-    except (subprocess.TimeoutExpired, OSError):
-        return None
-
-
 def is_tabular_commit(commit, clone_dir: str | None) -> bool:
     """
     Un commit compta (per a l'elegibilitat i per a les versions) si toca algun
@@ -442,6 +480,103 @@ def is_tabular_commit(commit, clone_dir: str | None) -> bool:
         return False
     changed_paths = get_changed_files(clone_dir, commit.commit_id)
     return bool(changed_paths) and any(is_tabular_data_path(p) for p in changed_paths)
+
+
+@dataclass(frozen=True)
+class TabularCommit:
+    """
+    Un commit que toca dades tabulars d'un dataset elegible. La Fase 0 els
+    desa a `tabular_commits.csv`, i les Fases 1 (versions per sessió) i 2
+    (parelles que es comparen) els llegeixen d'allà, sense tornar a llistar
+    els commits ni a clonar.
+
+    :ivar commit_id: SHA del commit.
+    :ivar parent_id: SHA del commit anterior de l'historial, o `None` si és el
+        més vell dels revisats (no se'n coneix l'anterior).
+    :ivar created_at: data del commit.
+    :ivar authors: autors del commit.
+    """
+
+    commit_id: str
+    parent_id: str | None
+    created_at: datetime | None
+    authors: tuple[str, ...] = ()
+
+
+def tabular_commit_records(commits: list, tabular: list[int]) -> list[TabularCommit]:
+    """
+    Converteix els commits tabulars en `TabularCommit`, amb el commit anterior
+    de cadascun (el següent de la llista, que va del més nou al més vell).
+
+    :param commits: commits de `list_repo_commits`, del més nou al més vell.
+    :param tabular: posicions dels commits tabulars (`find_tabular_commits`).
+    :return: un `TabularCommit` per commit tabular, en el mateix ordre.
+    """
+    return [
+        TabularCommit(
+            commit_id=commits[i].commit_id,
+            parent_id=commits[i + 1].commit_id if i + 1 < len(commits) else None,
+            created_at=getattr(commits[i], "created_at", None),
+            authors=tuple(getattr(commits[i], "authors", None) or ()),
+        )
+        for i in tabular
+    ]
+
+
+def save_tabular_commits(rows: list[dict], path: str) -> None:
+    """
+    Escriu els commits tabulars de tots els elegibles en un sol CSV: una fila
+    per commit (`dataset_id, commit_id, parent_id, created_at, authors`).
+
+    :param rows: files de `classify_dataset` (només en tenen els elegibles).
+    :param path: ruta de `tabular_commits.csv`.
+    """
+    records = [
+        {"dataset_id": row["dataset_id"], "commit_id": c.commit_id, "parent_id": c.parent_id,
+         "created_at": c.created_at.isoformat() if c.created_at else None, "authors": ",".join(c.authors)}
+        for row in rows for c in row.get("tabular_commits") or []
+    ]
+    pd.DataFrame(records, columns=["dataset_id", "commit_id", "parent_id", "created_at", "authors"]).to_csv(
+        path, index=False, encoding="utf-8")
+
+
+def load_tabular_commits(report_csv: str) -> dict[str, list[TabularCommit]]:
+    """
+    Llegeix els commits tabulars que la Fase 0 va desar al costat d'un
+    `eligibility_report.csv`.
+
+    :param report_csv: ruta del report; el fitxer es busca a la mateixa carpeta.
+    :return: per a cada dataset elegible, els seus commits tabulars, del més nou
+        al més vell. Buit si el report és d'una versió anterior del pipeline,
+        que no desava aquest fitxer.
+    """
+    path = os.path.join(os.path.dirname(os.path.abspath(report_csv)), TABULAR_COMMITS_FILE)
+    if not os.path.exists(path):
+        log.warning(f"No hi ha {TABULAR_COMMITS_FILE} al costat de {report_csv}: "
+                    "es tornaran a buscar els commits tabulars de cada elegible.")
+        return {}
+    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    saved: dict[str, list[TabularCommit]] = {}
+    for row in df.itertuples(index=False):
+        saved.setdefault(row.dataset_id, []).append(TabularCommit(
+            commit_id=row.commit_id,
+            parent_id=row.parent_id or None,
+            created_at=datetime.fromisoformat(row.created_at) if row.created_at else None,
+            authors=tuple(a for a in row.authors.split(",") if a),
+        ))
+    return saved
+
+
+def find_tabular_commits_again(dataset_id: str) -> list[TabularCommit]:
+    """
+    Torna a fer la Fase 0 per a un sol dataset i en retorna els commits
+    tabulars. Només fa falta per als reports d'execucions anteriors, que no
+    tenen `tabular_commits.csv`.
+
+    :param dataset_id: dataset (`owner/name`).
+    :return: els commits tabulars, o una llista buida si ja no és elegible.
+    """
+    return classify_dataset(dataset_id)["tabular_commits"]
 
 
 def find_tabular_commits(commits: list, clone_dir: str | None) -> list[int]:
@@ -491,23 +626,24 @@ def group_commits_into_sessions(commits: list) -> list[list]:
     return [[c for t in cluster for c in by_time[t]] for cluster in reversed(clusters)]
 
 
-def change_units(commits: list, tabular: list[int], criterion: str) -> list[tuple[str, str]]:
+def change_units(tabular_commits: list["TabularCommit"], criterion: str) -> list[tuple[str, str]]:
     """
-    Les parelles de revisions que es comparen (unitats de canvi, decisió T-13):
+    Les parelles de revisions que es comparen a la Fase 2 (unitats de canvi,
+    decisió T-13):
 
     - Criteri A: cada commit tabular contra el commit anterior de l'historial.
-      El commit més vell de la llista no té anterior conegut i no es compara.
+      El commit més vell dels revisats no té anterior conegut i no es compara.
     - Criteri B: el commit més recent de cada sessió contra el de la sessió
       anterior. Els commits d'una mateixa sessió no es comparen entre ells.
 
-    :param commits: commits de `list_repo_commits`, del més nou al més vell.
-    :param tabular: posicions dels commits tabulars (`find_tabular_commits`).
+    :param tabular_commits: commits tabulars d'un dataset elegible, del més nou
+        al més vell, tal com els desa la Fase 0.
     :param criterion: `"A"` o `"B"`.
     :return: parelles `(SHA antic, SHA nou)`, de la més recent a la més antiga.
     """
     if criterion == "A":
-        return [(commits[i + 1].commit_id, commits[i].commit_id) for i in tabular if i + 1 < len(commits)]
-    sessions = group_commits_into_sessions([commits[i] for i in tabular])
+        return [(c.parent_id, c.commit_id) for c in tabular_commits if c.parent_id]
+    sessions = group_commits_into_sessions(tabular_commits)
     latest = [max(session, key=lambda c: c.created_at) for session in sessions]
     return [(older.commit_id, newer.commit_id) for newer, older in zip(latest, latest[1:])]
 
@@ -666,7 +802,9 @@ def new_run_dir(parent: str | None = None) -> str:
 def write_results(rows: list[dict], total_scanned: int) -> tuple[str, str, dict]:
     """
     Escriu a `OUTPUT_DIR` el report per dataset (`eligibility_report.csv`,
-    sense `change_labels`) i el resum de l'embut (`funnel_summary.json`).
+    sense els camps interns), el resum de l'embut (`funnel_summary.json`) i
+    els commits tabulars dels elegibles (`tabular_commits.csv`), que fan
+    servir les Fases 1 i 2.
 
     :param rows: files de `classify_dataset`.
     :param total_scanned: mida de la població recorreguda.
@@ -675,7 +813,8 @@ def write_results(rows: list[dict], total_scanned: int) -> tuple[str, str, dict]
     df = pd.DataFrame(rows)
 
     csv_path = os.path.join(OUTPUT_DIR, "eligibility_report.csv")
-    df.drop(columns=["change_labels"], errors="ignore").to_csv(csv_path, index=False, encoding="utf-8")
+    df.drop(columns=list(INTERNAL_FIELDS), errors="ignore").to_csv(csv_path, index=False, encoding="utf-8")
+    save_tabular_commits(rows, os.path.join(OUTPUT_DIR, TABULAR_COMMITS_FILE))
 
     total = len(rows)
     eligible = int(df["eligible"].sum())
@@ -765,11 +904,18 @@ def run_sampling(
 
 def run_classification(input_csv: str) -> str:
     """
-    Fase 2: classifica els canvis de cada dataset elegible del CSV amb
-    `classify_dataset(..., classify_changes=True)` i escriu
+    Fase 2: classifica els canvis de cada dataset elegible del CSV i escriu
     `change_classification.csv` a `OUTPUT_DIR`: una fila per taula, parell de
     versions i codi (`dataset_id, version_from, version_to, file_path, code,
     description, is_breaking`).
+
+    Per a cada elegible:
+      1. agafa els seus commits tabulars de `tabular_commits.csv`, el fitxer
+         que la Fase 0 desa al costat del report (`load_tabular_commits`);
+      2. `change_units` en forma les parelles de revisions, segons el criteri
+         que el va fer elegible (columna `eligibility_reason`);
+      3. `compare_change_units` les compara amb el motor.
+    Una fallada d'un dataset queda a `failures.csv` i no atura la resta.
 
     :param input_csv: un `eligibility_report.csv`.
     :return: ruta de `change_classification.csv`.
@@ -777,15 +923,25 @@ def run_classification(input_csv: str) -> str:
     df = pd.read_csv(input_csv)
     eligible = df[df["eligible"] == True]  # noqa: E712
     log.info(f"Classificant canvis de {len(eligible)} datasets elegibles de {input_csv}...")
+    saved = load_tabular_commits(input_csv)
 
     all_changes: list[dict] = []
-    for dataset_id in eligible["dataset_id"]:
-        log.info(f"  - {dataset_id}")
-        result = classify_dataset(dataset_id, classify_changes=True)
-        if result["status"] != "classified":
-            log.warning(f"    Fallada ({result['status']}): {dataset_id}")
-            continue
-        all_changes.extend(result["change_labels"])
+    for _, row in eligible.iterrows():
+        dataset_id = row["dataset_id"]
+        criterion = "A" if str(row["eligibility_reason"]).startswith("Criteri A") else "B"
+        log.info(f"  - {dataset_id} (Criteri {criterion})")
+        try:
+            tabular_commits = saved[dataset_id] if dataset_id in saved else find_tabular_commits_again(dataset_id)
+            all_changes += compare_change_units(dataset_id, change_units(tabular_commits, criterion),
+                                                HF_TOKEN, RETRY_CONFIG)
+        except Exception as exc:
+            category = errors.classify_error(exc)
+            errors.append_failure_row(
+                FAILURES_LOG_PATH, dataset_id=dataset_id, category=category, message=str(exc),
+                retries_attempted=RETRY_CONFIG["max_retries"] if category in errors.RETRIED_CATEGORIES else 0,
+                source="classification",
+            )
+            log.warning(f"    Fallada ({category.value}): {dataset_id}")
 
     output_csv = os.path.join(OUTPUT_DIR, "change_classification.csv")
     classification_frame(all_changes).to_csv(output_csv, index=False, encoding="utf-8")

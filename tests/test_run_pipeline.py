@@ -150,7 +150,8 @@ class TestRunFullPipeline:
         )
 
         files = result["generated_files"]
-        assert files["Fase 0-1 (mostreig+elegibilitat)"] == [eligibility_csv, "funnel_summary.json"]
+        assert files["Fase 0-1 (mostreig+elegibilitat)"] == [
+            eligibility_csv, "funnel_summary.json", str(tmp_path / "run_1" / "tabular_commits.csv")]
         assert files["Fase 1b (versions)"] == [str(tmp_path / "run_1" / "versions.csv")]
         assert files["Fase 2 (classificació de canvis)"] == [str(tmp_path / "run_1" / "change_classification.csv")]
 

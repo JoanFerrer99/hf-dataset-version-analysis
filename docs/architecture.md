@@ -35,8 +35,38 @@ la documentació i metadades. Com qualsevol repositori Git, té:
 
 Un mateix repositori pot contenir molts fitxers de dades (particions
 `train`/`test`, un dataset gran partit en trossos, subconjunts per idioma...).
+La secció següent explica com s'organitzen.
 
-### 2.2 Git LFS i el "clon bare" sense contingut
+### 2.2 Subsets, splits i shards: com es reparteix un dataset en fitxers
+
+Les dades d'un dataset del Hub s'organitzen en tres nivells:
+
+- **Subset** (o *config*): una part del dataset amb les seves pròpies
+  columnes, p.e. un subset per idioma (`ca`, `es`...). La majoria de
+  datasets en tenen un de sol, que es diu `default`.
+- **Split** (partició): la divisió per a l'aprenentatge automàtic, com
+  `train`, `validation` o `test`. Totes les files d'un split tenen les
+  mateixes columnes.
+- **Shard** (tros): **un fitxer que només conté una part de les files d'un
+  split**. Quan un split és massa gran per a un sol fitxer, es parteix en
+  diversos fitxers amb les mateixes columnes, i cadascun guarda un bloc de
+  files consecutives. Unint els shards en ordre es recupera el split sencer.
+
+Exemple: un split `train` de 3 milions de files partit en 3 shards, i un
+split `test` petit, en un sol fitxer.
+
+```
+data/train-00000-of-00003.parquet   files 1 a 1.000.000
+data/train-00001-of-00003.parquet   files 1.000.001 a 2.000.000
+data/train-00002-of-00003.parquet   files 2.000.001 a 3.000.000
+data/test-00000-of-00001.parquet    tot el split test
+```
+
+`00001-of-00003` vol dir "shard número 1 (es compta des de 0) d'un total
+de 3". És el format de la llibreria `datasets` i de la conversió automàtica
+a parquet del Hub.
+
+### 2.3 Git LFS i el "clon bare" sense contingut
 
 Els fitxers grans es guarden amb **Git LFS** (Large File Storage): el
 repositori Git només conté un **punter** de text de ~130 bytes per
@@ -45,22 +75,18 @@ fitxer, i el contingut real viu en un magatzem a part.
 Això ens permet una tècnica clau del projecte:
 
 ```
-git clone --bare --filter=blob:none https://huggingface.co/datasets/<id>
+git clone --bare --filter=blob:none --depth=51 https://huggingface.co/datasets/<id>
 ```
 
 - `--bare`: no crea còpia de treball (no hi ha fitxers desplegats).
-- `--filter=blob:none`: no baixa el contingut dels fitxers.
-
-Resultat: tenim **tot l'historial** (quins commits hi ha i quins fitxers
-toca cadascun) **sense descarregar cap byte de dades**. Després, `git
-show --name-status <commit>` sobre aquest clon local diu quins fitxers
-ha modificat un commit, sense cap crida de xarxa. L'API de HF no exposa
-aquesta informació, i per això cal clonar (històries d'usuari US-301 i
-US-302).
+- `--filter=blob:none`: no baixa el contingut de cap fitxer, només els
+  commits i els arbres (la llista de fitxers de cada commit).
+- `--depth=51`: només els últims 50 commits, que són els que es revisen,
+  més el pare del més vell, que cal per saber què va canviar.
 
 Requereix `git` instal·lat al sistema.
 
-### 2.3 L'API de Hugging Face (`huggingface_hub`)
+### 2.4 L'API de Hugging Face (`huggingface_hub`)
 
 Llibreria Python oficial. Les crides que fem servir:
 
@@ -68,7 +94,7 @@ Llibreria Python oficial. Les crides que fem servir:
 |---|---|---|
 | `HfApi.list_datasets` | Recórrer tota la població de datasets | Fase 0 |
 | `list_repo_refs` | Tags i branques d'un repositori | Fases 0, 1, 2 |
-| `list_repo_commits` | Historial de commits (branca per defecte) | Fases 0, 1, 2 |
+| `list_repo_commits` | Historial de commits (branca per defecte) | Fase 0, i Fase 1 per a les dates dels tags |
 | `list_repo_tree` | Fitxers d'una revisió, amb la mida real (LFS resolt) | Fases 1 i 2 |
 | `hf_hub_download` | Descarregar un fitxer concret a una revisió concreta | Fase 2, validació |
 
@@ -77,9 +103,9 @@ llegeix de la variable d'entorn `HF_TOKEN` (fitxer `.env`).
 
 Detall que sorprèn: `list_repo_tree` retorna un **generador**; la
 petició HTTP es fa en iterar-lo, no en cridar-lo. Per això el codi el
-consumeix sencer (`list(...)`) dins de la funció de reintent (vegeu 2.4).
+consumeix sencer (`list(...)`) dins de la funció de reintent (vegeu 2.5).
 
-### 2.4 Límits de l'API: errors 429 i 403
+### 2.5 Límits de l'API: errors 429 i 403
 
 - **429 Too Many Requests**: HF limita les peticions per segon. Sense
   reintents, una execució de 1000 datasets va perdre el 59% de la mostra.
@@ -92,7 +118,7 @@ consumeix sencer (`list(...)`) dins de la funció de reintent (vegeu 2.4).
 Tota la lògica és a `src/errors.py`; la justificació completa, a
 `docs/decisions_tfg.txt` (T-02).
 
-### 2.5 La taxonomia de canvis
+### 2.6 La taxonomia de canvis
 
 El director amb un equip d'investigació (Abelló et al.)
 va definir una taxonomia de **15 tipus de canvi** elementals
@@ -130,7 +156,7 @@ pipeline que llegeix les dades per nom, posició o tipus: C210, C222,
 C223, C311, C321 i C410. Els altres codis poden degradar un model sense
 fer fallar res, i es marquen com a no trencadors. Detall a `docs/taxonomy.md`.
 
-### 2.6 Census Income: el cas de referència
+### 2.7 Census Income: el cas de referència
 
 Per saber si el nostre detector encerta, ens cal un cas on algú ja hagi
 etiquetat els canvis a mà. El paper del director ho fa amb el dataset
@@ -151,18 +177,18 @@ Termes que defineix aquest codi:
 |---|---|---|
 | **Fitxer substantiu** | Fitxer amb dades reals, no metadades ni documentació. Es decideix per la ruta i l'extensió (secció 7.3). | funció `is_substantive_path` |
 | **Fitxer de dades tabular** | Fitxer substantiu i tabular (`.parquet`, `.csv`, `.tsv`, `.json`, `.jsonl`). És el que fa elegible un dataset i el que compara el motor. | funció `is_tabular_data_path` |
-| **Commit substantiu** | Commit que modifica almenys un fitxer de dades tabular. Cal el clon per saber-ho: sense clon, no compta. | funció `determine_commit_substantive_with_paths` |
-| **Sessió de treball** | Grup de commits substantius propers en el temps: ordenats per data, en comença una de nova quan dos consecutius estan separats per **més de 6 hores**. Evita comptar com a versions diferents els 5 commits que una eina de pujada fa en 10 minuts. Hi ha una sola implementació, compartida per totes les fases. | agrupat en la funció `cluster_commit_times` |
+| **Commit tabular** | Commit que modifica almenys un fitxer de dades tabular. Cal el clon per saber-ho: sense clon, no compta. | funció `is_tabular_commit` |
+| **Candidat** | Dataset de la mostra amb ≥2 tags o ≥2 branques: l'únic al qual es mira la llista de fitxers i, si té dades tabulars, els commits (secció 7.2). | funció `classify_dataset` |
+| **Sessió de treball** | Grup de commits tabulars propers en el temps: ordenats per data, en comença una de nova quan dos consecutius estan separats per **més de 6 hores**. Evita comptar com a versions diferents els 5 commits que una eina de pujada fa en 10 minuts. Hi ha una sola implementació, compartida per totes les fases. | agrupat en la funció `cluster_commit_times` |
 | **Dataset elegible** | Dataset amb ≥2 versions reals, i per tant estudiable. Criteri A o B (secció 7.2). | definit a la funció `classify_dataset` |
 | **Criteri A** | ≥2 tags i ≥2 commits tabulars. | funció `eligibility_criterion` |
 | **Criteri B** | ≥2 branques i commits tabulars repartits en ≥2 sessions. | funció `eligibility_criterion` (sessions: `has_time_dispersed_substantive_commits`) |
 | **Versió** | Criteri A: cada tag. Criteri B: cada sessió (representada pel seu commit més recent). | extracció a `version_extractor.extract_versions_for_dataset` |
 | **Unitat de canvi** | Què es compara a la Fase 2. Criteri A: cada commit tabular contra el commit anterior. Criteri B: el final de cada sessió contra el final de l'anterior. | funció `change_units` |
 | **Fitxer tabular** | `.parquet`, `.csv`, `.tsv`, `.json` o `.jsonl`. L'únic tipus que es descarrega i es compara. | es defineix a la funció `diffengine.units.is_tabular_path` |
-| **Taula** | El que compara la Fase 2: un (subset, split) tal com el mostra el Hub. Els shards d'un split formen una sola taula. | `diffengine.units.resolve_units` (`docs/engine.md`) |
-| **Embut (funnel)** | Recompte de la Fase 0: mostra → elegibles / no elegibles / inaccessibles / errors. | contat a la funció `compute_funnel_stats` |
+| **Shard** | Fitxer amb només una part de les files d'un split.
+| **Taula** | Els shards del split s'uneixen en ordre en una sola taula.
 
->Només els fitxers de dades **tabulars** compten, tant per a l'**elegibilitat** com per a la **classificació**. Un dataset de vídeo o d'àudio no és elegible encara que tingui moltes versions: no hi hauria res a comparar.
 
 ### Identificadors que es troben al codi i als documents
 
@@ -263,8 +289,8 @@ xarxa ni token. `conftest.py` afegeix `src/` al camí d'importació.
   sap comparar dues revisions; qui decideix *quines* es comparen és
   `classify_dataset`, que ja recorre els commits per decidir l'elegibilitat
   (decisió T-08).
-- **`eligibility_scan.py` surt amb error si no troba `HF_TOKEN`.** Per això la
-  CI defineix un token fictici per als tests.
+- **`eligibility_scan.py` surt amb error si no troba `HF_TOKEN`.** Per això 
+  la CI defineix un token fictici per als tests.
 
 ---
 
@@ -276,11 +302,12 @@ xarxa ni token. `conftest.py` afegeix `src/` al camí d'importació.
         ▼
  FASE 0  Mostreig i elegibilitat          eligibility_scan.run_sampling
         │  mostra aleatòria de N (2000 p.e.) → quins tenen ≥2 versions amb canvis a dades tabulars
-        │  sortida: eligibility_report_*.csv, funnel_summary_*.json
+        │  sortida: eligibility_report.csv, funnel_summary.json,
+        │           tabular_commits.csv (els commits tabulars dels elegibles)
         ▼
  FASE 1  Extracció de versions            version_extractor.run_extraction
         │  per a cada elegible: llista ordenada de versions amb data,
-        │  autors i mida.  sortida: versions_*.csv
+        │  autors i mida.  sortida: versions.csv
         ▼
  FASE 2  Classificació de canvis          eligibility_scan.run_classification
         │  per a cada elegible: compara versions consecutives de les
@@ -305,24 +332,32 @@ Què passa quan s'executa `python src/run_pipeline.py --sample-size 2000`:
       `reservoir_sample_dataset_ids` en guarda una mostra aleatòria de N
       (secció 7.1).
    2. Per a cada dataset de la mostra, en paral·lel (`--threads`),
-      `classify_dataset` decideix si és elegible (secció 7.2). Per mirar
-      quins fitxers toca cada commit, `bare_clone` en fa un clon de git
-      sense contingut i `get_changed_files` ho consulta en local.
-   3. `write_results` escriu el report per dataset i el resum de l'embut
-      (`compute_funnel_stats`, secció 7.4).
+      `classify_dataset` decideix si és elegible amb tres filtres, del més
+      barat al més car (secció 7.2): té ≥2 tags o ≥2 branques
+      (`list_repo_refs`)? la versió actual té fitxers de dades tabulars
+      (`list_current_files`)? i els seus commits toquen dades tabulars
+      prou vegades? Per a l'últim, `bare_clone` fa un clon de git sense
+      contingut i `get_changed_files` mira en local quins fitxers toca
+      cada commit.
+   3. `write_results` escriu el report per dataset, el resum de l'embut
+      (`compute_funnel_stats`, secció 7.4) i `tabular_commits.csv`: els
+      commits tabulars de cada elegible, amb la data, els autors i el commit
+      anterior. Les Fases 1 i 2 els llegeixen d'aquí i no tornen a llistar
+      commits ni a clonar.
 3. **Fase 1** (`version_extractor.run_extraction`). Per a cada elegible,
    `extract_versions_for_dataset` construeix la llista de versions: una per
-   tag (Criteri A) o una per sessió de commits (Criteri B). Escriu
-   `versions.csv` (secció 8).
+   tag (Criteri A) o una per sessió dels commits tabulars que va desar la
+   Fase 0 (Criteri B). Escriu `versions.csv` (secció 8).
 4. **Fase 2** (`eligibility_scan.run_classification`). Per a cada elegible:
-   1. `classify_dataset(..., classify_changes=True)` fa el mateix que a la
-      Fase 0 (troba els commits tabulars i confirma que encara és elegible)
-      i, amb aquesta mateixa llista, `change_units` forma les parelles de
-      revisions: cada commit tabular amb el seu anterior (Criteri A) o
-      l'últim commit de cada sessió amb el de l'anterior (Criteri B).
+   1. `load_tabular_commits` llegeix els commits tabulars que va desar la
+      Fase 0, i `change_units` en forma les parelles de revisions: cada
+      commit tabular amb el seu anterior (Criteri A) o l'últim commit de
+      cada sessió amb el de l'anterior (Criteri B).
    2. `compare_change_units` passa cada parella pel motor
-      (`diffengine.pairs.compare_revisions`), que compara les taules de les
-      dues revisions i retorna els canvis i l'estat de cada taula.
+      (`diffengine.pairs.compare_revisions`). El motor resol cada revisió
+      en taules (uneix els shards de cada split, secció 2.2), aparella les
+      taules d'una revisió amb les de l'altra, i compara cada parella.
+      Retorna els canvis de cada taula.
    3. Escriu `change_classification.csv` (secció 9).
 5. **Resum.** L'orquestrador mostra quins fitxers ha generat cada fase.
    Totes les fallades queden a `failures.csv`.
@@ -342,7 +377,7 @@ i obtenir-ne la llista dins de la mostra.
 
 ### 7.1 Mostreig per reservori
 
-No es poden processar ~1M datasets (límits de l'API, secció 2.4), i
+No es poden processar ~1M datasets (límits de l'API, secció 2.5), i
 agafar els més populars esbiaixaria el resultat. Per això es pren una
 **mostra aleatòria uniforme** amb l'algorisme de reservori (algorisme R
 de Vitter, `reservoir_sample_dataset_ids`):
@@ -371,20 +406,39 @@ Amb 2000, el marge és ±0.51 punts.
 
 ### 7.2 Decidir l'elegibilitat (`classify_dataset`)
 
-Per a cada dataset de la mostra:
+Cada dataset de la mostra passa per tres filtres, del més barat al més
+car. Si no en passa un, no és elegible, el motiu queda al report
+(`eligibility_reason`) i no es fa cap pas més.
 
-1. `list_repo_refs` → nombre de tags i de branques. Si té menys de 2 de
-   cadascun, és no elegible i s'acaba aquí (el cas majoritari: una sola
-   crida).
-2. Si no: `list_repo_commits` i clon bare (2.2).
-3. Es recorren fins a 50 commits, del més nou al més vell, i per a
-   cadascun es decideix si és substantiu: si toca algun fitxer de dades
-   tabular (7.3).
-4. Elegible si es compleix:
-   - **Criteri A**: ≥2 tags i ≥2 commits substantius; o
-   - **Criteri B**: ≥2 branques i els commits substantius formen ≥2
-     sessions (separades per >6h).
-5. Sense classificació de canvis, retorna tan bon punt és elegible.
+1. **Té marques de versió?** `list_repo_refs` (una crida a l'API) dona el
+   nombre de tags i de branques. Cal tenir-ne ≥2 de les unes o de les
+   altres. És el filtre que més en descarta: a `run_8`, només 29 dels
+   2.000 el van passar.
+2. **La versió actual té dades tabulars?** `list_current_files` (una crida
+   a l'API, uns 0,2 s, sense clonar) dona la llista de fitxers.
+   `tabular_file_share` compta els fitxers de dades (sense metadades ni
+   documentació, secció 7.3) i quina proporció són tabulars. Si no hi ha
+   cap fitxer de dades tabular, el dataset no és elegible i no es llisten
+   els commits ni es clona. Aquestes dues xifres es guarden en memòria
+   (`INTERNAL_FIELDS`), però de moment no s'escriuen enlloc: només
+   existeixen per als candidats, no per a tota la mostra. A `run_8`, 27 dels 29 candidats tenien dades tabulars.
+3. **Els commits toquen dades tabulars prou vegades?**
+   `list_repo_commits` dona els commits, del més nou al més vell, i se'n
+   revisen els 50 més recents. `bare_clone` fa el clon sense contingut
+   (secció 2.3) i, per a cada commit, `get_changed_files` mira en local
+   quins fitxers toca (`git show`). Un commit compta si toca algun fitxer
+   de dades tabular (`is_tabular_commit`, secció 7.3). Elegible si es
+   compleix:
+   - **Criteri A**: ≥2 tags i ≥2 commits tabulars; o
+   - **Criteri B**: ≥2 branques i els commits tabulars formen ≥2 sessions
+     (separades per més de 6 hores).
+
+Els filtres 1 i 3 són els criteris d'elegibilitat de sempre. El 2 evita
+llistar commits i clonar un repositori que avui no té cap taula; té un
+efecte: un dataset que tenia taules però les ha esborrades totes a la
+versió actual ja no és elegible. A `run_8` va ser el cas d'un sol dataset
+(`the-oligarch/Molab-checkpoints`, fitxers de mètriques d'entrenament), i
+no tenia cap canvi detectable.
 
 
 ### 7.3 Quins fitxers compten (`is_tabular_data_path`)
@@ -471,7 +525,8 @@ El concepte de versió depèn del criteri d'elegibilitat (decisió T-06):
 - **Criteri B** (la majoria: ~70% dels elegibles no tenen cap tag):
   cada sessió és una versió, representada pel seu commit més recent
   (`build_sessions_from_commits`, mateixa funció de sessions que la
-  Fase 0).
+  Fase 0). Les sessions es fan amb els commits tabulars que va desar la
+  Fase 0 (`tabular_commits.csv`): no es tornen a llistar ni es clona res.
 
 Cada fila porta `version_source` (`tag` o `commit_session`) perquè la
 confiança no és la mateixa: un tag és una marca deliberada del
@@ -489,17 +544,20 @@ Altres detalls:
 
 ## 9. Fase 2 — Classificació de canvis
 
-Codi: `eligibility_scan.run_classification` → `classify_dataset(...,
-classify_changes=True)`, i el motor `src/diffengine/`
-(**`docs/engine.md`**). És l'única fase que **descarrega contingut real**,
+Codi: `eligibility_scan.run_classification` (llegeix els commits tabulars
+de la Fase 0, en forma les parelles i les compara) i el motor
+`src/diffengine/` (**`docs/engine.md`**). És l'única fase que **descarrega contingut real**,
 i per això només s'aplica als elegibles (la classificació de tota la
 mostra baixaria centenars de GB).
 
 ### 9.1 Què es compara
 
-1. Es tornen a buscar els commits tabulars i es torna a decidir
-   l'elegibilitat, exactament com a la Fase 0 (7.2). Si el dataset ja no és
-   elegible (el repositori pot haver canviat), no es compara.
+1. `load_tabular_commits` llegeix els commits tabulars de cada elegible
+   que va desar la Fase 0 (`tabular_commits.csv`, a la mateixa carpeta que
+   el report). Es comparen exactament els commits que van fer elegible el
+   dataset, sense tornar a consultar l'historial. Només si el report és
+   d'una execució anterior i no té aquest fitxer, es torna a fer la Fase 0
+   per a aquell dataset (`find_tabular_commits_again`).
 2. `change_units` forma les **unitats de canvi** (decisió T-13) a partir de
    la mateixa llista de commits tabulars:
    - Criteri A: cada commit tabular contra el commit anterior de
@@ -511,7 +569,10 @@ mostra baixaria centenars de GB).
    unitat (`pairs.compare_revisions`). No cal tornar a mirar si els fitxers
    són tabulars: les unitats només surten de commits tabulars. El motor:
    - cada revisió es resol en **taules (subset, split)** amb les regles
-     de la llibreria `datasets` (els shards d'un split són una sola taula);
+     de la llibreria `datasets`. Els shards d'un split (secció 2.2) es
+     descarreguen tots i s'uneixen en ordre en una sola taula, de manera
+     que si la versió nova parteix les mateixes files en més o menys
+     fitxers, no surt cap canvi;
    - les taules s'aparellen entre revisions; les que tenen el mateix hash
      de contingut no es descarreguen;
    - la resta es descarrega, es llegeix i es compara.
@@ -545,21 +606,19 @@ incremental, mai sobreescriu) i hi desa tot:
 
 | Fitxer | Fase | Contingut |
 |---|---|---|
-| `eligibility_report_<N>_<k>.csv` | 0 | Una fila per dataset de la mostra: `dataset_id, num_tags, num_branches, num_commits_substantive, num_data_files, tabular_file_share, eligible, eligibility_reason, status, error_category, error`. `status` = `classified`, `access_restricted` (403) o `error`. |
-| `funnel_summary_<N>_<k>.json` | 0 | Resum de l'embut (secció 7.4): població recorreguda, elegibles per criteri, inaccessibles, errors, proporcions. |
-| `versions_<k>.csv` | 1 | Una fila per versió: `dataset_id, version_label, version_order, version_source, commit_sha, commit_date, authors, approx_size_bytes, session_commit_count, status`. |
-| `changes_<k>.csv` / `.parquet` | 2 | Una fila per canvi detectat: revisions, fitxer(s), `code`, `column`, `old_column`, `subtype`, files afectades, `confidence`, `evidence_json`, `engine_version`, `config_hash` (vegeu `docs/engine.md`, pas 5). |
-| `change_pairs_<k>.csv` | 2 | Una fila per parell de taules comparat, amb el seu `status` i com s'han aparellat les files. |
-| `change_classification_<k>.csv` | 2 | Format antic, derivat de `changes`: `dataset_id, version_from, version_to, file_path, code, description, is_breaking`. `version_from`/`version_to` són SHA de commit. |
+| `eligibility_report.csv` | 0 | Una fila per dataset de la mostra: `dataset_id, num_tags, num_branches, num_tabular_commits, eligible, eligibility_reason, status, error_category, error`. `eligibility_reason` diu el criteri que es compleix o el filtre on s'ha aturat. `status` = `classified`, `access_restricted` (403) o `error`. |
+| `tabular_commits.csv` | 0 | Una fila per commit tabular de cada elegible: `dataset_id, commit_id, parent_id, created_at, authors`. `parent_id` és el commit anterior (buit per al més vell dels 50 revisats). El llegeixen les Fases 1 i 2. |
+| `funnel_summary.json` | 0 | Resum de l'embut (secció 7.4): població recorreguda, quants passen cada filtre, elegibles per criteri, inaccessibles, errors, proporcions. |
+| `versions.csv` | 1 | Una fila per versió: `dataset_id, version_label, version_order, version_source, commit_sha, commit_date, authors, approx_size_bytes, session_commit_count, status`. |
+| `change_classification.csv` | 2 | Una fila per taula, parell de versions i codi: `dataset_id, version_from, version_to, file_path, code, description, is_breaking`. `version_from`/`version_to` són SHA de commit. |
 | `failures.csv` | totes | Només si hi ha fallades: `timestamp, source, dataset_id, error_category, error_message, retries_attempted`. `source` indica la fase. |
 
-`N` = `--sample-size`; `<k>` = número que posa cada fase. Amb
-`--input-csv` no hi ha Fase 0 i el CSV d'entrada no es copia a la
-carpeta.
+L'únic número és el de la carpeta: a dins, els noms són fixos. Els scripts
+executats sols (`eligibility_scan.py`, `version_extractor.py`) també creen
+la seva carpeta. Amb `--input-csv` no hi ha Fase 0 i el CSV d'entrada no es
+copia a la carpeta.
 
-La validació de Census Income escriu directament a `data/`
-(`census_income_*_<k>.csv`); els resultats de referència són a
-`data/census_income/`.
+La validació de Census Income escriu a `data/census_income/run_<id>/`.
 
 ---
 
@@ -592,14 +651,16 @@ descàrregues es fan.
 - Recórrer la població: una passada paginada (~1M ids), temps O(total),
   memòria O(N).
 - `classify_dataset` per dataset: 1 crida `list_repo_refs`; en la
-  majoria s'acaba aquí. Si no: 1 `list_repo_commits` + 1 clon (només
-  historial) + fins a 50 `git show` locals, sense xarxa.
+  majoria (98,5% a `run_8`) s'acaba aquí. Per als candidats: 1
+  `dataset_info` (llista de fitxers). Si tenen dades tabulars: 1
+  `list_repo_commits` + 1 clon (51 commits, sense contingut, ~1 s) + fins
+  a 50 `git show` locals, sense xarxa.
 
 **Fase 1** (només elegibles):
 - Criteri A: 1 `list_repo_refs` + per tag, 1 `list_repo_commits` i 1
   `list_repo_tree`.
-- Criteri B: 1 `list_repo_commits` + 1 clon + per sessió, 1
-  `list_repo_tree`.
+- Criteri B: cap crida per trobar les sessions (fa servir
+  `tabular_commits.csv`) + per sessió, 1 `list_repo_tree`.
 
 **Fase 2** (només elegibles, l'única que baixa dades):
 - Per unitat de canvi: 2 `list_repo_tree` (+ el README de cada
@@ -625,7 +686,7 @@ se simula amb `monkeypatch`.
 
 ### 13.2 Validació del motor amb Census Income
 
-`validate_census_income.py` compara D1-D7 amb D0 (secció 2.6) amb el
+`validate_census_income.py` compara D1-D7 amb D0 (secció 2.7) amb el
 mateix motor de la Fase 2 i contrasta el resultat amb la Taula 1 del
 paper, codi per codi, sense C100 (decisió T-14). Per a cada versió i
 codi: vertader positiu (TP) si el paper i el motor el marquen, fals

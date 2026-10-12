@@ -3,9 +3,8 @@ Tests unitaris per a `src/version_extractor.py` (US-201 + US-202).
 
 Cobreixen:
   1. Funcions pures: ordenació cronològica, suma de mides, format d'autors.
-  2. `build_sessions_from_commits`: agrupació de commits substantius en
-     sessions (Criteri B), reutilitzant `is_tabular_commit` i
-     `cluster_commit_times` reals.
+  2. `build_sessions_from_commits`: agrupació en sessions (Criteri B) dels
+     commits tabulars que va trobar la Fase 0, amb `cluster_commit_times` real.
   3. `extract_versions_for_dataset`: bifurcació tag/sessió segons
      `eligibility_reason`, tolerància a errors parcials.
   4. `fetch_tree_size_bytes`: `list_repo_tree` (generador lazy) es consumeix
@@ -24,7 +23,7 @@ import pytest
 from huggingface_hub.utils import HfHubHTTPError
 
 import version_extractor as ve
-from eligibility_scan import MIN_SUBSTANTIVE_GAP_HOURS
+from eligibility_scan import MIN_SUBSTANTIVE_GAP_HOURS, TabularCommit
 
 
 def make_http_error(status_code: int, message: str = "boom") -> HfHubHTTPError:
@@ -126,51 +125,40 @@ class TestFormatAuthors:
 
 
 class TestBuildSessionsFromCommits:
-    def test_commits_within_gap_form_one_session(self, monkeypatch):
-        monkeypatch.setattr(ve, "is_tabular_commit", lambda commit, clone_dir: True)
+    """Les sessions es fan amb els commits tabulars que va trobar la Fase 0."""
+
+    def test_commits_within_gap_form_one_session(self):
         base = datetime(2026, 1, 1, 12, 0, 0)
         commits = [
-            _FakeCommit("Add records", created_at=base, commit_id="c1", authors=["alice"]),
-            _FakeCommit("Add more records", created_at=base + timedelta(hours=1), commit_id="c2", authors=["bob"]),
+            TabularCommit("c1", None, base, ("alice",)),
+            TabularCommit("c2", "c1", base + timedelta(hours=1), ("bob",)),
         ]
-        sessions = ve.build_sessions_from_commits(commits, clone_dir=None)
+        sessions = ve.build_sessions_from_commits(commits)
         assert len(sessions) == 1
         assert sessions[0]["commit_sha"] == "c2"
         assert sessions[0]["session_commit_count"] == 2
         assert sessions[0]["authors"] == ["alice", "bob"]
 
-    def test_commits_beyond_gap_form_separate_sessions(self, monkeypatch):
-        monkeypatch.setattr(ve, "is_tabular_commit", lambda commit, clone_dir: True)
+    def test_commits_beyond_gap_form_separate_sessions(self):
         base = datetime(2026, 1, 1, 0, 0, 0)
         commits = [
-            _FakeCommit("Session 1", created_at=base, commit_id="c1"),
-            _FakeCommit(
-                "Session 2", created_at=base + timedelta(hours=MIN_SUBSTANTIVE_GAP_HOURS + 1), commit_id="c2"
-            ),
+            TabularCommit("c1", None, base),
+            TabularCommit("c2", "c1", base + timedelta(hours=MIN_SUBSTANTIVE_GAP_HOURS + 1)),
         ]
-        sessions = ve.build_sessions_from_commits(commits, clone_dir=None)
-        assert len(sessions) == 2
+        sessions = ve.build_sessions_from_commits(commits)
         assert [s["commit_sha"] for s in sessions] == ["c1", "c2"]
 
-    def test_non_substantive_commits_are_excluded(self, monkeypatch):
-        monkeypatch.setattr(ve, "is_tabular_commit", lambda commit, clone_dir: False)
-        commits = [_FakeCommit("Update README", created_at=datetime(2026, 1, 1))]
-        assert ve.build_sessions_from_commits(commits, clone_dir=None) == []
+    def test_no_commits_means_no_sessions(self):
+        assert ve.build_sessions_from_commits([]) == []
 
-    def test_commits_without_created_at_are_ignored(self, monkeypatch):
-        monkeypatch.setattr(ve, "is_tabular_commit", lambda commit, clone_dir: True)
-        commits = [_FakeCommit("Add records", created_at=None)]
-        assert ve.build_sessions_from_commits(commits, clone_dir=None) == []
+    def test_commits_without_created_at_are_ignored(self):
+        assert ve.build_sessions_from_commits([TabularCommit("c1", None, None)]) == []
 
-    def test_sessions_are_returned_in_chronological_order(self, monkeypatch):
-        monkeypatch.setattr(ve, "is_tabular_commit", lambda commit, clone_dir: True)
+    def test_sessions_are_returned_in_chronological_order(self):
         base = datetime(2026, 1, 1)
         gap = timedelta(hours=MIN_SUBSTANTIVE_GAP_HOURS + 1)
-        commits = [
-            _FakeCommit("Later", created_at=base + 2 * gap, commit_id="late"),
-            _FakeCommit("Earlier", created_at=base, commit_id="early"),
-        ]
-        sessions = ve.build_sessions_from_commits(commits, clone_dir=None)
+        commits = [TabularCommit("late", "early", base + 2 * gap), TabularCommit("early", None, base)]
+        sessions = ve.build_sessions_from_commits(commits)
         assert [s["commit_sha"] for s in sessions] == ["early", "late"]
 
 
@@ -204,18 +192,14 @@ class TestExtractVersionsForDataset:
         )
         assert rows == []
 
-    def test_criteria_b_uses_commit_sessions_as_versions(self, monkeypatch):
-        base = datetime(2026, 1, 1)
-        monkeypatch.setattr(
-            ve, "list_repo_commits",
-            lambda **kw: [_FakeCommit("Add data", created_at=base, commit_id="c1", authors=["alice"])],
-        )
-        monkeypatch.setattr(ve, "bare_clone", lambda dataset_id: _NoGitClone())
-        monkeypatch.setattr(ve, "is_tabular_commit", lambda commit, clone_dir: True)
+    def test_criteria_b_uses_the_sessions_of_the_saved_commits(self, monkeypatch):
+        # Els commits venen de la Fase 0: no s'han de tornar a llistar ni clonar.
+        monkeypatch.setattr(ve, "list_repo_commits", lambda **kw: (_ for _ in ()).throw(AssertionError("no")))
+        commits = [TabularCommit("c1", None, datetime(2026, 1, 1), ("alice",))]
 
         rows = ve.extract_versions_for_dataset(
-            "org/ds", "Criteri B: substantive_commits>=2 dispersos >=6.0h", "tok", ve.RETRY_CONFIG,
-            compute_size=False,
+            "org/ds", "Criteri B: commits amb dades tabulars en >=2 sessions", "tok", ve.RETRY_CONFIG,
+            compute_size=False, tabular_commits=commits,
         )
         assert len(rows) == 1
         assert rows[0].version_source == "commit_session"
@@ -268,14 +252,6 @@ class TestExtractVersionsForDataset:
         assert rows[0].approx_size_bytes is None
 
 
-class _NoGitClone:
-    def __enter__(self):
-        return None
-
-    def __exit__(self, *exc):
-        return False
-
-
 # ---------------------------------------------------------------------------
 # fetch_tree_size_bytes — Finding B: list_repo_tree és un generador lazy
 # ---------------------------------------------------------------------------
@@ -325,7 +301,7 @@ class TestRunExtraction:
             {"dataset_id": "org/skip", "eligible": False, "eligibility_reason": "ineligible: ..."},
         ]).to_csv(input_csv, index=False)
 
-        def fake_extract(dataset_id, eligibility_reason, token, cfg, compute_size=True):
+        def fake_extract(dataset_id, eligibility_reason, token, cfg, compute_size=True, tabular_commits=None):
             if dataset_id == "org/broken":
                 raise make_http_error(403)
             return [

@@ -1147,6 +1147,49 @@ Estat: Fet
     Income (C410 a D7): precisió del 68,4% al 70,3%, recall 100%.
 
 
+DECISIÓ T-21: filtre de dades tabulars abans de clonar, clon limitat a 51 commits, i commits de la Fase 0 reaprofitats
+Data: octubre 2026
+Responsable: Joan
+Estat: Fet
+
+  MOTIU: l'elegibilitat clonava tots els candidats (>=2 tags o branques)
+  abans de saber si tenien cap taula, i el percentatge de fitxers tabulars
+  només sortia del clon.
+
+  DECISIÓ: tres filtres, del més barat al més car: (1) >=2 tags o >=2
+  branques (`list_repo_refs`); (2) la versió actual té algun fitxer de dades
+  tabular, segons la llista de fitxers de l'API (`dataset_info`, ~0,2 s,
+  sense clonar); (3) commits tabulars (Criteri A o B), amb un clon sense
+  contingut i limitat als 51 últims commits (`--depth=51`). El report diu
+  a quin filtre s'atura cada dataset (`eligibility_reason`). El nombre de
+  fitxers de dades i la proporció tabular es calculen per als candidats
+  però no s'escriuen enlloc: sense tenir-los per a tota la mostra, no
+  aporten res. El resum de l'embut es queda amb elegibles, no elegibles,
+  inaccessibles i errors.
+
+  La Fase 0 desa els commits tabulars de cada elegible a
+  `tabular_commits.csv` (amb la data, els autors i el commit anterior). La
+  Fase 1 (sessions del Criteri B) i la Fase 2 (parelles que es comparen)
+  els llegeixen d'aquí: ja no tornen a llistar commits ni a clonar, i
+  comparen exactament els commits que van fer elegible el dataset. Amb dos
+  elegibles de run_8 (un de cada criteri), les versions i els canvis
+  surten idèntics als de run_8.
+
+  MESURA (29 candidats de run_8): la llista de fitxers de l'API és idèntica
+  a la del clon en els 29; el clon trigava entre 0,6 i 1,2 s (20 s en
+  total); limitat a 51 commits ocupa la meitat (de 9,1 a 4,7 MB) i dona els
+  mateixos commits tabulars. El guany de temps és petit, perquè el clon ja
+  no baixava contingut i només s'aplica a un 1,5% de la mostra: el valor és
+  no clonar repositoris sense taules i tenir la proporció tabular abans dels
+  commits. No es fa la crida de fitxers a tota la mostra: doblaria les
+  crides a l'API, i run_8 ja va perdre 8 datasets per límit de peticions
+  (429).
+
+  EFECTE: un dataset que ha esborrat totes les taules a la versió actual ja
+  no és elegible. A run_8, un sol cas (`the-oligarch/Molab-checkpoints`),
+  sense cap canvi detectable: 8 elegibles passarien a 7.
+
+
 ================================================================================
 BLOC 4 — DECISIONS D'ABAST
 ================================================================================

@@ -12,7 +12,7 @@ processen els datasets elegibles.
   python run_pipeline.py --sample-size 2000 --skip-classification                    # només Fase 0-1/1b
 
 Output: tot dins d'una carpeta nova, `data/run_<id>/` (mai sobreescriu):
-  eligibility_report.csv, funnel_summary.json (Fase 0)
+  eligibility_report.csv, funnel_summary.json, tabular_commits.csv (Fase 0)
   versions.csv (Fase 1)
   change_classification.csv (Fase 2)
   failures.csv (si hi ha fallades)
@@ -77,7 +77,10 @@ def run_full_pipeline(
             sample_size=sample_size, max_scanned=max_scanned, num_threads=num_threads, tags_only=tags_only,
         )
         eligible = summary["eligible"]
-        generated_files["Fase 0-1 (mostreig+elegibilitat)"] += [eligibility_csv, funnel_summary_json]
+        generated_files["Fase 0-1 (mostreig+elegibilitat)"] += [
+            eligibility_csv, funnel_summary_json,
+            os.path.join(os.path.dirname(eligibility_csv), es.TABULAR_COMMITS_FILE),
+        ]
 
     outputs["eligibility_csv"] = eligibility_csv
     outputs["eligible"] = eligible

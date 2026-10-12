@@ -11,9 +11,36 @@ Cobreixen:
 import os
 import random
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+import pytest
 
 import eligibility_scan as es
+
+
+class _FakeSibling:
+    def __init__(self, rfilename):
+        self.rfilename = rfilename
+
+
+class _FakeRepoInfo:
+    """Resposta simulada de `dataset_info`: només la llista de fitxers (`siblings`)."""
+
+    def __init__(self, files):
+        self.siblings = [_FakeSibling(f) for f in files]
+
+
+def _current_files(monkeypatch, files):
+    """Simula els fitxers de la versió actual que retorna l'API (`list_current_files`)."""
+    calls = []
+    monkeypatch.setattr(es, "dataset_info", lambda **kw: calls.append(kw["repo_id"]) or _FakeRepoInfo(files))
+    return calls
+
+
+@pytest.fixture(autouse=True)
+def _repo_with_a_table(monkeypatch):
+    # Per defecte, la versió actual té una taula: cap test fa crides reals a l'API.
+    _current_files(monkeypatch, ["README.md", "data/train.csv"])
 
 
 @contextmanager
@@ -346,6 +373,16 @@ class TestTabularFileShare:
 
 
 class TestBareClone:
+    def test_clones_without_content_and_only_the_recent_history(self, monkeypatch):
+        captured = []
+        monkeypatch.setattr(es.subprocess, "run", lambda args, **kw: captured.append(args) or _FakeCompletedProcess())
+
+        with es.bare_clone("org/ds"):
+            pass
+
+        assert "--bare" in captured[0] and "--filter=blob:none" in captured[0]
+        assert f"--depth={es.MAX_COMMITS + 1}" in captured[0]
+
     def test_yields_directory_on_success_and_cleans_up_after(self, monkeypatch):
         monkeypatch.setattr(es.subprocess, "run", lambda *a, **kw: _FakeCompletedProcess(returncode=0))
 
@@ -469,6 +506,47 @@ class _FakeCompletedProcess:
         self.returncode = returncode
         self.stdout = stdout
         self.stderr = ""
+
+
+class TestClassifyDatasetFilters:
+    """Els tres filtres de `classify_dataset`, del més barat al més car."""
+
+    def test_without_two_tags_or_branches_nothing_else_is_queried(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1"], branches=["main"]))
+        files_calls = _current_files(monkeypatch, ["data/train.csv"])
+        monkeypatch.setattr(es, "list_repo_commits", lambda **kw: (_ for _ in ()).throw(AssertionError("no")))
+        monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
+
+        result = es.classify_dataset("org/ds")
+
+        assert result["eligible"] is False
+        assert result["eligibility_reason"] == es.ELIGIBILITY_REASONS["no_version_marks"]
+        assert files_calls == []
+
+    def test_without_tabular_files_there_is_no_commit_listing_nor_clone(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1", "v2"]))
+        _current_files(monkeypatch, ["README.md", "videos/ep_0.mp4", "videos/ep_1.mp4"])
+        monkeypatch.setattr(es, "list_repo_commits", lambda **kw: (_ for _ in ()).throw(AssertionError("no")))
+        monkeypatch.setattr(es, "bare_clone", lambda ds: (_ for _ in ()).throw(AssertionError("no")))
+        monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
+
+        result = es.classify_dataset("org/ds")
+
+        assert result["eligible"] is False
+        assert result["eligibility_reason"] == es.ELIGIBILITY_REASONS["no_tabular_files"]
+        assert (result["num_data_files"], result["tabular_file_share"]) == (2, 0.0)
+
+    def test_tabular_share_is_reported_for_candidates(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1", "v2"]))
+        _current_files(monkeypatch, ["README.md", "data/train.csv", "videos/ep_0.mp4", "videos/ep_1.mp4"])
+        monkeypatch.setattr(es, "list_repo_commits", lambda **kw: iter([_FakeCommit("Update README")]))
+        _files_by_title(monkeypatch)
+        monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
+
+        result = es.classify_dataset("org/ds")
+
+        assert (result["num_data_files"], result["tabular_file_share"]) == (3, round(1 / 3, 4))
+        assert result["eligibility_reason"] == es.ELIGIBILITY_REASONS["no_tabular_commits"]
 
 
 class TestClassifyDatasetResultShape:
@@ -714,7 +792,7 @@ class TestCompareChangeUnits:
 
 
 # ---------------------------------------------------------------------------
-# classify_dataset(classify_changes=True) -- integració completa
+# Commits tabulars: la Fase 0 els desa i les Fases 1 i 2 els reaprofiten
 # ---------------------------------------------------------------------------
 
 def _record_units(monkeypatch):
@@ -723,30 +801,26 @@ def _record_units(monkeypatch):
 
     def fake(dataset_id, units_to_compare, hf_token, retry_config):
         calls.extend(units_to_compare)
-        return [{"dataset_id": dataset_id, "version_from": o, "version_to": n, "code": "C421"}
-                for o, n in units_to_compare]
+        return [{"dataset_id": dataset_id, "version_from": o, "version_to": n, "file_path": "train.csv",
+                 "code": "C421"} for o, n in units_to_compare]
 
     monkeypatch.setattr(es, "compare_change_units", fake)
     return calls
 
 
-class TestClassifyDatasetWithChangeClassification:
-    def test_default_classify_changes_false_returns_empty_labels(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1", "v2"]))
-        monkeypatch.setattr(
-            es, "list_repo_commits",
-            lambda **kw: iter([_FakeCommit("Add new records"), _FakeCommit("Add more records")]),
-        )
-        _files_by_title(monkeypatch)
-        calls = _record_units(monkeypatch)
-        monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
+def _write_phase0(tmp_path, reports, commits_by_dataset):
+    """Escriu un `eligibility_report.csv` i el `tabular_commits.csv` que la Fase 0 hi desa al costat."""
+    import pandas as pd
 
-        result = es.classify_dataset("org/ds")
+    report = tmp_path / "eligibility_report.csv"
+    pd.DataFrame(reports).to_csv(report, index=False)
+    rows = [{"dataset_id": ds, "tabular_commits": commits} for ds, commits in commits_by_dataset.items()]
+    es.save_tabular_commits(rows, str(tmp_path / es.TABULAR_COMMITS_FILE))
+    return str(report)
 
-        assert result["change_labels"] == []
-        assert calls == []
 
-    def test_counts_every_tabular_commit(self, monkeypatch, tmp_path):
+class TestTabularCommitsFromPhase0:
+    def test_eligible_dataset_keeps_its_tabular_commits_and_their_parents(self, monkeypatch, tmp_path):
         commits = [_FakeCommit(f"Add batch {i}", commit_id=f"c{i}") for i in (4, 3, 2, 1)]
         monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1", "v2"]))
         monkeypatch.setattr(es, "list_repo_commits", lambda **kw: commits)
@@ -757,61 +831,160 @@ class TestClassifyDatasetWithChangeClassification:
 
         assert result["eligible"] is True
         assert result["num_tabular_commits"] == 4
+        # El pare és el commit següent de la llista; el més vell no en té de conegut.
+        assert [(c.commit_id, c.parent_id) for c in result["tabular_commits"]] == [
+            ("c4", "c3"), ("c3", "c2"), ("c2", "c1"), ("c1", None)]
 
-    def test_ineligible_dataset_is_not_classified(self, monkeypatch, tmp_path):
-        # Commits amb dades, però tots en una sola sessió (patró de pujada
-        # LeRobot) i sense tags: no és elegible i no s'ha de comparar res.
+    def test_ineligible_dataset_keeps_no_commits(self, monkeypatch, tmp_path):
+        # Commits amb dades, però tots en una sola sessió i sense tags: no és elegible.
         now = datetime(2026, 1, 1, 12, 0, 0)
         commits = [_FakeCommit(f"Add episode {i}", created_at=now - timedelta(minutes=i)) for i in range(5)]
         monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(branches=["main", "dev"]))
         monkeypatch.setattr(es, "list_repo_commits", lambda **kw: commits)
         _files_by_title(monkeypatch)
-        calls = _record_units(monkeypatch)
         monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
 
-        result = es.classify_dataset("org/ds", classify_changes=True)
+        result = es.classify_dataset("org/ds")
 
         assert result["eligible"] is False
-        assert calls == []
+        assert result["tabular_commits"] == []
 
-    def test_criterion_a_compares_each_commit_with_its_parent(self, monkeypatch, tmp_path):
-        commits = [_FakeCommit("Add batch 2", commit_id="c2"), _FakeCommit("Add batch 1", commit_id="c1")]
-        monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1", "v2"]))
-        monkeypatch.setattr(es, "list_repo_commits", lambda **kw: commits)
-        _files_by_title(monkeypatch)
+    def test_saved_commits_are_read_back_unchanged(self, tmp_path):
+        commits = [
+            es.TabularCommit("c2", "c1", datetime(2026, 1, 2, tzinfo=timezone.utc), ("ana", "bob")),
+            es.TabularCommit("c1", None, datetime(2026, 1, 1, tzinfo=timezone.utc), ()),
+        ]
+        report = _write_phase0(tmp_path, [{"dataset_id": "org/ds", "eligible": True}], {"org/ds": commits})
+
+        assert es.load_tabular_commits(report) == {"org/ds": commits}
+
+    def test_report_without_the_file_gives_nothing(self, tmp_path):
+        assert es.load_tabular_commits(str(tmp_path / "eligibility_report.csv")) == {}
+
+    def test_report_has_no_internal_fields_and_commits_go_to_their_own_file(self, monkeypatch, tmp_path):
+        import pandas as pd
+
+        monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
+        row = {
+            "dataset_id": "org/ds", "num_tags": 2, "num_branches": 1, "num_tabular_commits": 1,
+            "eligible": True, "eligibility_reason": es.ELIGIBILITY_REASONS["A"], "status": "classified",
+            "error_category": "", "error": "", "num_data_files": 3, "tabular_file_share": 0.5,
+            "tabular_commits": [es.TabularCommit("c2", "c1", datetime(2026, 1, 2), ())],
+        }
+
+        csv_path, _, summary = es.write_results([row], total_scanned=1)
+
+        report = pd.read_csv(csv_path)
+        assert not set(es.INTERNAL_FIELDS) & set(report.columns)
+        saved = pd.read_csv(tmp_path / es.TABULAR_COMMITS_FILE)
+        assert saved[["dataset_id", "commit_id", "parent_id"]].values.tolist() == [["org/ds", "c2", "c1"]]
+        assert {"eligible", "ineligible", "access_restricted", "errors"} <= set(summary)
+        assert not any(k.startswith("with_") for k in summary)
+
+
+class TestRunClassification:
+    def test_uses_the_commits_saved_by_phase0_without_looking_them_up_again(self, monkeypatch, tmp_path):
+        commits = [es.TabularCommit("c2", "c1", datetime(2026, 1, 2), ()),
+                   es.TabularCommit("c1", None, datetime(2026, 1, 1), ())]
+        report = _write_phase0(
+            tmp_path, [{"dataset_id": "org/ds", "eligible": True, "eligibility_reason": es.ELIGIBILITY_REASONS["A"]}],
+            {"org/ds": commits})
+        monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
+        monkeypatch.setattr(es, "classify_dataset", lambda *a, **kw: (_ for _ in ()).throw(AssertionError("no")))
         calls = _record_units(monkeypatch)
-        monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
 
-        result = es.classify_dataset("org/ds", classify_changes=True)
+        es.run_classification(report)
 
-        # c2 es compara amb el seu pare c1. c1 és el més vell de la finestra:
-        # no en coneixem el pare i no es compara.
+        # Criteri A: c2 es compara amb el seu pare c1; c1 no té pare conegut.
         assert calls == [("c1", "c2")]
-        assert [c["code"] for c in result["change_labels"]] == ["C421"]
 
-    def test_criterion_b_compares_session_boundaries_not_every_commit_pair(self, monkeypatch, tmp_path):
-        # 4 commits en 2 sessions de 2: una sola comparació, entre l'últim
-        # commit de cada sessió (mai c1-c2, c2-c3 ni c3-c4).
+    def test_criterion_b_compares_session_boundaries(self, monkeypatch, tmp_path):
         base = datetime(2026, 1, 1, 12, 0, 0)
         gap = timedelta(hours=es.MIN_SUBSTANTIVE_GAP_HOURS + 1)
-        commits = [
-            _FakeCommit("c1", created_at=base, commit_id="c1"),
-            _FakeCommit("c2", created_at=base - timedelta(minutes=10), commit_id="c2"),
-            _FakeCommit("c3", created_at=base - gap, commit_id="c3"),
-            _FakeCommit("c4", created_at=base - gap - timedelta(minutes=10), commit_id="c4"),
-        ]
-        monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(branches=["main", "dev"]))
-        monkeypatch.setattr(es, "list_repo_commits", lambda **kw: commits)
-        _files_by_title(monkeypatch)
+        commits = [es.TabularCommit("c1", "c2", base, ()),
+                   es.TabularCommit("c2", "c3", base - timedelta(minutes=10), ()),
+                   es.TabularCommit("c3", "c4", base - gap, ()),
+                   es.TabularCommit("c4", None, base - gap - timedelta(minutes=10), ())]
+        report = _write_phase0(
+            tmp_path, [{"dataset_id": "org/ds", "eligible": True, "eligibility_reason": es.ELIGIBILITY_REASONS["B"]}],
+            {"org/ds": commits})
+        monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
         calls = _record_units(monkeypatch)
-        monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
 
-        result = es.classify_dataset("org/ds", classify_changes=True)
+        es.run_classification(report)
 
-        assert result["eligibility_reason"].startswith("Criteri B")
+        # 2 sessions: només l'últim commit de cada una (mai c1-c2, c2-c3 ni c3-c4).
         assert calls == [("c3", "c1")]
 
-    def test_classify_changes_never_produces_c100(self, monkeypatch, tmp_path):
+    def test_old_report_without_saved_commits_looks_them_up_again(self, monkeypatch, tmp_path):
+        import pandas as pd
+
+        report = tmp_path / "eligibility_report.csv"
+        pd.DataFrame([{"dataset_id": "org/ds", "eligible": True,
+                       "eligibility_reason": es.ELIGIBILITY_REASONS["A"]}]).to_csv(report, index=False)
+        monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
+        looked_up = []
+        monkeypatch.setattr(es, "find_tabular_commits_again", lambda ds: looked_up.append(ds) or [
+            es.TabularCommit("c2", "c1", datetime(2026, 1, 2), ())])
+        calls = _record_units(monkeypatch)
+
+        es.run_classification(str(report))
+
+        assert looked_up == ["org/ds"]
+        assert calls == [("c1", "c2")]
+
+    def test_a_failing_dataset_is_logged_and_the_rest_continue(self, monkeypatch, tmp_path):
+        import pandas as pd
+
+        commits = {ds: [es.TabularCommit("c2", "c1", datetime(2026, 1, 2), ())] for ds in ("org/bad", "org/ok")}
+        report = _write_phase0(
+            tmp_path, [{"dataset_id": ds, "eligible": True, "eligibility_reason": es.ELIGIBILITY_REASONS["A"]}
+                       for ds in commits], commits)
+        monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
+        monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
+
+        def compare(dataset_id, units_to_compare, hf_token, retry_config):
+            if dataset_id == "org/bad":
+                raise ValueError("boom")
+            return [{"dataset_id": dataset_id, "version_from": "c1", "version_to": "c2", "file_path": "t.csv",
+                     "code": "C421"}]
+
+        monkeypatch.setattr(es, "compare_change_units", compare)
+
+        output_csv = es.run_classification(report)
+
+        assert pd.read_csv(output_csv)["dataset_id"].tolist() == ["org/ok"]
+        failures = pd.read_csv(tmp_path / "failures.csv")
+        assert failures[["dataset_id", "source"]].values.tolist() == [["org/bad", "classification"]]
+
+    def test_writes_one_row_per_table_versions_and_code(self, monkeypatch, tmp_path):
+        import pandas as pd
+
+        report = _write_phase0(
+            tmp_path, [{"dataset_id": "org/ds", "eligible": True, "eligibility_reason": es.ELIGIBILITY_REASONS["A"]}],
+            {"org/ds": [es.TabularCommit("sha2", "sha1", datetime(2026, 1, 2), ())]})
+
+        def row(code, column):
+            return {"dataset_id": "org/ds", "version_from": "sha1", "version_to": "sha2",
+                    "file_path": "train.csv", "code": code, "column": column}
+
+        monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
+        # El mateix codi en dues columnes de la mateixa taula surt un sol cop.
+        monkeypatch.setattr(es, "compare_change_units", lambda *a: [row("C421", None), row("C223", "a"),
+                                                                     row("C223", "b")])
+
+        output_csv = es.run_classification(report)
+
+        out = pd.read_csv(output_csv)
+        assert output_csv == str(tmp_path / "change_classification.csv")
+        assert list(out.columns) == [
+            "dataset_id", "version_from", "version_to", "file_path", "code", "description", "is_breaking",
+        ]
+        assert out["code"].tolist() == ["C421", "C223"]
+        assert out.iloc[0]["description"] == "Afegir fila"
+        assert bool(out.iloc[1]["is_breaking"]) is True
+
+    def test_never_produces_c100(self, monkeypatch, tmp_path):
         # Un canvi de format (CSV -> parquet) seria C100, que és fora d'abast.
         import io
 
@@ -825,66 +998,11 @@ class TestClassifyDatasetWithChangeClassification:
         df.to_parquet(buf, index=False)
         result = diff_bytes(df.to_csv(index=False).encode(), ".csv", buf.getvalue(), ".parquet")
         pair = UnitPair("default/train", ("data.csv",), ("data.parquet",), status="ok", result=result)
+        monkeypatch.setattr(es.pairs, "compare_revisions", lambda *a, **kw: [pair])
 
-        commits = [_FakeCommit("Add batch 2", commit_id="c2"), _FakeCommit("Add batch 1", commit_id="c1")]
-        monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1", "v2"]))
-        monkeypatch.setattr(es, "list_repo_commits", lambda **kw: commits)
-        _files_by_title(monkeypatch)
-        monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
-        compared = []
-        monkeypatch.setattr(es.pairs, "compare_revisions", lambda *a, **kw: compared.append(a) or [pair])
+        labels = es.compare_change_units("org/ds", [("c1", "c2")], "tok", es.RETRY_CONFIG)
 
-        result = es.classify_dataset("org/ds", classify_changes=True)
-
-        assert compared
-        assert all(label["code"] != "C100" for label in result["change_labels"])
-
-    def test_eligibility_report_csv_never_gets_a_change_labels_column(self, monkeypatch, tmp_path):
-        # write_results() ha de descartar "change_labels" -- sempre buit
-        # a run_sampling (classify_changes mai s'hi activa).
-        monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
-        result_row = {
-            "dataset_id": "org/ds", "num_tags": 0, "num_branches": 0, "num_tabular_commits": 0,
-            "eligible": False, "eligibility_reason": "x", "status": "classified",
-            "error_category": "", "error": "", "change_labels": [],
-        }
-        csv_path, json_path, summary = es.write_results([result_row], total_scanned=1)
-        import pandas as pd
-        df = pd.read_csv(csv_path)
-        assert "change_labels" not in df.columns
-
-
-class TestRunClassification:
-    def test_writes_one_row_per_table_versions_and_code(self, monkeypatch, tmp_path):
-        import pandas as pd
-
-        input_csv = tmp_path / "eligibility_report.csv"
-        pd.DataFrame([{"dataset_id": "org/ds", "eligible": True}]).to_csv(input_csv, index=False)
-
-        def row(code, column):
-            return {"dataset_id": "org/ds", "version_from": "sha1", "version_to": "sha2",
-                    "file_path": "train.csv", "code": code, "column": column}
-
-        monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
-        monkeypatch.setattr(
-            es, "classify_dataset",
-            lambda dataset_id, classify_changes: {
-                "status": "classified",
-                # El mateix codi en dues columnes de la mateixa taula surt un sol cop.
-                "change_labels": [row("C421", None), row("C223", "a"), row("C223", "b")],
-            },
-        )
-
-        output_csv = es.run_classification(str(input_csv))
-
-        out = pd.read_csv(output_csv)
-        assert output_csv == str(tmp_path / "change_classification.csv")
-        assert list(out.columns) == [
-            "dataset_id", "version_from", "version_to", "file_path", "code", "description", "is_breaking",
-        ]
-        assert out["code"].tolist() == ["C421", "C223"]
-        assert out.iloc[0]["description"] == "Afegir fila"
-        assert bool(out.iloc[1]["is_breaking"]) is True
+        assert all(label["code"] != "C100" for label in labels)
 
     def test_no_eligible_datasets_writes_an_empty_table(self, monkeypatch, tmp_path):
         import pandas as pd
@@ -997,26 +1115,26 @@ class TestGroupCommitsIntoSessions:
 
 class TestChangeUnits:
     def test_criterion_a_pairs_each_tabular_commit_with_its_parent(self):
-        commits = [_FakeCommit(c) for c in ("c4", "c3", "c2", "c1")]
-        # c3 no és tabular, però és el pare de c2... i c4 es compara amb c3.
-        assert es.change_units(commits, [0, 2, 3], "A") == [("c3", "c4"), ("c1", "c2")]
+        # c3 no és tabular, però és el pare de c4; c1 és el més vell i no té pare conegut.
+        commits = [es.TabularCommit("c4", "c3", None), es.TabularCommit("c2", "c1", None),
+                   es.TabularCommit("c1", None, None)]
+        assert es.change_units(commits, "A") == [("c3", "c4"), ("c1", "c2")]
 
     def test_criterion_b_single_session_produces_no_units(self):
-        commits = [_FakeCommit("c1", created_at=datetime(2026, 1, 1))]
-        assert es.change_units(commits, [0], "B") == []
+        assert es.change_units([es.TabularCommit("c1", None, datetime(2026, 1, 1))], "B") == []
 
     def test_criterion_b_three_sessions_produce_two_boundaries(self):
         base = datetime(2026, 1, 1, 12, 0, 0)
         gap = timedelta(hours=es.MIN_SUBSTANTIVE_GAP_HOURS + 1)
-        commits = [_FakeCommit(c, created_at=base - k * gap) for k, c in enumerate(("c1", "c2", "c3"))]
-        assert es.change_units(commits, [0, 1, 2], "B") == [("c2", "c1"), ("c3", "c2")]
+        commits = [es.TabularCommit(c, None, base - k * gap) for k, c in enumerate(("c1", "c2", "c3"))]
+        assert es.change_units(commits, "B") == [("c2", "c1"), ("c3", "c2")]
 
     def test_criterion_b_uses_latest_commit_of_each_session(self):
         base = datetime(2026, 1, 1, 12, 0, 0)
         gap = timedelta(hours=es.MIN_SUBSTANTIVE_GAP_HOURS + 1)
         commits = [
-            _FakeCommit("c1", created_at=base),
-            _FakeCommit("c2", created_at=base - timedelta(minutes=10)),
-            _FakeCommit("c3", created_at=base - gap),
+            es.TabularCommit("c1", "c2", base),
+            es.TabularCommit("c2", "c3", base - timedelta(minutes=10)),
+            es.TabularCommit("c3", None, base - gap),
         ]
-        assert es.change_units(commits, [0, 1, 2], "B") == [("c3", "c1")]
+        assert es.change_units(commits, "B") == [("c3", "c1")]

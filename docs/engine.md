@@ -76,18 +76,27 @@ al pas 2.
 
 ### Pas 1 — Trobar les taules que es comparen (`units.py`, `pairs.py`)
 
-**Problema.** A Hugging Face, un dataset no és un fitxer. Pot estar partit
-en shards (`train-00000-of-00003.parquet`…), en episodis (LeRobot,
-centenars de parquets), en subconjunts i particions (train/test), o barrejar
-dades amb metadades.
+**Problema.** A Hugging Face, un dataset no és un fitxer. Es reparteix en
+subsets (p.e. un per idioma) i en splits o particions (`train`, `test`), i
+un split gran es parteix en **shards**: fitxers amb les mateixes columnes
+que guarden, cadascun, un bloc de files consecutives del split
+(`train-00000-of-00003.parquet` és el primer de 3). Els episodis numerats de
+LeRobot (centenars de parquets, un per episodi) funcionen igual. A més, un
+repositori pot barrejar dades amb metadades. Entre dues versions, la manera
+de partir pot canviar sense que canviïn les dades (3 shards passen a 4, o
+104 episodis a un sol fitxer): comparant fitxer a fitxer, sortirien files
+afegides i eliminades que no ho són. Explicació completa, amb un exemple:
+`docs/architecture.md`, secció 2.2.
 
 **Solució.** La unitat de comparació és la **taula** tal com
 la mostra el Hub (confirmat amb el director). Per saber quines taules hi ha, a la funció
 `units.resolve_units` es fa servir les mateixes regles que la llibreria
 `datasets`: recrea l'arbre de fitxers com a fitxers buits en un directori
 temporal (sense descarregar res) i li demana a `datasets` quines particions
-hi veu. Els shards d'una partició són una sola taula. Dos casos s'han hagut
-d'afegir a mà:
+hi veu. Els shards d'una partició són una sola taula: `pairs._load_files`
+els descarrega i `pairs._concat` els uneix en ordre, només si tots tenen les
+mateixes columnes (si no, la taula queda com a `parse_failed`). Dos casos
+s'han hagut d'afegir a mà:
 
 - **Repositoris de vídeo amb taules** (LeRobot té més vídeos que parquets, i
   `datasets` el veu com un dataset de vídeo): les taules que el vídeo no fa

@@ -6,8 +6,10 @@ Què és una versió depèn del criteri que va fer elegible el dataset (columna
 `eligibility_reason`, no es recalcula):
   - Criteri A: cada tag és una versió (una marca deliberada de l'autor).
   - Criteri B: cada sessió de commits que toquen dades tabulars és una
-    versió, representada pel seu commit més recent. Les sessions es fan amb
-    la mateixa funció que la Fase 0 (`eligibility_scan.cluster_commit_times`).
+    versió, representada pel seu commit més recent. Els commits són els que
+    va trobar la Fase 0 (`tabular_commits.csv`, al costat del report): no es
+    tornen a llistar ni es clona res. Les sessions es fan amb la mateixa
+    funció que la Fase 0 (`eligibility_scan.cluster_commit_times`).
 
 Cada versió porta `version_source` (`tag` o `commit_session`) perquè la
 confiança no és la mateixa. L'API no distingeix autor de committer: `authors`
@@ -34,7 +36,7 @@ from huggingface_hub import list_repo_commits, list_repo_refs, list_repo_tree
 
 import errors
 import eligibility_scan as es
-from eligibility_scan import MAX_COMMITS, bare_clone, cluster_commit_times, is_tabular_commit
+from eligibility_scan import TabularCommit, cluster_commit_times
 
 log = logging.getLogger(__name__)
 
@@ -105,20 +107,17 @@ def format_authors(authors: list[str] | None) -> str:
     return ",".join(seen)
 
 
-def build_sessions_from_commits(commits: list, clone_dir: str | None) -> list[dict]:
+def build_sessions_from_commits(tabular_commits: list[TabularCommit]) -> list[dict]:
     """
-    Agrupa els commits substantius en sessions (`cluster_commit_times`).
+    Agrupa els commits tabulars d'un dataset en sessions (`cluster_commit_times`).
 
-    :param commits: commits de `list_repo_commits`.
-    :param clone_dir: clon bare, o `None` (heurística de títol).
+    :param tabular_commits: commits tabulars que va trobar la Fase 0; els que
+        no tenen data s'ignoren.
     :return: una entrada per sessió, en ordre cronològic: `commit_sha` i
         `commit_date` del commit més recent, `authors` (unió) i
         `session_commit_count`.
     """
-    dated_tabular = [
-        c for c in commits
-        if getattr(c, "created_at", None) is not None and is_tabular_commit(c, clone_dir)
-    ]
+    dated_tabular = [c for c in tabular_commits if c.created_at is not None]
     if not dated_tabular:
         return []
 
@@ -232,16 +231,12 @@ def _extract_tag_versions(dataset_id: str, hf_token: str | None, retry_config: d
     return versions
 
 
-def _extract_session_versions(dataset_id: str, hf_token: str | None, retry_config: dict) -> list[dict]:
-    """Una versió per sessió de commits (Criteri B), sobre els últims `MAX_COMMITS` commits."""
-    commits = list(
-        errors.with_retry(
-            list_repo_commits, repo_id=dataset_id, repo_type="dataset", token=hf_token, **retry_config,
-        )
-    )[:MAX_COMMITS]
-
-    with bare_clone(dataset_id) as clone_dir:
-        sessions = build_sessions_from_commits(commits, clone_dir)
+def _extract_session_versions(tabular_commits: list[TabularCommit]) -> list[dict]:
+    """
+    Una versió per sessió de commits tabulars (Criteri B). No fa cap crida a
+    l'API: els commits són els que va trobar la Fase 0.
+    """
+    sessions = build_sessions_from_commits(tabular_commits)
 
     return [
         {
@@ -263,12 +258,15 @@ def extract_versions_for_dataset(
     hf_token: str | None,
     retry_config: dict,
     compute_size: bool = True,
+    tabular_commits: list[TabularCommit] | None = None,
 ) -> list[VersionRow]:
     """
     Versions d'un dataset elegible: per tag si `eligibility_reason` comença
     per "Criteri A", per sessió en qualsevol altre cas.
 
     :param compute_size: calcula `approx_size_bytes` (1 crida per versió).
+    :param tabular_commits: commits tabulars desats per la Fase 0 (Criteri B).
+        Si no n'hi ha (report d'una execució anterior), es tornen a buscar.
     :return: `VersionRow` en ordre cronològic.
     :raises Exception: només si falla la crida inicial (tags o commits);
         els errors d'una versió concreta queden al seu `status`.
@@ -276,7 +274,9 @@ def extract_versions_for_dataset(
     if eligibility_reason.startswith("Criteri A"):
         versions = _extract_tag_versions(dataset_id, hf_token, retry_config)
     else:
-        versions = _extract_session_versions(dataset_id, hf_token, retry_config)
+        if tabular_commits is None:
+            tabular_commits = es.find_tabular_commits_again(dataset_id)
+        versions = _extract_session_versions(tabular_commits)
 
     versions = order_versions_by_date(versions)
 
@@ -331,6 +331,7 @@ def run_extraction(
     """
     df = pd.read_csv(input_csv)
     eligible = df[df["eligible"] == True]  # noqa: E712
+    saved = es.load_tabular_commits(input_csv)  # commits tabulars desats per la Fase 0
 
     all_rows: list[VersionRow] = []
     n_via_tags = n_via_sessions = n_dataset_level_failures = 0
@@ -341,7 +342,7 @@ def run_extraction(
         log.info(f"Extraient versions: {dataset_id} ({eligibility_reason})")
         try:
             rows = extract_versions_for_dataset(
-                dataset_id, eligibility_reason, hf_token, retry_config, compute_size
+                dataset_id, eligibility_reason, hf_token, retry_config, compute_size, saved.get(dataset_id)
             )
             all_rows.extend(rows)
             if eligibility_reason.startswith("Criteri A"):

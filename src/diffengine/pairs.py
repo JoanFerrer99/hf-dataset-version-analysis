@@ -192,9 +192,11 @@ def pair_units(old: Revision, new: Revision, config: EngineConfig = DEFAULT_CONF
 
 def _concat(tables: list[Table]) -> Table:
     """
-    Uneix en una sola taula els fitxers d'una taula partida.
+    Uneix en una sola taula els shards d'un split (o els episodis numerats),
+    posant les files de cada shard a continuació de les de l'anterior, en
+    ordre. Una columna només es considera d'enters si ho és a tots els shards.
 
-    :param tables: les parts, en ordre.
+    :param tables: els shards ja llegits, en ordre.
     :return: la taula sencera.
     :raises ParseError: si les parts no tenen les mateixes columnes.
     """
