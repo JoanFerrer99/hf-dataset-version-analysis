@@ -6,13 +6,19 @@ Pas 1 (primera part): quines taules té un repositori en una revisió.
 A Hugging Face, un dataset no és un fitxer: pot estar partit en shards
 (`train-00000-of-00003.parquet`…), en episodis (LeRobot), en subconjunts i
 particions (train/test). La unitat que compara el motor és la **taula
-(subset, split)**, tal com la mostra el Hub (decisió U1).
+(subset, split)**, tal com la mostra el Hub: els fitxers d'una mateixa
+partició formen una sola taula.
 
 Per saber quines taules hi ha, `resolve_units` fa servir les mateixes regles
 que la llibreria `datasets`: recrea l'arbre de fitxers com a fitxers buits
 en un directori temporal (no es descarrega res) i li pregunta quines
-particions hi veu. S'hi afegeixen dos casos que `datasets` no cobreix: els
-repositoris de vídeo amb taules (P11) i els repositoris que no sap llegir.
+particions hi veu. S'hi afegeixen dos casos que `datasets` no cobreix:
+
+- els repositoris de vídeo o d'imatge amb taules (p.e. LeRobot, amb més
+  vídeos que parquets): els fitxers tabulars que la media no fa servir es
+  resolen com a taules pròpies, en lloc de quedar fora;
+- els repositoris que `datasets` no sap llegir: cada fitxer tabular passa a
+  ser una taula.
 """
 
 import os

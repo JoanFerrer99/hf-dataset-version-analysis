@@ -7,7 +7,7 @@ d'on venim, després la idea del motor actual, i després el recorregut
 d'una comparació pas a pas, amb les funcions que cal llegir a cada pas.
 
 El codi és a `src/diffengine/`. Les decisions encara pendents de confirmar
-(P*, U*) són a `docs/open_decisions.md`. Com es valida el motor contra la
+són a `docs/open_decisions.md`. Com es valida el motor contra la
 Taula 1 del paper és a `docs/validacio_census_income.md`.
 
 ---
@@ -82,7 +82,7 @@ centenars de parquets), en subconjunts i particions (train/test), o barrejar
 dades amb metadades.
 
 **Solució.** La unitat de comparació és la **taula** tal com
-la mostra el Hub (decisió U1, confirmada). Per saber quines taules hi ha, a la funció
+la mostra el Hub (confirmat amb el director). Per saber quines taules hi ha, a la funció
 `units.resolve_units` es fa servir les mateixes regles que la llibreria
 `datasets`: recrea l'arbre de fitxers com a fitxers buits en un directori
 temporal (sense descarregar res) i li demana a `datasets` quines particions
@@ -91,7 +91,8 @@ d'afegir a mà:
 
 - **Repositoris de vídeo amb taules** (LeRobot té més vídeos que parquets, i
   `datasets` el veu com un dataset de vídeo): les taules que el vídeo no fa
-  servir es resolen per separat (P11).
+  servir es resolen per separat, amb les mateixes regles, en lloc de quedar
+  fora.
 - **Repositoris que `datasets` no sap llegir**: cada fitxer tabular és una
   taula.
 
@@ -178,8 +179,10 @@ Es prova, en aquest ordre:
    numèriques amb files d'`adult.test` que D7 afegeix al final.
 
 Les columnes que són comptadors de posició (`index`, `episode_index` a
-LeRobot) no entren al hash, perquè una inserció al mig les renumera totes
-(P10). La classe `_HashMatcher` té un mètode per cada pas.
+LeRobot: enters que creixen fila a fila a les dues versions) no entren al
+hash, perquè una fila inserida al mig les renumera totes i ja no coincidiria
+cap fila. Si es renumeren, surten com a C322 `renumbered`. La classe
+`_HashMatcher` té un mètode per cada pas.
 
 #### 3c. Columnes pel contingut (`columns.align_by_content`)
 
@@ -234,10 +237,15 @@ Income (`classification.csv`).
 ## 4. Configuració i decisions
 
 Tots els llindars són a `config.EngineConfig`, cadascun amb el seu perquè al
-docstring. Les decisions provisionals són interruptors: P1 (un valor que
-passa a nul és C510), P3 (un canvi de tipus es codifica pel tipus antic),
-P5 (els canvis de format es reporten) i P8 (una transformació no genera
-també C530).
+docstring. Les decisions que encara s'han de confirmar es poden canviar amb
+un interruptor, sense tocar codi:
+
+| Opció | Per defecte | Amb `False` |
+|---|---|---|
+| `null_transition_is_c510` | Una cel·la que passa de tenir valor a estar buida (o al revés) és C510 | Només es mira la proporció de buits de la columna |
+| `kind_change_by_old_kind` | Un canvi de tipus es codifica pel tipus antic (C311 si era categòrica) | Pel tipus nou |
+| `report_representation` | Els canvis només de format es reporten (`representation`) | No es reporten a C322 ni a C510 |
+| `transformation_suppresses_c530` | Si una fórmula explica els valors nous (C322), no s'hi afegeix C530 | Es reporten tots dos |
 
 ## 5. Guia per programar-hi
 

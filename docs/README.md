@@ -7,7 +7,7 @@
 | 3 | `taxonomy.md` | Els codis de canvi (C100–C530) del paper |
 | 4 | `engine.md` | El motor de detecció de canvis: d'on venim (el motor de diffs), la idea del motor actual i el recorregut d'una comparació pas a pas |
 | 5 | `validacio_census_income.md` | Per a la reunió amb el director: com es valida el motor amb la Taula 1 del paper, el resultat, cada desacord explicat i les preguntes pendents |
-| 6 | `open_decisions.md` | Decisions provisionals del motor (P*, U*), pendents de confirmar |
+| 6 | `open_decisions.md` | Decisions provisionals del motor, pendents de confirmar amb el director |
 
 Altres:
 

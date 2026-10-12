@@ -1,8 +1,9 @@
 """
 Casos FP/FN coneguts del motor antic (prompt del motor v2) i casos reals trobats
 després (Census Income, execucions del pipeline), un test per cas. Les decisions
-que en canvien l'expectativa: P8 (cas 15) a `docs/open_decisions.md`; C100 fora
-d'abast (cas 8) i C530 sense target (casos 16 i 17) a `docs/decisions_tfg.txt` (T-20).
+que en canvien l'expectativa: una transformació no genera també C530 (cas 15), a
+`docs/open_decisions.md`; C100 fora d'abast (cas 8) i C530 sense target (casos 16 i
+17), a `docs/decisions_tfg.txt` (T-20).
 Els casos 11 i 13 (fallada de descàrrega, dos fitxers) són del pas 1 (trobar les taules):
 `tests/test_diffengine_pairs.py`.
 """

@@ -1111,30 +1111,30 @@ Responsable: Joan
 Estat: Fet
 
   Les decisions provisionals del motor que ja estan resoltes surten de
-  `docs/open_decisions.md` i queden registrades aquí, amb el mateix
-  identificador que fa servir el codi:
+  `docs/open_decisions.md` i queden registrades aquí:
 
-  - U1 (confirmada): un dataset és una taula (subset, split) tal com la
-    mostra el Hub; els shards d'un mateix split es concatenen si comparteixen
-    esquema. Evidència: enquesta sobre 69 repositoris elegibles (151
-    revisions; script `survey_units.py`, a l'historial de git, commit
-    d084ff7): quan els fitxers d'una taula canvien, en 10 de 14 casos no es
-    conserva cap ruta, i comparant fitxer a fitxer cada cas surt com a
-    fitxers sencers eliminats i afegits.
-  - U2 (confirmada): una taula que apareix o desapareix sencera té l'estat
+  - La unitat de comparació és la taula (subset, split), tal com la mostra
+    el Hub (confirmada amb el director): els shards d'una mateixa partició
+    s'uneixen si tenen les mateixes columnes. Evidència: enquesta sobre 69
+    repositoris elegibles (151 revisions; script `survey_units.py`, a
+    l'historial de git, commit d084ff7): quan els fitxers d'una taula
+    canvien, en 10 de 14 casos no es conserva cap ruta, i comparant fitxer
+    a fitxer cada cas surt com a fitxers sencers eliminats i afegits.
+  - Una taula que apareix o desapareix sencera (confirmada) té l'estat
     `absent_old`/`absent_new` i cap codi. No és afegir files a una taula
     existent.
-  - P12 (retirada): C510 es reporta encara que el canvi en la proporció de
-    nuls vingui de files afegides o eliminades. El paper (§4) diu que
+  - C510 quan el canvi de buits ve de files afegides o eliminades
+    (retirada l'opció que l'amagava): es reporta. El paper (§4) diu que
     aquests canvis "can be a consequence of the addition/removal of rows.
     However, we consider them separately".
-  - D2/P4 del prompt original (no s'aplica): C530 és un canvi de
-    distribució de qualsevol atribut; el motor no identifica la variable
-    objectiu.
-  - P7 i C100 (no s'aplica): C100 és fora d'abast; un canvi de format no
-    genera cap codi.
-  - Codificar una categòrica com a enters: C311 + C312 `recoded` (P13, que
-    continua oberta per la incoherència de la Taula 1 a D7).
+  - C530 només per a la variable objectiu (proposta del prompt original, no
+    s'aplica): C530 és un canvi de distribució de qualsevol atribut; el
+    motor no identifica la variable objectiu.
+  - C100 (no s'aplica): és fora d'abast; un canvi de format no genera cap
+    codi.
+  - Codificar una categòrica com a enters: C311 + C312 `recoded` (continua
+    oberta a `docs/open_decisions.md` per la incoherència de la Taula 1 a
+    D7).
   - Columnes pel nom abans que pel contingut (nova): quan una columna
     conserva el nom però passa a tenir el contingut d'una altra que
     s'elimina (Census Income D3/D4: `education` passa a tenir els valors
