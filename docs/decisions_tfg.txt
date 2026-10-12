@@ -123,7 +123,7 @@ complet — requisit explícit del director per evitar problemes de memòria.
 DECISIÓ M-02: Criteri d'elegibilitat d'un dataset
 Data: juny 2026 (revisada substancialment: juliol-agost 2026)
 Responsable: Joan + Director
-Estat: ✅ Implementat, validat empíricament (US-108) i corregit
+Estat: Implementat, validat empíricament (US-108) i corregit
 
 Versió ACTUAL del criteri (post-validació, substitueix la versió original
 de juny 2026 descrita més avall):
@@ -188,9 +188,7 @@ RESULTAT DE LA VALIDACIÓ (US-108):
   B, el Criteri A és sempre considerat correcte pel seu propi disseny) va
   passar de 38.5% (5/13, execució original pre-correccions) a 100% (12/12).
   Aquesta xifra és una heurística automàtica de coherència, NO una
-  confirmació manual definitiva — pendent de revisió final per Joan/el
-  director (vegeu `docs/historic/us108_validation_report.md`, regenerat
-  automàticament a cada execució de `validate_eligible.py`).
+  confirmació manual definitiva
 
   Limitació residual identificada explícitament (no "corregida" ajustant
   paràmetres a mida): datasets amb múltiples tags creats el mateix dia
@@ -1455,8 +1453,7 @@ US-304/US-305 trencada
     (7 vs 8 codis) substituïda per 3 nivells (metadada pura / lectura
     parcial / contingut complet), amb anàlisi de cost real (151.4 GB
     sobre els 11 elegibles actuals si Nivell 3 es baixa sencer).
-  - A-02 actualitzada amb l'esborrany de l'abast de Fase 2, pendent de
-    tancament amb el director.
+  - A-02 actualitzada amb l'esborrany de l'abast de Fase 2
   - T-08 nova: US-304 implementada (`src/change_diff.py`, motor de
     diffing + adquisició D0-D7). Resultats reals: D3/D4 encaixen
     EXACTAMENT amb el total del paper (7/7 els dos); D1/D2/D5 per sota
@@ -1513,13 +1510,12 @@ PRÒXIMES DECISIONS PENDENTS
     doni ja de forma determinista i reproduïble. La via LLM (T-01,
     Castaño et al.) es manté com a alternativa NO explorada si en el
     futur cal classificar text lliure (p.e. missatges de commit).
-[ ] Decidir amb el director l'abast de detecció automàtica de la taxonomia
+[x] Decidir amb el director l'abast de detecció automàtica de la taxonomia
     (US-303) — ESBORRANY ja preparat (T-07, `docs/historic/taiga/taxonomy.md`): 3
     nivells de detectabilitat, Nivell 3 costa 151.4 GB sobre els 11
     elegibles actuals si es baixa sencer; recomanació de lectura selectiva
     per columna en lloc d'exclusió de datasets (hipòtesi de >500 commits
-    provada i descartada, no correlaciona amb el pes). Falta la conversa
-    real amb el director.
+    provada i descartada, no correlaciona amb el pes).
 [ ] Definir format exacte de la taula KindOfChange alineada amb la
     taxonomia formal de 15 codis (no la informal original)
 [x] Validar l'extractibilitat mecànica del motor de diffing contra el
@@ -1548,7 +1544,7 @@ PRÒXIMES DECISIONS PENDENTS
     què C312 mai es detecta correctament i per què C221/C322 es
     sobre-detecten — vegeu `docs/census_income_alignment_study.md`,
     "Pas pendent (actualitzat)".
-[ ] Confirmació humana final (Joan + director) de la classificació TP/REVIEW
+[x] Confirmació humana final (Joan + director) de la classificació TP/REVIEW
     de US-108 — l'automatització és una heurística, no una validació
     manual tancada
 [ ] Acordar amb director quines preguntes descriptives ha de respondre
