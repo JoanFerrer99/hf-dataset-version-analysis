@@ -22,7 +22,7 @@
 
 ## `is_breaking`: heurística d'execució, no de qualitat
 
-`is_breaking` (`ChangeLabel.is_breaking`, `change_diff.BREAKING_CODES`)
+`is_breaking` (`diffengine.output.BREAKING_CODES`)
 respon NOMÉS "trenca l'execució d'un pipeline que llegeix el dataset per
 nom/posició/tipus sense adaptar-se?" -- NO "afecta la qualitat del
 model?". És una heurística pròpia d'aquest estudi, el paper no en
@@ -67,7 +67,7 @@ versió (un cop, reutilitzat entre parells) suma **151.4 GB**, amb
 anterior d'aquesta secció ("ja no és inviable").
 
 **Hipòtesi provada i descartada**: exclusió de datasets amb >500 commits
-(Castaño et al. 2025, `docs/paper_techniques_ml_models_change.md` §3) com
+(Castaño et al. 2025, §3) com
 a manera de descartar els datasets més "esbiaixats"/pesats. Comptat el
 nombre REAL de commits (no el comptador capat a 50 de `classify_dataset`)
 dels 11 elegibles: màxim 25 commits (`QFIN/FCMBench-Data`) — cap s'acosta
@@ -114,83 +114,21 @@ categories apareixen en algun dels 9 datasets); D9 és el més divers
 rename) són gairebé universals; canvis numèrics (C321/C322) són els
 menys freqüents (el dataset base és majoritàriament categòric).
 
-## Limitacions conegudes del motor de diffing
+## Com es detecta cada codi
 
-`notebooks/change_diff.py` implementa 14 dels 15 codis (tots excepte
-C100). D'aquests 14, tots són detectats amb tècniques exactes o
-heurístiques explícitament documentades -- cap és una "caixa negra".
+El motor és `src/diffengine/`; `docs/engine.md` n'explica els 5 passos.
+Detecta els 14 codis tabulars (C100 és fora d'abast), i cada canvi porta
+el subtipus, l'evidència i una confiança. Les decisions d'etiquetatge que
+encara són provisionals són a `docs/open_decisions.md`.
 
-**Implementat, amb abast declarat (no és el mateix que "no detectable"):**
+Límits que encara té:
 
-- **C410** (ordre de files, Decisió T-14): tècnica de hash de contingut
-  per fila (multiset), NOMÉS sobre columnes hashables -- detecta
-  reordenació PURA (mateix contingut exacte, ordre diferent) amb certesa;
-  NO detecta reordenació barrejada amb altres canvis al mateix parell de
-  versions, ni reordenació confinada a columnes no hashables (p.e. bytes
-  d'àudio) mentre les columnes hashables es mantenen en la mateixa
-  posició (`change_diff.py`, `diff_row_order`). És a `BREAKING_CODES`:
-  un canvi d'ordre pot afectar pipelines d'ML que accedeixen a les dades
-  per posició, potencialment requerint adaptació als components d'ingesta
-  o preprocessament.
-
-- **C223** (renom de columna, Decisió T-16): heurística explícita -- una
-  columna eliminada i una afegida es tracten com a renom NOMÉS si el seu
-  NOM NORMALITZAT (minúscules, sense `-`/`_`/`.`/espai) coincideix
-  EXACTAMENT i tenen dtype de la mateixa família; qualsevol altre cas
-  (nom normalitzat diferent, p.e. `"sex"`->`"is_male"`) es reporta com a
-  add/remove per separat, no com a renom. Cap tècnica purament
-  estructural distingeix un renom SEMÀNTIC d'un remove+add sense
-  informació externa (`change_diff.py`, `diff_columns`/`_normalize_
-  column_name`). **Substitueix l'heurística anterior (posició ordinal +
-  dtype), que produïa aparellaments incorrectes** -- confirmat
-  empíricament sobre Census Income D3: `fnlwgt`->`capital_loss` i
-  `education-num`->`final_weight` es detectaven com a "renom" NOMÉS
-  perquè compartien posició per casualitat (una altra columna eliminada
-  abans havia desplaçat totes les posicions següents), sense cap relació
-  real entre elles -- vegeu `docs/census_income_validation_report.md`,
-  "Re-validació posterior amb C410 i renoms (T-16)".
-
-- **C421/C422** (afegir/eliminar fila): sense un identificador d'instància
-  estable, NO es pot atribuir un canvi de recompte a "files afegides" vs
-  "files eliminades" amb certesa -- només al signe del delta
-  (`change_diff.py:265-275`, `diff_row_count`).
-  
-- **Cap `MAX_TABULAR_FILES_PER_COMMIT = 5`** (`eligibility_scan.py:615`):
-  per a commits que toquen més de 5 fitxers tabulars, només se'n
-  classifiquen 5 -- mostra representativa, no exhaustiva (confirmat en
-  una execució real que alguns datasets "chunked", p.e.
-  `edinburghcstr/ami`, haurien trigat més d'una hora sense aquest cap).
-- **Census Income, "% d'acord codi per codi"**: mai calculable contra el
-  ground truth del paper (extracció del PDF no conserva l'alineació de
-  columnes de la taula amb marques "✔") -- vegeu `docs/census_income_
-  validation_report.md`, secció "Limitacions".
-
-### Tècniques alternatives considerades (i descartades conscientment)
-
-Per a cada codi següent, es va triar una tècnica més simple per sobre
-d'una alternativa més sofisticada -- decisions conscients, no llacunes
-obertes:
-- **C223 (renom)**: nom normalitzat (insensible a separador) triat per
-  sobre d'una alternativa de similitud de text aproximada (p.e. distància
-  de Levenshtein, que hauria capturat `"education-num"`->`"educational-
-  num"` també) -- menys risc d'aparellar columnes NOMÉS semblants
-  textualment però no relacionades. També triat per sobre de comparar
-  distribucions de valors entre la columna eliminada i l'afegida --
-  cost computacional més baix, i el nom és un senyal més directe que la
-  distribució quan està disponible.
-- **C530 (distribució)**: quartils/freqüència relativa triats per sobre
-  d'un test estadístic formal (Kolmogorov-Smirnov, `scipy`) -- evita una
-  dependència nova només per a aquesta heurística (`change_diff.py:327-334`).
-  Verificat manualment sobre Census Income D6/D7 (`docs/census_income_
-  validation_report.md`) que els canvis detectats són reals (p.e. quartils
-  d'edat 28/37/48 -> 31/40/49 a D6, no un artefacte de la tècnica) --
-  el que NO es pot verificar és si coincideixen amb la cel·la exacta que
-  marca el paper (mateixa limitació d'integritat del ground truth que la
-  resta de codis).
-- **C520 (correlació)**: només Pearson (relacions lineals) -- Spearman
-  (monotòniques, no lineals) detectaria més casos amb més cost
-  computacional; límit conegut, no un error.
-- **C421/C422 (recompte de files)**: cap tècnica alternativa resol
-  l'atribució exacta sense canviar QUÈ s'adquireix -- caldria que el
-  dataset mateix tingués una columna d'ID estable, cosa que no es pot
-  assumir per a datasets arbitraris d'HF.
+- **Renoms semàntics sense relació de contingut.** Un renom es detecta pel
+  nom normalitzat o pel contingut (valors idèntics, bijecció,
+  transformació). Si la columna canvia de nom i de valors de manera que
+  no es poden relacionar, surt com a C222 + C221.
+- **Files duplicades i ordre (C410).** Quan hi ha files idèntiques,
+  quina còpia correspon a quina és ambigu; en combinació amb altres canvis
+  pot aparèixer un C410 que no hi és.
+- **Taules massa grans.** Per sobre de `max_unit_bytes` el parell queda
+  amb l'estat `too_large` i sense codis.

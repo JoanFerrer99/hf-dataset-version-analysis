@@ -122,7 +122,7 @@ git push origin hotfix/critical-memory-leak
 
 **"Lint & tests"**:
 1. Instal·la dependències (`requirements.txt` + `ruff`).
-2. Lint: `ruff check notebooks tests` (regles pinnades a `ruff.toml`).
+2. Lint: `ruff check src tests` (regles pinnades a `ruff.toml`).
 3. Tests: `pytest -v`.
 
 Cap dels dos passos requereix `HF_TOKEN` real ni accés a xarxa: els tests

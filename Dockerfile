@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# Imatge per executar el pipeline (notebooks/run_pipeline.py, que encadena
+# Imatge per executar el pipeline (src/run_pipeline.py, que encadena
 # eligibility_scan.py + version_extractor.py) sense dependre de l'entorn
 # Python de la màquina host. Build en dues fases: "builder" instal·la les
 # dependències en un virtualenv aïllat; "runtime" copia només aquest venv +
@@ -34,7 +34,7 @@ ENV PATH="/opt/venv/bin:${PATH}" \
     PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
-COPY --chown=app:app notebooks/ ./notebooks/
+COPY --chown=app:app src/ ./src/
 
 RUN mkdir -p /app/data && chown app:app /app/data
 
@@ -46,5 +46,5 @@ VOLUME ["/app/data"]
 # entrypoint segur per defecte, mai comença una execució llarga per accident.
 # docker-compose.yml sobreescriu aquest entrypoint per als serveis
 # eligibility-scan/version-extractor (una sola fase, ús manual/depuració).
-ENTRYPOINT ["python", "notebooks/run_pipeline.py"]
+ENTRYPOINT ["python", "src/run_pipeline.py"]
 CMD []

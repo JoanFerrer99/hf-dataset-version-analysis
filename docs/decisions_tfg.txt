@@ -2,7 +2,19 @@
 DECISIONS DEL TFG — How do HuggingFace Datasets Change?
 Joan [Cognom]  |  Grau en Enginyeria Informàtica (GEI) — Esp. Enginyeria del Software
 Director: Alberto Abelló (UPC - FIB)
-Última actualització: agost 2026
+Última actualització: octubre 2026
+
+Nota (octubre 2026): els documents de docs/historic/ (Taiga, auditoria del
+motor anterior, notes d'investigació) i alguns resultats antics de data/ es
+van treure del repositori per deixar només el que és vigent. Es poden
+consultar a l'historial de git (commit 1c7f1e9 o anteriors). Les referències
+d'aquest registre a aquells fitxers es mantenen tal com eren.
+
+Nota (octubre 2026): les execucions de data/ es van renumerar (commit
+0f2c2bf): run_5 → run_3, run_6 → run_2, run_7 → run_5 i run_8 → run_6;
+run_9–run_12 es van eliminar (run_7 conserva la classificació de run_9 i
+les versions de run_10). La run_8 actual és una execució nova, la primera
+amb el criteri tabular. Aquest registre conserva la numeració antiga.
 ================================================================================
 
 Aquest document registra totes les decisions tècniques, metodològiques i
@@ -177,7 +189,7 @@ RESULTAT DE LA VALIDACIÓ (US-108):
   passar de 38.5% (5/13, execució original pre-correccions) a 100% (12/12).
   Aquesta xifra és una heurística automàtica de coherència, NO una
   confirmació manual definitiva — pendent de revisió final per Joan/el
-  director (vegeu `docs/us108_validation_report.md`, regenerat
+  director (vegeu `docs/historic/us108_validation_report.md`, regenerat
   automàticament a cada execució de `validate_eligible.py`).
 
   Limitació residual identificada explícitament (no "corregida" ajustant
@@ -204,7 +216,7 @@ Aquesta secció descriu la taxonomia INFORMAL original (mapa mental, sense
 codis), conservada per registre històric. HA ESTAT SUBSTITUÏDA per la
 taxonomia formal codificada del paper del director (15 codis C100-C530 en
 5 perspectives, amb ground truth validat sobre el dataset Census Income —
-9 versions reals de HF), documentada a `docs/taiga/taxonomy.md`. Els canvis
+9 versions reals de HF), documentada a `docs/historic/taiga/taxonomy.md`. Els canvis
 principals respecte a aquesta versió informal:
   - "Arity" (dins de Columns Set) eliminada com a categoria classificable
     pròpia — ara es tracta com a "impacte", no com a tipus de canvi.
@@ -216,7 +228,7 @@ principals respecte a aquesta versió informal:
     del pipeline (la taxonomia classifica el dataset, no l'ús que se'n fa).
 
 
-Taxonomia formal ACTUAL (15 codis, `docs/taiga/taxonomy.md`):
+Taxonomia formal ACTUAL (15 codis, `docs/historic/taiga/taxonomy.md`):
   C100 Metadata | C210 Columns order | C221 Add column | C222 Remove column
   | C223 Rename column | C311 Categorical col. type | C312 Categorical col.
   values | C321 Numerical col. type | C322 Numerical col. values | C410 Rows
@@ -419,7 +431,7 @@ projecte va convergir cap a una estructura més senzilla, de dos mòduls
 principals per fase, en lloc de paquets separats per capa:
 
   hf-dataset-version-analysis/
-  ├── notebooks/
+  ├── src/
   │   ├── eligibility_scan.py    # Fase 0: mostreig + classificació d'elegibilitat
   │   │                          #   (inclou classificació de canvis, US-305, opt-in)
   │   ├── errors.py              # Gestió d'errors (retry/backoff, DEFAULT_RETRY_CONFIG)
@@ -448,7 +460,7 @@ principals per fase, en lloc de paquets separats per capa:
 Raonament del canvi: separar per "capa" (extraction/transformation/storage)
 tenia sentit quan es preveia un pipeline de 3 fases actives simultàniament;
 a la pràctica, cada FASE del projecte (0, 1, 2, 3) és pràcticament
-independent i seqüencial, així que agrupar per fase dins de `notebooks/`
+independent i seqüencial, així que agrupar per fase dins de `src/`
 (amb un únic mòdul d'errors compartit) ha estat més senzill de mantenir.
 `version_extractor.py` (Fase 1, T-06) i `change_diff.py`/`change_
 classifier.py` (Fase 2, T-08/T-09) ja s'han creat; `warehouse/` (Fase 3)
@@ -507,7 +519,7 @@ Detall complet i comandes exactes a `docs/GIT_FLOW.md`.
 DECISIÓ T-06: Fase 1 — mòdul d'extracció de versions i metadades (US-201/US-202)
 Data: agost 2026
 Responsable: Joan
-Estat: ✅ Implementat (`notebooks/version_extractor.py`)
+Estat: ✅ Implementat (`src/version_extractor.py`)
 
   QUÈ s'extreu, per cada dataset elegible i cada versió detectada:
     - `commit_date` (data del commit representatiu de la versió)
@@ -570,7 +582,7 @@ Responsable: Joan
 Estat: 🔄 En curs (classificador construït i validat contra Census
 Income; execució sobre la població real elegible pendent)
 
-  `notebooks/change_classifier.py` reutilitza `change_diff.py` (T-08)
+  `src/change_classifier.py` reutilitza `change_diff.py` (T-08)
   sense reimplementar-lo -- `classify_diffs` només tradueix els booleans
   de `compute_all_diffs` a etiquetes `(dataset_id, version_from,
   version_to, code, is_breaking)`. Abast PROVISIONAL: les 15 categories
@@ -689,7 +701,7 @@ Estat: ✅ Fet
   `import change_classifier` falla amb `ModuleNotFoundError` com s'espera.
 
 
-DECISIÓ T-10: notebooks/run_pipeline.py encadena Fase 0-1 + Fase 1b + Fase 2 en un orquestrador separat
+DECISIÓ T-10: src/run_pipeline.py encadena Fase 0-1 + Fase 1b + Fase 2 en un orquestrador separat
 Data: setembre 2026
 Responsable: Joan
 Estat: ✅ Fet
@@ -700,7 +712,7 @@ Estat: ✅ Fet
   i l'script `version_extractor.py` (Fase 1b) quedava fora de l'encadenament, sense
   cap manera d'incloure'l sense acoblar encara més `eligibility_scan.py`.
 
-  DISSENY FINAL -- nou mòdul `notebooks/run_pipeline.py`, sense lògica
+  DISSENY FINAL -- nou mòdul `src/run_pipeline.py`, sense lògica
   d'orquestració DINS de cap dels scripts de fase:
   1. `eligibility_scan.run_sampling()` torna a fer NOMÉS Fase 0-3
      (mostreig+elegibilitat) i torna a retornar `(csv_path, json_path,
@@ -724,7 +736,7 @@ Estat: ✅ Fet
      pipeline` i `eligibility-scan` necessita ara un `entrypoint:` explícit
      (abans confiava en el default del `Dockerfile`).
 
-  RESULTAT: nou fitxer `notebooks/run_pipeline.py` + `tests/test_run_
+  RESULTAT: nou fitxer `src/run_pipeline.py` + `tests/test_run_
   pipeline.py` (6 tests: cadena completa amb el mateix `csv_path` a totes
   les fases, `--input-csv`, 0 elegibles, cada `--skip-*` per separat).
   176 tests en total, `ruff check` net. `README.md`/`docs/architecture.md`
@@ -776,12 +788,12 @@ Estat: ✅ Fet
   `ruff check` net.
 
 
-DECISIÓ T-12: notebooks/validate_census_income.py -- re-validació de Census Income com a script aïllat, permanent
+DECISIÓ T-12: src/validate_census_income.py -- re-validació de Census Income com a script aïllat, permanent
 Data: setembre 2026
 Responsable: Joan
 Estat: ✅ Fet
 
-  DISSENY -- nou fitxer `notebooks/validate_census_income.py`, AÏLLAT del
+  DISSENY -- nou fitxer `src/validate_census_income.py`, AÏLLAT del
   pipeline principal (no l'importa `eligibility_scan.py`/`version_
   extractor.py`/`run_pipeline.py`, ni ell els importa a ells -- l'única
   reutilització és `version_extractor.get_next_run_id`, una funció pura
@@ -873,7 +885,7 @@ Estat: ✅ Fet
   RESULTAT: `tests/test_change_diff.py::TestDiffColumns` actualitzat (2
   tests antics reescrits, 3 de nous incloent una regressió explícita del
   bug real trobat) + `TestNormalizeColumnName` (2 tests). 180 tests en
-  total, `ruff check` net. `docs/taiga/taxonomy.md` (C223) i
+  total, `ruff check` net. `docs/historic/taiga/taxonomy.md` (C223) i
   `docs/census_income_validation_report.md` actualitzats.
 
 
@@ -984,7 +996,7 @@ Estat: Tancada (documentació, cap canvi de codi)
   relació cost/complexitat a l'escala actual del projecte":
 
   1. **El coll d'ampolla real és la XARXA, no el càlcul de pandas.** El
-     cost identificat i quantificat (`docs/taiga/taxonomy.md`, Nivell 3)
+     cost identificat i quantificat (`docs/historic/taiga/taxonomy.md`, Nivell 3)
      és 151.4 GB de DESCÀRREGA sobre 11 datasets elegibles / 29 parells
      de versions -- bytes que han de baixar-se per xarxa abans que
      pandas hi toqui res. Cap alternativa a pandas (Polars, Dask, DuckDB)
@@ -1006,7 +1018,7 @@ Estat: Tancada (documentació, cap canvi de codi)
 
   TROBALLA HONESTA (no amagada): `download_tabular_file_at_revision`
   (`change_diff.py`) encara carrega el fitxer SENCER amb `pd.read_
-  parquet`/`read_csv` -- NO la projecció per columnes que `docs/taiga/
+  parquet`/`read_csv` -- NO la projecció per columnes que `docs/historic/taiga/
   taxonomy.md` (Nivell 3) ja recomana des de US-303 però mai s'ha
   implementat ("mesura empírica del cost real amb projecció de columnes:
   pendent"). Si la mida de la població elegible creix significativament,
@@ -1045,7 +1057,7 @@ Estat: Fet
   cridant `diff_numeric_values(before, after)` sense passar el llindar
   explícitament.
 
-  VERIFICAT amb el propi harness de validació (`notebooks/validate_
+  VERIFICAT amb el propi harness de validació (`src/validate_
   census_income.py`, re-executat sencer): C322 passa de FP=4 a FP=2 --
   els dos casos de D3/D4 (soroll de coma flotant per sota del llindar
   antic) desapareixen del tot; D6/D7 mantenen un FP real (D6 és el cas
@@ -1065,6 +1077,74 @@ Estat: Fet
   C410 (1 FN quan la reordenació coincideix amb altres canvis al mateix
   parell de versions, límit conegut de T-14). Queden com a pistes
   documentades a la conversa, no com a properes decisions obertes.
+
+
+
+DECISIÓ T-17: motor de detecció v2 (`src/diffengine/`) en lloc de `change_diff.py`
+Data: octubre 2026
+Responsable: Joan
+Estat: Fet (decisions provisionals pendents de confirmar a `docs/open_decisions.md`)
+
+  MOTIU: l'auditoria del motor anterior (`docs/historic/engine_audit.md`) va
+  mostrar que els errors no eren de llindar sinó d'estructura: comparava
+  columnes només pel nom (un renom amagava qualsevol canvi de contingut),
+  no aparellava files (C421/C422 eren el signe del recompte), tractava
+  els identificadors com a variables, confonia el dtype de pandas amb el
+  tipus de la columna, i convertia una descàrrega fallida en "fitxer
+  eliminat". De 14 casos coneguts en fallava 9.
+
+  DECISIÓ: reescriure'l per capes (`docs/engine.md`): taules (subset,
+  split) en lloc de fitxers; tipus deduït dels valors; aparellament de
+  files (clau inferida o hash de fila) i de columnes (nom i contingut);
+  un detector per família de codis; cada canvi amb subtipus, confiança i
+  evidència; cada parell amb un estat; tots els llindars a `config.py`.
+
+  RESULTAT: conjunt reservat (379 casos generats): F1 ≥ 0.98 a tots els
+  codis (abans, entre 0.34 i 1.00, i C223 mai detectat). Census Income:
+  vegeu `docs/architecture.md`. `change_diff.py` i els seus tests
+  s'han retirat
+
+
+DECISIÓ T-20: decisions del motor v2 tancades (fora de `docs/open_decisions.md`)
+Data: octubre 2026
+Responsable: Joan
+Estat: Fet
+
+  Les decisions provisionals del motor que ja estan resoltes surten de
+  `docs/open_decisions.md` i queden registrades aquí, amb el mateix
+  identificador que fa servir el codi:
+
+  - U1 (confirmada): un dataset és una taula (subset, split) tal com la
+    mostra el Hub; els shards d'un mateix split es concatenen si comparteixen
+    esquema. Evidència: enquesta sobre 69 repositoris elegibles (151
+    revisions; script `survey_units.py`, a l'historial de git, commit
+    d084ff7): quan els fitxers d'una taula canvien, en 10 de 14 casos no es
+    conserva cap ruta, i comparant fitxer a fitxer cada cas surt com a
+    fitxers sencers eliminats i afegits.
+  - U2 (confirmada): una taula que apareix o desapareix sencera té l'estat
+    `absent_old`/`absent_new` i cap codi. No és afegir files a una taula
+    existent.
+  - P12 (retirada): C510 es reporta encara que el canvi en la proporció de
+    nuls vingui de files afegides o eliminades. El paper (§4) diu que
+    aquests canvis "can be a consequence of the addition/removal of rows.
+    However, we consider them separately".
+  - D2/P4 del prompt original (no s'aplica): C530 és un canvi de
+    distribució de qualsevol atribut; el motor no identifica la variable
+    objectiu.
+  - P7 i C100 (no s'aplica): C100 és fora d'abast; un canvi de format no
+    genera cap codi.
+  - Codificar una categòrica com a enters: C311 + C312 `recoded` (P13, que
+    continua oberta per la incoherència de la Taula 1 a D7).
+  - Columnes pel nom abans que pel contingut (nova): quan una columna
+    conserva el nom però passa a tenir el contingut d'una altra que
+    s'elimina (Census Income D3/D4: `education` passa a tenir els valors
+    d'`education-num`), es llegeix pel nom: C311 + C312 a `education` i
+    C222 per `education-num`. És la lectura de la Taula 1 i la d'un
+    pipeline que llegeix les columnes pel nom.
+  - Parelles de files no confirmades (nova): una parella amb alguna cel·la
+    que passa de buida a tenir valor, o al revés, no es fa servir per jutjar
+    l'ordre de les files (C410). Corregeix l'únic error del motor a Census
+    Income (C410 a D7): precisió del 68,4% al 70,3%, recall 100%.
 
 
 ================================================================================
@@ -1103,6 +1183,20 @@ Estat: ✅ Tancada
   elegible petita respecte al total), confirmant que no calia
   estratificació.
 
+  Actualització (octubre 2026, criteri tabular): la run_8 actual, la
+  primera amb el criteri tabular, troba 8 elegibles en 2.000 intents
+  (0,40%; interval de confiança del 95%, de Wilson, del 0,20% al 0,79%):
+  250 intents per elegible (entre 127 i 493). Són menys elegibles que amb
+  el criteri anterior (entre el 0,35% i el 0,85% en sis execucions), però
+  6 dels 8 tenen canvis detectats (abans, 3 dels 11 de l'antiga run_8). Els
+  altres 2: `tartuNLP/ifeval_et` té la taula comparada, sense cap canvi de
+  dades, i `the-oligarch/Molab-checkpoints` només té fitxers de mètriques
+  d'entrenament que apareixen o desapareixen sencers. Classificar les 2.000
+  mostres va trigar uns 10 minuts; recórrer la població (1.085.939
+  datasets) és un cost fix, que no depèn de la mida de la mostra. La mida
+  de la mostra per a l'anàlisi final queda pendent de decidir amb el
+  director.
+
 
 DECISIÓ A-02: Abast del pipeline (fase actual)
 Data: juny 2026 — ESTAT ACTUALITZAT (agost 2026)
@@ -1122,7 +1216,7 @@ Estat: Fase 0 i Fase 1 tancades; Fase 2-3 no iniciades
     - Classificació automàtica de canvis per taxonomia (Fase 2) 🔲 —
       el risc tècnic que la bloquejava (R-01) ja està resolt. **Abast
       exacte pendent de tancar amb el director (US-303)**: ESBORRANY de
-      decisió preparat (vegeu T-07 i `docs/taiga/taxonomy.md`) — 3 nivells
+      decisió preparat (vegeu T-07 i `docs/historic/taiga/taxonomy.md`) — 3 nivells
       de detectabilitat (metadada pura / lectura parcial de schema /
       contingut complet), amb el Nivell 3 (8 codis) costant 151.4 GB si
       es baixa sencer sobre els 11 elegibles actuals (`edinburghcstr/ami`
@@ -1138,7 +1232,7 @@ Estat: Fase 0 i Fase 1 tancades; Fase 2-3 no iniciades
     - Classificació automàtica via LLM dels missatges de commit (possible
       extensió futura — el paper de Castaño et al. 2025 en fa un ús
       rigorós amb validació Kappa entre anotadors humans, documentat com a
-      referència metodològica a `docs/paper_techniques_ml_models_change.md`
+      referència metodològica a `docs/historic/paper_techniques_ml_models_change.md`
       si es decideix explorar aquesta via)
     - Descàrrega dels fitxers de dades complets (massa volum, Git-LFS) —
       es manté descartat fins i tot per a la inspecció de fitxers per
@@ -1189,7 +1283,7 @@ Nota descartada explícitament: es va investigar la hipòtesi (suggerida en
 un fòrum de HF) que el rol del token (read vs write) causava els errors
 403; es va descartar amb evidència empírica (100% dels 403 capturats
 coincideixen amb el patró "gated repo... not in authorized list", no amb
-cap missatge de permisos/rol). Detall complet a `notebooks/errors.py`.
+cap missatge de permisos/rol). Detall complet a `src/errors.py`.
 
 
 RISC R-03: Canvis a l'API de HF
@@ -1314,13 +1408,13 @@ US-304/US-305 trencada
     codis" (US-305) per trencar la dependència circular detectada al
     backlog original. Troballa: D8/D9 del ground truth Census Income NO
     són a HF (Zenodo i AIF360 respectivament) — US-304 es limita a D1-D7.
-  - `docs/taiga/taxonomy.md` reescrit: taula de detectabilitat binària
+  - `docs/historic/taiga/taxonomy.md` reescrit: taula de detectabilitat binària
     (7 vs 8 codis) substituïda per 3 nivells (metadada pura / lectura
     parcial / contingut complet), amb anàlisi de cost real (151.4 GB
     sobre els 11 elegibles actuals si Nivell 3 es baixa sencer).
   - A-02 actualitzada amb l'esborrany de l'abast de Fase 2, pendent de
     tancament amb el director.
-  - T-08 nova: US-304 implementada (`notebooks/change_diff.py`, motor de
+  - T-08 nova: US-304 implementada (`src/change_diff.py`, motor de
     diffing + adquisició D0-D7). Resultats reals: D3/D4 encaixen
     EXACTAMENT amb el total del paper (7/7 els dos); D1/D2/D5 per sota
     (esperat, C100 fora d'abast); D6 clarament per sobre (6 detectats vs
@@ -1328,7 +1422,7 @@ US-304/US-305 trencada
     `ETdanR/adult_income`, sense confirmació del paper, probablement no
     és la correcta); D7 una mica per sobre (6 vs 5). `pyarrow==25.0.1`
     afegit a `requirements.txt` (necessari per llegir el Parquet de D2).
-  - T-09 nova: US-305 implementada (`notebooks/change_classifier.py`,
+  - T-09 nova: US-305 implementada (`src/change_classifier.py`,
     abast provisional de 15 codis). Reutilitza `change_diff.py` sense
     reimplementar-lo; `is_breaking` és una heurística pròpia de l'estudi
     (5 codis estructurals -- ordre/eliminar/renom/tipus -- marcats
@@ -1369,7 +1463,7 @@ PRÒXIMES DECISIONS PENDENTS
 [ ] Escollir motor de base de dades: PostgreSQL vs DuckDB (US-401)
 [x] Decidir si classificar canvis via regles deterministes o via LLM —
     DECIDIT (implementació, no consulta formal amb director): regles
-    deterministes (`notebooks/change_classifier.py`, T-09), no LLM.
+    deterministes (`src/change_classifier.py`, T-09), no LLM.
     Motiu: els 14 codis tabulars són fets estructurals objectius
     (columna afegida/eliminada, tipus canviat, etc.), no interpretació de
     text lliure -- un LLM no aporta res aquí que un diff estructural no
@@ -1377,7 +1471,7 @@ PRÒXIMES DECISIONS PENDENTS
     Castaño et al.) es manté com a alternativa NO explorada si en el
     futur cal classificar text lliure (p.e. missatges de commit).
 [ ] Decidir amb el director l'abast de detecció automàtica de la taxonomia
-    (US-303) — ESBORRANY ja preparat (T-07, `docs/taiga/taxonomy.md`): 3
+    (US-303) — ESBORRANY ja preparat (T-07, `docs/historic/taiga/taxonomy.md`): 3
     nivells de detectabilitat, Nivell 3 costa 151.4 GB sobre els 11
     elegibles actuals si es baixa sencer; recomanació de lectura selectiva
     per columna en lloc d'exclusió de datasets (hipòtesi de >500 commits
@@ -1433,7 +1527,7 @@ PRÒXIMES DECISIONS PENDENTS
     test_real_binary_extensions_never_reach_download_or_classification`.
 [ ] Feedback del director (reunió): un repositori pot tenir més d'un
     fitxer tabular -- estudiar-los per separat? Investigació feta amb
-    dades reals (`docs/multi_file_repos_investigation.md`,
+    dades reals (`docs/historic/multi_file_repos_investigation.md`,
     `data/extension_report_1.csv`): dels 14 elegibles, 5 tenen >2 fitxers
     tabulars; 4 segueixen el patró de "chunking" LeRobot
     (`chunk-XXX/episode_XXXXXX.parquet`, un sol dataset partit, NO

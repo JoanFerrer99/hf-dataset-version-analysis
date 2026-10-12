@@ -1,5 +1,5 @@
 """
-Tests unitaris per a `notebooks/validate_census_income.py`.
+Tests unitaris per a `src/validate_census_income.py`.
 
 Cobreixen NOMÉS les funcions PURES de comparació contra el ground truth
 del paper (`compare_detectability_with_paper`/`summarize_agreement_by_
@@ -10,14 +10,14 @@ coberts indirectament per la resta del projecte).
 
 import pandas as pd
 
-import change_diff as cd
+from diffengine.output import TABULAR_CODES
 import validate_census_income as vci
 
 
 def _detectability_row(version: str, true_codes: set[str]) -> dict:
     """Una fila de `detectability_df` amb NOMÉS `true_codes` a True."""
     row = {"version": version, "codes_detected": len(true_codes), "paper_row_total": 0}
-    row.update({code: (code in true_codes) for code in cd.TABULAR_CODES})
+    row.update({code: (code in true_codes) for code in TABULAR_CODES})
     return row
 
 
@@ -98,7 +98,7 @@ class TestComputeAgreementMetrics:
 
     def test_mixed_agreement_matches_known_real_result(self):
         # Regressio: reprodueix exactament el resultat real verificat
-        # manualment sobre data/census_income_diff_report_3.csv (Decisio T-18).
+        # manualment amb el motor anterior (Decisio T-18).
         comparison_df = pd.DataFrame([
             {"tp": 2, "fn": 0, "fp": 0}, {"tp": 2, "fn": 0, "fp": 0},
             {"tp": 4, "fn": 2, "fp": 3}, {"tp": 5, "fn": 1, "fp": 2},
