@@ -440,15 +440,22 @@ títol no diu si el fitxer tocat és tabular.
   per tenir N datasets elegibles, i per tant amb dades tabulars per
   comparar, cal una mostra d'unes N × `attempts_per_eligible`.
 
-Per exemple, de la següent sortida:
+Per exemple, amb la sortida de `run_8`, la primera execució amb el criteri
+tabular (octubre de 2026):
 
 ```
-eligible                                    11
-eligible_proportion                     0.0058   (11/1905)      elegibles / classificats sense error
-eligible_proportion_of_attempts         0.0055   (11/2000)      elegibles / tots els intents
-estimated_eligible_in_scanned_population  5877   (0.0055 × 1.068.504)
-attempts_per_eligible                    181.8   (2000/11)      per a 50 elegibles, ~9.100 intents
+eligible                                     8
+eligible_proportion                     0.0042   (8/1890)       elegibles / classificats sense error
+eligible_proportion_of_attempts         0.0040   (8/2000)       elegibles / tots els intents
+estimated_eligible_in_scanned_population  4344   (0.0040 × 1.085.939)
+attempts_per_eligible                    250.0   (2000/8)       per a 50 elegibles, ~12.500 intents
 ```
+
+Amb tan pocs elegibles, l'estimació té un marge ampli: l'interval de
+confiança del 95% de la proporció (Wilson) va del 0,20% al 0,79%, és a dir,
+entre 127 i 493 intents per elegible. Amb el criteri anterior, que no
+exigia dades tabulars, `run_6` en tenia 11 (181,8 intents per elegible),
+però només 3 tenien algun canvi detectat; a `run_8` en tenen 6 dels 8.
 
 ---
 

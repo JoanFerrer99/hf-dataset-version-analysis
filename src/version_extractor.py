@@ -14,7 +14,7 @@ confiança no és la mateixa. L'API no distingeix autor de committer: `authors`
 és l'únic camp disponible.
 
 Ús:
-  python version_extractor.py --input ../data/run_12/eligibility_report.csv
+  python version_extractor.py --input ../data/run_8/eligibility_report.csv
 
 Output (en una carpeta nova, `data/run_<id>/`):
   versions.csv, failures.csv (si hi ha fallades)

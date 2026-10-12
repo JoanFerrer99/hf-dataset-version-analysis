@@ -28,7 +28,7 @@ Detall: `docs/architecture.md`, seccions 7 i 9.
 Ús:
   python eligibility_scan.py --sample-size 2000 --threads 4 --seed 42
   python eligibility_scan.py --sample-size 200 --max-scanned 5000  # prova ràpida, esbiaixada
-  python eligibility_scan.py --classify-eligible ../data/run_12/eligibility_report.csv
+  python eligibility_scan.py --classify-eligible ../data/run_8/eligibility_report.csv
 
 Output (cada execució en una carpeta nova, `data/run_<id>/`):
   eligibility_report.csv, funnel_summary.json   (mostreig)

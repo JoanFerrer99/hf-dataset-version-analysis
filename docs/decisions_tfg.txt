@@ -2,13 +2,19 @@
 DECISIONS DEL TFG — How do HuggingFace Datasets Change?
 Joan [Cognom]  |  Grau en Enginyeria Informàtica (GEI) — Esp. Enginyeria del Software
 Director: Alberto Abelló (UPC - FIB)
-Última actualització: agost 2026
+Última actualització: octubre 2026
 
 Nota (octubre 2026): els documents de docs/historic/ (Taiga, auditoria del
 motor anterior, notes d'investigació) i alguns resultats antics de data/ es
 van treure del repositori per deixar només el que és vigent. Es poden
 consultar a l'historial de git (commit 1c7f1e9 o anteriors). Les referències
 d'aquest registre a aquells fitxers es mantenen tal com eren.
+
+Nota (octubre 2026): les execucions de data/ es van renumerar (commit
+0f2c2bf): run_5 → run_3, run_6 → run_2, run_7 → run_5 i run_8 → run_6;
+run_9–run_12 es van eliminar (run_7 conserva la classificació de run_9 i
+les versions de run_10). La run_8 actual és una execució nova, la primera
+amb el criteri tabular. Aquest registre conserva la numeració antiga.
 ================================================================================
 
 Aquest document registra totes les decisions tècniques, metodològiques i
@@ -1176,6 +1182,20 @@ Estat: ✅ Tancada
   observat per a datasets és similar en ordre de magnitud (població
   elegible petita respecte al total), confirmant que no calia
   estratificació.
+
+  Actualització (octubre 2026, criteri tabular): la run_8 actual, la
+  primera amb el criteri tabular, troba 8 elegibles en 2.000 intents
+  (0,40%; interval de confiança del 95%, de Wilson, del 0,20% al 0,79%):
+  250 intents per elegible (entre 127 i 493). Són menys elegibles que amb
+  el criteri anterior (entre el 0,35% i el 0,85% en sis execucions), però
+  6 dels 8 tenen canvis detectats (abans, 3 dels 11 de l'antiga run_8). Els
+  altres 2: `tartuNLP/ifeval_et` té la taula comparada, sense cap canvi de
+  dades, i `the-oligarch/Molab-checkpoints` només té fitxers de mètriques
+  d'entrenament que apareixen o desapareixen sencers. Classificar les 2.000
+  mostres va trigar uns 10 minuts; recórrer la població (1.085.939
+  datasets) és un cost fix, que no depèn de la mida de la mostra. La mida
+  de la mostra per a l'anàlisi final queda pendent de decidir amb el
+  director.
 
 
 DECISIÓ A-02: Abast del pipeline (fase actual)

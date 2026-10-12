@@ -421,7 +421,7 @@ class TestComputeFunnelStats:
         assert stats["eligible_proportion_of_attempts"] == round(10 / 100, 4)
 
     def test_estimate_and_sample_planning_use_all_attempts(self):
-        # Xifres de run_8: 11 elegibles en 2.000 intents (87 inaccessibles, 8 errors).
+        # Xifres de run_6: 11 elegibles en 2.000 intents (87 inaccessibles, 8 errors).
         counts = es.FunnelCounts(
             total_scanned=1_068_504, eligible=11, ineligible=1894, access_restricted=87, errors=8
         )

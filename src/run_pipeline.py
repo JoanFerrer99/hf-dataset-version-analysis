@@ -8,7 +8,7 @@ processen els datasets elegibles.
 Ús:
   python run_pipeline.py --sample-size 50 --threads 4 --seed 42 --max-scanned 5000  # prova ràpida
   python run_pipeline.py --sample-size 2000 --threads 4 --seed 42                    # execució principal
-  python run_pipeline.py --input-csv ../data/run_12/eligibility_report.csv           # salta la Fase 0, reutilitza un CSV existent
+  python run_pipeline.py --input-csv ../data/run_8/eligibility_report.csv            # salta la Fase 0, reutilitza un CSV existent
   python run_pipeline.py --sample-size 2000 --skip-classification                    # només Fase 0-1/1b
 
 Output: tot dins d'una carpeta nova, `data/run_<id>/` (mai sobreescriu):
