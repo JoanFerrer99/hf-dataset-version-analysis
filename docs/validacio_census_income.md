@@ -1,10 +1,8 @@
 # Validació del motor amb Census Income
 
-Document per a la reunió amb el director (octubre de 2026). Explica com es
-comprova el motor de detecció de canvis amb la **Taula 1 del paper**
-(PROFES 2026, §5), el resultat, i un per un els codis en què el motor i la
-taula no coincideixen. Al final hi ha les preguntes per a la reunió i els
-altres temes pendents.
+Document on s'explica com es comprova el motor de detecció de canvis amb la **Taula 1 del paper**
+(PROFES 2026), el resultat, i un per un els codis en què el motor i la
+taula no coincideixen. Al final hi ha les preguntes i temes pendents.
 
 ---
 
@@ -146,7 +144,7 @@ mira les branques de l'autor.
 
 ## 3. Com va etiquetar el paper
 
-El paper ho explica així (§5): "The changes were identified by combining
+El paper ho explica així: "The changes were identified by combining
 information provided in the corresponding repositories (e.g., dataset cards
 when available) with a manual inspection of the datasets. Repository
 documentation was used to identify explicitly documented modifications,
@@ -182,35 +180,6 @@ El motor, en canvi, mira **quines** files són, no quantes n'hi ha. Per això
 troba canvis que la targeta no esmenta i que el recompte no deixa veure.
 
 ## 4. Resultat
-
-| | Precisió | Recall | F1 | Codis de la taula trobats |
-|---|---|---|---|---|
-| Motor anterior (diferències simples) | 72,0% | 69,2% | 70,6% | 18 de 26 |
-| **Motor actual** | **70,3%** | **100%** | **82,5%** | **26 de 26** |
-
-**Per versió:**
-
-| Versió | Taula 1 (sense C100) | El motor els troba tots? | El motor en marca de més |
-|---|---|---|---|
-| D1 | C223, C410 | sí | — |
-| D2 | C223, C410 | sí | — |
-| D3 | C210, C223, C311, C312, C410, C422 | sí | C222, C421 |
-| D4 | C210, C222, C223, C311, C312, C422 | sí | C410, C421 |
-| D5 | C221, C223, C410 | sí | — |
-| D6 | C223, C422, C530 | sí | C222, C410, C421, C510 |
-| D7 | C222, C223, C312, C421 | sí | C311, C422, C510 |
-
-**Per codi:**
-
-| Codi | Encerts | Falten | De més |
-|---|---|---|---|
-| C210, C221, C223, C312, C530 | 2, 1, 7, 3, 1 | 0 | 0 |
-| C222 | 2 | 0 | 2 |
-| C311 | 2 | 0 | 1 |
-| C410 | 4 | 0 | 2 |
-| C421 | 1 | 0 | 3 |
-| C422 | 3 | 0 | 1 |
-| C510 | 0 | 0 | 2 |
 
 **Per què calia un motor més complet que les diferències simples.** El motor
 anterior comparava noms de columna i comptava files, i perdia 8 dels 26
@@ -324,34 +293,8 @@ files que en tenien s'han eliminat senceres.
 Per això el motor el marca, i la taula no. A D7, la taula tampoc no marca
 que s'eliminen aquestes files (5.1).
 
-## 6. L'error del motor que hem corregit: C410 a D7
 
-**Què passava.** El motor deia que D7 canvia l'ordre de les files (C410),
-però D7 conserva l'ordre d'`adult.data` (secció 2.5).
-
-**Per què.** Per saber quina fila nova és quina fila antiga, el motor fa
-servir les columnes que conserven els valors. A D7 les categòriques passen
-a nombres, i només queden les 6 numèriques (`age`, `fnlwgt`,
-`education-num`, `capital-gain`, `capital-loss`, `hours-per-week`). Hi ha
-14 files d'`adult.data` amb un `?`, que D7 elimina, que tenen exactament els
-mateixos 6 valors que 14 files d'`adult.test`, que D7 afegeix al final. El
-motor les aparellava com si fossin la mateixa fila, i com que les noves són
-al final, semblava que 14 files havien canviat de lloc.
-
-**La correcció.** En aquestes 14 parelles, una cel·la passa de buida (`?`)
-a tenir valor. Una cel·la buida no pot confirmar que dues files siguin la
-mateixa. Ara, **una parella amb alguna cel·la que passa de buida a tenir
-valor (o al revés) no es fa servir per jutjar l'ordre**. Sí que es fa
-servir per comparar valors.
-
-- Comprovat a les 7 versions: només afecta aquestes 14 parelles de D7. El
-  C410 de D1–D6 no canvia.
-- Test nou amb un cas sintètic igual (`test_28` a
-  `tests/test_diffengine_regressions.py`).
-- Resultat: 11 codis de més en lloc de 12. La precisió passa del 68,4% al
-  70,3% i el recall continua al 100%.
-
-## 7. Canvis al motor arran de la validació
+## 6. Canvis al motor arran de la validació
 
 Cadascun té el seu test. Tots es justifiquen pel text del paper (§4), no
 per la taula, excepte llegir les columnes pel nom primer, que segueix la
@@ -370,7 +313,7 @@ lectura de la taula:
 - **C510 es reporta encara que vingui de files eliminades.** Una versió
   anterior del motor l'amagava per coincidir amb la taula, i es va retirar.
 
-## 8. Preguntes per a la reunió
+## 7. Preguntes obertes
 
 1. **Files (4 codis, secció 5.1).** La taula marca C421 o C422 segons si la
    versió té més o menys files que `adult.data`. D3, D4 i D6 també afegeixen
@@ -391,55 +334,3 @@ lectura de la taula:
    separat. Ho confirmes?
 5. **Mida de la mostra.** Quants datasets comparats voldries tenir? Amb
    `attempts_per_eligible` (secció 9.1) es calcula la mostra necessària.
-
-## 9. Altres temes de la reunió
-
-### 9.1 L'escaneig d'elegibilitat (resposta als correus)
-
-- **Només compten els datasets tabulars.** Un commit només compta per a
-  l'elegibilitat si toca un fitxer de dades tabular (`.parquet`, `.csv`,
-  `.tsv`, `.json`, `.jsonl`), amb la mateixa definició que fa servir el
-  motor. A `run_8`, 7 dels 11 elegibles no tenien res a comparar: 4 no
-  tocaven cap fitxer tabular (àudio, imatge...), 2 només tenien taules que
-  apareixien o desapareixien senceres i 1 tenia el mateix contingut a les
-  dues versions. Ara un dataset de vídeo o d'àudio ja no és elegible.
-- **Les fórmules** de l'embut són a `docs/architecture.md`, secció 7.4.
-- **L'estimació, sobre tots els intents.** `attempts_per_eligible` = tots
-  els intents / elegibles: per tenir N datasets elegibles cal una mostra
-  d'unes N × `attempts_per_eligible`. Els inaccessibles, els errors i els no
-  elegibles hi queden inclosos. A `run_8` (criteri antic): 2.000 / 11 =
-  181,8 intents per elegible.
-- **`eligible_total` s'ha eliminat**: valia sempre el mateix que
-  `eligible`.
-
-### 9.2 Joc de proves del nou company
-
-El format més útil és el mateix que Census Income, perquè es pugui puntuar
-amb els mateixos scripts:
-
-- parells de fitxers (versió antiga i nova);
-- la llista de codis esperats per a cada parell, com a
-  `tests/fixtures/census_income_labels.csv`.
-
-Els casos que més ajudarien són els que la Taula 1 no cobreix: C322 (canvis
-numèrics), C520 (correlacions) i C510 quan s'omplen valors absents.
-
-### 9.3 Què queda per fer
-
-1. Una nova execució de la Fase 0 amb el criteri tabular, per tenir la
-   proporció d'elegibles i `attempts_per_eligible` reals. La proporció ja
-   variava entre el 0,35% i el 0,85% segons l'execució (sis execucions de
-   2.000), així que caldrà un marge.
-2. Integrar el joc de proves del nou company quan arribi.
-
-## 10. Com reproduir-ho
-
-```bash
-python src/validate_census_income.py   # escriu a data/census_income/run_<id>/
-```
-
-L'execució de referència d'aquest document és `data/census_income/run_2/`
-(`paper_comparison.csv` per versió i `paper_comparison_by_code.csv` per
-codi). La de l'última reunió, abans de corregir el C410 de D7, és
-`data/census_income/census_income_paper_comparison_9.csv`; la del motor
-anterior, `…_5.csv`.
