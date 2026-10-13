@@ -228,7 +228,7 @@ python src/run_pipeline.py --sample-size 2000 --threads 4 --seed 42             
 
 ```
 src/                Codi del pipeline: un script per fase i el motor de detecció de canvis
-  diffengine/       El motor, com a paquet de Python (s'explica a docs/engine.md)
+  diffengine/       El motor, com a paquet de Python (s'explica a docs/validacio_census_income.md, secció 1)
 tests/              Tests automàtics (pytest), sense xarxa
 data/               Resultats de les execucions (secció 10)
 docs/               Documentació (ordre de lectura: docs/README.md)
@@ -484,7 +484,7 @@ Altres detalls:
 
 Codi: `eligibility_scan.run_classification` (llegeix els commits tabulars
 de la Fase 0, en forma les parelles i les compara) i el motor
-`src/diffengine/` (**`docs/engine.md`**). És l'única fase que **descarrega contingut real**,
+`src/diffengine/` (**`docs/validacio_census_income.md`**, secció 1). És l'única fase que **descarrega contingut real**,
 i per això només s'aplica als elegibles (la classificació de tota la
 mostra baixaria centenars de GB).
 
@@ -605,7 +605,7 @@ descàrregues es fan.
   pesava 78): per això el salt per hash, el límit de bytes per taula
   (`max_unit_bytes`) i el filtre d'elegibles.
 - Comparar una taula de `r` files i `c` columnes: majoritàriament O(r·c)
-  per passada, vectoritzat (`docs/engine.md`, secció 6).
+  per passada, vectoritzat.
 
 Límits fixos: 50 commits per dataset (`MAX_COMMITS` a la Fase 1), 500 MB per taula,
 30 s per clonar, 10 s per `git show`.
@@ -632,7 +632,7 @@ fixada; com es va determinar, a `docs/validacio_census_income.md`.
 
 Resultat actual (`data/census_income/run_2/paper_comparison_by_code.csv`):
 **precisió 70,3%, recall 100%, F1 82,5%**. El motor anterior, amb les
-mateixes dades: 72,0% / 69,2% / 70,6%.
+mateixes dades: 64,5% / 76,9% / 70,2% (20 dels 26 codis; `docs/validacio_census_income.md`, secció 1.2).
 
 | Codi | TP | FN | FP | Lectura |
 |---|---|---|---|---|
