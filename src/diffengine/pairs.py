@@ -110,6 +110,9 @@ def _units(rev: Revision, config: EngineConfig) -> tuple[dict[str, tuple[str, ..
     """
     tables, singles = {}, {}
     for u in rev.layout.units:
+        # Una taula d'un sol fitxer, o partida en shards o episodis numerats (si
+        # `concat_shards`), es compara sencera i s'aparella pel nom de la partició.
+        # Els fitxers d'una partició amb noms sense relació van cadascun pel seu compte.
         if u.naming == "single" or (u.naming in ("hf_shards", "numbered") and config.concat_shards):
             tables[f"{u.subset}/{u.split}"] = u.files
         else:
@@ -175,7 +178,9 @@ def pair_units(old: Revision, new: Revision, config: EngineConfig = DEFAULT_CONF
         elif [old.content_ids[f] for f in p.old_files] == [new.content_ids[f] for f in p.new_files]:
             p.status = "identical_content"
 
-    # Fitxers tabulars exclosos (decisió U1/U3): no es comparen.
+    # Fitxers tabulars que no formen part de cap taula (fora de cap partició, metadades
+    # d'un repositori de media o un altre format): no es comparen, però si han canviat
+    # queden a la llista amb l'estat `excluded`, perquè no es perdin en silenci.
     in_pairs = {f for p in pairs for f in p.old_files + p.new_files}
     excluded = {**old.layout.excluded, **new.layout.excluded}
     for path in sorted(set(excluded) - in_pairs):
@@ -187,9 +192,11 @@ def pair_units(old: Revision, new: Revision, config: EngineConfig = DEFAULT_CONF
 
 def _concat(tables: list[Table]) -> Table:
     """
-    Uneix en una sola taula els fitxers d'una taula partida.
+    Uneix en una sola taula els shards d'un split (o els episodis numerats),
+    posant les files de cada shard a continuació de les de l'anterior, en
+    ordre. Una columna només es considera d'enters si ho és a tots els shards.
 
-    :param tables: les parts, en ordre.
+    :param tables: els shards ja llegits, en ordre.
     :return: la taula sencera.
     :raises ParseError: si les parts no tenen les mateixes columnes.
     """

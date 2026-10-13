@@ -3,16 +3,31 @@ Pas 1 (primera part): quines taules té un repositori en una revisió.
 
 És el primer pas del motor (vegeu l'índex a `engine.py`).
 
-A Hugging Face, un dataset no és un fitxer: pot estar partit en shards
-(`train-00000-of-00003.parquet`…), en episodis (LeRobot), en subconjunts i
-particions (train/test). La unitat que compara el motor és la **taula
-(subset, split)**, tal com la mostra el Hub (decisió U1).
+A Hugging Face, un dataset no és un fitxer. Es reparteix en subsets (p.e.
+un per idioma) i en splits o particions (`train`, `test`). Un split gran es
+parteix en **shards**: fitxers amb les mateixes columnes que guarden,
+cadascun, un bloc de files consecutives del split. Per exemple,
+`train-00000-of-00003.parquet` és el shard 0 (es compta des de 0) d'un
+total de 3; unint els 3 en ordre es recupera el split sencer. Els episodis
+numerats de LeRobot (`episode_000000.parquet`…) funcionen igual.
+
+La unitat que compara el motor és la **taula (subset, split)**, tal com la
+mostra el Hub: tots els shards d'un split formen una sola taula. Així, si
+entre dues versions les mateixes files es parteixen en més o menys fitxers,
+no surt cap canvi. `classify_naming` reconeix com es reparteix una taula
+(un fitxer, shards del Hub, episodis numerats o noms sense relació).
+Explicació completa: `docs/architecture.md`, secció 2.2.
 
 Per saber quines taules hi ha, `resolve_units` fa servir les mateixes regles
 que la llibreria `datasets`: recrea l'arbre de fitxers com a fitxers buits
 en un directori temporal (no es descarrega res) i li pregunta quines
-particions hi veu. S'hi afegeixen dos casos que `datasets` no cobreix: els
-repositoris de vídeo amb taules (P11) i els repositoris que no sap llegir.
+particions hi veu. S'hi afegeixen dos casos que `datasets` no cobreix:
+
+- els repositoris de vídeo o d'imatge amb taules (p.e. LeRobot, amb més
+  vídeos que parquets): els fitxers tabulars que la media no fa servir es
+  resolen com a taules pròpies, en lloc de quedar fora;
+- els repositoris que `datasets` no sap llegir: cada fitxer tabular passa a
+  ser una taula.
 """
 
 import os

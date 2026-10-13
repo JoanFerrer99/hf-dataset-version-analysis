@@ -28,6 +28,7 @@ def detect_missing(ctx: Context) -> list[Change]:
     out = []
     cfg = ctx.config
     for m in ctx.cols.matches:
+        # Cel·les de files aparellades que passen de buides a tenir valor, o al revés.
         if cfg.null_transition_is_c510 and len(ctx.rows.pairs) and ctx.comparable(m):
             out += _null_transitions(ctx, m)
         ko, kn = ctx.old.columns[m.old], ctx.new.columns[m.new]
@@ -235,6 +236,8 @@ def detect_distribution(ctx: Context) -> list[Change]:
         if m.old in ctx.identifiers or m.old in ctx.kind_changed or OPAQUE in (ko.kind, kn.kind) \
                 or TEXT in (ko.kind, kn.kind):
             continue
+        # Si una fórmula o un soroll (C322) ja explica com han canviat els valors, el canvi
+        # de distribució n'és la conseqüència: no s'hi afegeix C530.
         if cfg.transformation_suppresses_c530 and m.old in ctx.explained:
             continue
         a, b = ctx.old.values[m.old].dropna(), ctx.new.values[m.new].dropna()

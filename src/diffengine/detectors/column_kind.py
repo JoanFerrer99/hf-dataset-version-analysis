@@ -1,9 +1,11 @@
 """
 C3xx, canvis en una columna concreta.
 
-- C311/C321: canvia el tipus (categòrica ↔ numèrica), codificat pel tipus
-  antic (P3). Si el canvi és una correspondència u a u entre valors
-  (codificar categories com a enters), també C312 `recoded` (P13).
+- C311/C321: canvia el tipus (categòrica ↔ numèrica). El codi es tria pel
+  tipus antic: C311 si la columna era categòrica, C321 si era numèrica. Si
+  el canvi és una correspondència u a u entre valors (codificar categories
+  com a enters, p.e. `Private` → 2), també han canviat els valors del
+  domini: s'hi afegeix C312 `recoded`.
 - C312/C322: canvien els valors. Es comparen cel·la a cel·la a les files
   aparellades, i el subtipus diu què ho explica: una transformació
   (`factor`, `log`…), un mapatge de categories (`relabel`, `merge`…), només
@@ -41,6 +43,8 @@ def detect_kinds(ctx: Context) -> list[Change]:
         if "opaque" in (fo, fn):
             continue
         if fo != fn:
+            # Canvi de família (categòrica ↔ numèrica): el codi depèn del tipus antic
+            # (`kind_change_by_old_kind`), i els valors d'aquesta columna ja no es comparen.
             ctx.kind_changed.add(m.old)
             old_based = fo if ctx.config.kind_change_by_old_kind else fn
             code = "C311" if old_based == "categorical" else "C321"
@@ -121,6 +125,7 @@ def _numeric_values(ctx: Context, m: ColumnMatch, a: pd.Series, b: pd.Series) ->
     scale = max(np.nanmax(np.abs(y[both])), 1e-12)
     n_changed = int((~np.isclose(x[both], y[both], rtol=ctx.config.numeric_rel_tolerance, atol=1e-9 * scale)).sum())
     if n_changed == 0:
+        # Els mateixos valors, escrits d'una altra manera (coma decimal, notació científica).
         style_changed = abs(ko.exponent_share - kn.exponent_share) > 0.5 or ko.decimal_comma != kn.decimal_comma
         if ctx.config.report_representation and style_changed:
             return [change("C322", m, subtype="representation")]

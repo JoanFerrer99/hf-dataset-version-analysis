@@ -14,10 +14,14 @@ Per passos (`align_rows`):
    casualitat.
 4. **Parelles dubtoses**: si diverses files són idèntiques, quina va amb
    quina és ambigu; es marquen i no s'usen per comparar valors ni ordre.
+5. **Parelles no confirmades**: si en una parella alguna cel·la passa de
+   buida a tenir valor, o al revés, aquella cel·la no confirma que siguin la
+   mateixa fila; es marquen i no s'usen per jutjar l'ordre.
 
-Els comptadors de posició (`index`, `episode_index`) no entren al hash: una
-inserció al mig els renumera tots (P10). La classe `_HashMatcher` té un
-mètode per cada pas.
+Les columnes que són comptadors de posició (`index`, `episode_index`: enters
+que creixen fila a fila a les dues versions) no entren al hash, perquè una
+fila inserida al mig els renumera tots i cap fila coincidiria. La classe
+`_HashMatcher` té un mètode per cada pas.
 """
 
 from dataclasses import dataclass, field
@@ -453,7 +457,6 @@ class _HashMatcher:
         expected = len(self.free_old) * len(self.free_new) * _collision_rate(h_old)
         if len(joined) < max(1, 5 * expected):
             return joined.iloc[0:0]
-        # P2: les dues files coincideixen en prou columnes estables.
         agree = np.zeros(len(joined))
         for c in self.stable:
             agree += self.cell_old[c][joined["row_o"].to_numpy()] == self.cell_new[c][joined["row_n"].to_numpy()]

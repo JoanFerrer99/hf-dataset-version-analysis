@@ -10,5 +10,6 @@ Entrades públiques:
 - `engine.diff_bytes` / `engine.diff_tables`: dos fitxers o dues taules.
 - `pairs.compare_revisions` + `pairs.revision_rows`: dues revisions d'un repositori.
 
-Explicació completa, pas a pas: `docs/engine.md`.
+Per què hi ha una segona versió del motor i com funciona: `docs/validacio_census_income.md`, secció 1.
+L'índex dels 5 passos és `engine.py`.
 """

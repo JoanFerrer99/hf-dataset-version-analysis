@@ -1,11 +1,11 @@
 """
-Tots els llindars i decisions provisionals del motor, en un sol lloc.
+Tots els llindars i les opcions del motor, en un sol lloc.
 
-Cada camp porta el seu valor per defecte i el perquè. Les decisions
-provisionals (P*, U*) s'expliquen a `docs/open_decisions.md`, i les ja
-tancades (U1, U2, P12) a `docs/decisions_tfg.txt` (T-20). Per provar uns
-altres valors:
-`dataclasses.replace(DEFAULT_CONFIG, alpha=0.05)`.
+Cada camp porta el valor per defecte i explica què fa el motor amb ell. Les
+opcions que encara s'han de confirmar amb el director s'expliquen a
+`docs/open_decisions.md`, i les que ja estan tancades, a
+`docs/decisions_tfg.txt` (T-20). Per provar uns altres valors sense tocar el
+codi: `dataclasses.replace(DEFAULT_CONFIG, alpha=0.05)`.
 """
 
 from dataclasses import dataclass
@@ -15,17 +15,25 @@ from dataclasses import dataclass
 class EngineConfig:
     # --- Pas 1: quines taules es comparen -----------------------------------
     concat_shards: bool = True
-    """U1: concatena els shards (hf_shards / numbered) d'una taula si comparteixen esquema."""
+    """Una taula partida en diversos fitxers (shards del Hub com
+    `train-00000-of-00003.parquet`, o episodis numerats de LeRobot) es llegeix
+    com una sola taula: els fitxers s'uneixen en ordre, només si tots tenen les
+    mateixes columnes. Amb `False`, cada fitxer es compara pel seu compte, i
+    un canvi en com està partida la taula sortiria com a fitxers sencers
+    afegits i eliminats."""
     max_unit_bytes: int = 500 * 1024**2
-    """U4: per sobre, la taula es marca `too_large` i no es compara."""
+    """Mida màxima d'una taula, sumant la versió antiga i la nova. Per sobre,
+    no es descarrega ni es compara: la parella queda amb l'estat `too_large` i
+    sense cap codi."""
 
     # --- Pas 2: llegir cada taula -------------------------------------------
     missing_tokens: tuple[str, ...] = ("", "?", "NA", "N/A", "n/a", "NaN", "nan", "null", "NULL", "None", "none", "-")
     """Valors que es llegeixen com a absents (comparats després de treure espais)."""
     text_min_distinct_share: float = 0.5
-    """P6: una columna no numèrica és text lliure si té almenys aquesta proporció de valors distints..."""
+    """Una columna de text es tracta com a text lliure, i no com a categòrica,
+    si almenys aquesta proporció dels seus valors són diferents..."""
     text_min_mean_length: float = 30.0
-    """P6: ... i una longitud mitjana d'almenys aquests caràcters."""
+    """... i els valors fan, de mitjana, almenys aquests caràcters."""
 
     # --- Pas 3a/3c: aparellar columnes --------------------------------------
     column_match_min_validity: float = 0.95
@@ -43,7 +51,10 @@ class EngineConfig:
 
     # --- Pas 3b: aparellar files --------------------------------------------
     edited_row_min_agreement: float = 0.5
-    """P2: proporció mínima de columnes aparellades on dues files han de coincidir per ser "la mateixa fila editada"."""
+    """Dues files que no són idèntiques encara poden ser la mateixa fila amb
+    alguna cel·la editada, si coincideixen en almenys aquesta proporció de les
+    columnes que serveixen per aparellar. Si no hi arriben, la fila antiga
+    compta com a eliminada (C422) i la nova com a afegida (C421)."""
     key_min_overlap: float = 0.5
     """Una columna és clau si és única i no nul·la a les dues versions i comparteix aquesta proporció de valors."""
     max_pairing_columns: int = 40
@@ -53,13 +64,25 @@ class EngineConfig:
 
     # --- Pas 4: detectar els canvis -----------------------------------------
     null_transition_is_c510: bool = True
-    """P1: valor <-> nul en una fila aparellada és C510 (si no, C312/C322)."""
+    """Una cel·la d'una fila aparellada que passa de tenir valor a estar buida,
+    o al revés, es reporta com a canvi de valors absents (C510), no com a canvi
+    de valor (C312/C322). Amb `False`, aquestes cel·les no es busquen: només
+    es mira si canvia la proporció de buits de tota la columna."""
     kind_change_by_old_kind: bool = True
-    """P3: una conversió entre tipus es codifica pel tipus antic."""
+    """Quan una columna passa de categòrica a numèrica, o al revés, el codi es
+    tria pel tipus que tenia a la versió antiga: C311 si era categòrica, C321
+    si era numèrica. Amb `False`, es triaria pel tipus nou."""
     report_representation: bool = True
-    """P5: els canvis de representació es reporten amb subtipus `representation`."""
+    """Els canvis que només afecten com s'escriuen els valors es reporten, amb
+    el subtipus `representation`, en lloc d'amagar-los: la coma decimal o la
+    notació científica en una columna numèrica (C322) i el símbol que vol dir
+    "absent", p.e. `?` en lloc d'una cel·la buida (C510). Els espais o les
+    majúscules en una categòrica (C312 `representation`) es reporten sempre."""
     transformation_suppresses_c530: bool = True
-    """P8: una columna explicada per una transformació (C322) no genera C530."""
+    """Si els valors nous d'una columna s'expliquen a partir dels antics amb una
+    fórmula (C322: multiplicar per un factor, logaritme, min-max,
+    estandardització...) o amb soroll afegit, no s'hi afegeix també un canvi de
+    distribució (C530)."""
 
     c510_min_rate_delta: float = 0.01
     """C510: diferència mínima de proporció de nuls (efecte), a més de la prova estadística."""

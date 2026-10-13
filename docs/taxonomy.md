@@ -116,7 +116,7 @@ menys freqüents (el dataset base és majoritàriament categòric).
 
 ## Com es detecta cada codi
 
-El motor és `src/diffengine/`; `docs/engine.md` n'explica els 5 passos.
+El motor és `src/diffengine/`; `docs/validacio_census_income.md` (secció 1) n'explica els 5 passos i per què n'hi ha una segona versió.
 Detecta els 14 codis tabulars (C100 és fora d'abast), i cada canvi porta
 el subtipus, l'evidència i una confiança. Les decisions d'etiquetatge que
 encara són provisionals són a `docs/open_decisions.md`.

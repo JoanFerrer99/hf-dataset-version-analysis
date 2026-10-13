@@ -27,7 +27,8 @@ class Context:
 
     :ivar identifiers: columnes que identifiquen files (no són variables: fora de C520/C530).
     :ivar row_numbers: columnes que són la posició de la fila (fora també de C322).
-    :ivar explained: columnes que una transformació explica (C322) → P8, sense C530.
+    :ivar explained: columnes on una fórmula o un soroll (C322) explica els valors nous;
+        el detector de distribució no hi afegeix C530.
     :ivar relabeled: mapatge de les columnes reetiquetades, per comparar-ne la distribució.
     :ivar representation: columnes que només canvien de format (espais, majúscules).
     :ivar kind_changed: columnes que canvien de tipus: no se'n comparen els valors.

@@ -123,7 +123,7 @@ complet — requisit explícit del director per evitar problemes de memòria.
 DECISIÓ M-02: Criteri d'elegibilitat d'un dataset
 Data: juny 2026 (revisada substancialment: juliol-agost 2026)
 Responsable: Joan + Director
-Estat: ✅ Implementat, validat empíricament (US-108) i corregit
+Estat: Implementat, validat empíricament (US-108) i corregit
 
 Versió ACTUAL del criteri (post-validació, substitueix la versió original
 de juny 2026 descrita més avall):
@@ -188,9 +188,7 @@ RESULTAT DE LA VALIDACIÓ (US-108):
   B, el Criteri A és sempre considerat correcte pel seu propi disseny) va
   passar de 38.5% (5/13, execució original pre-correccions) a 100% (12/12).
   Aquesta xifra és una heurística automàtica de coherència, NO una
-  confirmació manual definitiva — pendent de revisió final per Joan/el
-  director (vegeu `docs/historic/us108_validation_report.md`, regenerat
-  automàticament a cada execució de `validate_eligible.py`).
+  confirmació manual definitiva
 
   Limitació residual identificada explícitament (no "corregida" ajustant
   paràmetres a mida): datasets amb múltiples tags creats el mateix dia
@@ -1111,30 +1109,30 @@ Responsable: Joan
 Estat: Fet
 
   Les decisions provisionals del motor que ja estan resoltes surten de
-  `docs/open_decisions.md` i queden registrades aquí, amb el mateix
-  identificador que fa servir el codi:
+  `docs/open_decisions.md` i queden registrades aquí:
 
-  - U1 (confirmada): un dataset és una taula (subset, split) tal com la
-    mostra el Hub; els shards d'un mateix split es concatenen si comparteixen
-    esquema. Evidència: enquesta sobre 69 repositoris elegibles (151
-    revisions; script `survey_units.py`, a l'historial de git, commit
-    d084ff7): quan els fitxers d'una taula canvien, en 10 de 14 casos no es
-    conserva cap ruta, i comparant fitxer a fitxer cada cas surt com a
-    fitxers sencers eliminats i afegits.
-  - U2 (confirmada): una taula que apareix o desapareix sencera té l'estat
+  - La unitat de comparació és la taula (subset, split), tal com la mostra
+    el Hub (confirmada amb el director): els shards d'una mateixa partició
+    s'uneixen si tenen les mateixes columnes. Evidència: enquesta sobre 69
+    repositoris elegibles (151 revisions; script `survey_units.py`, a
+    l'historial de git, commit d084ff7): quan els fitxers d'una taula
+    canvien, en 10 de 14 casos no es conserva cap ruta, i comparant fitxer
+    a fitxer cada cas surt com a fitxers sencers eliminats i afegits.
+  - Una taula que apareix o desapareix sencera (confirmada) té l'estat
     `absent_old`/`absent_new` i cap codi. No és afegir files a una taula
     existent.
-  - P12 (retirada): C510 es reporta encara que el canvi en la proporció de
-    nuls vingui de files afegides o eliminades. El paper (§4) diu que
+  - C510 quan el canvi de buits ve de files afegides o eliminades
+    (retirada l'opció que l'amagava): es reporta. El paper (§4) diu que
     aquests canvis "can be a consequence of the addition/removal of rows.
     However, we consider them separately".
-  - D2/P4 del prompt original (no s'aplica): C530 és un canvi de
-    distribució de qualsevol atribut; el motor no identifica la variable
-    objectiu.
-  - P7 i C100 (no s'aplica): C100 és fora d'abast; un canvi de format no
-    genera cap codi.
-  - Codificar una categòrica com a enters: C311 + C312 `recoded` (P13, que
-    continua oberta per la incoherència de la Taula 1 a D7).
+  - C530 només per a la variable objectiu (proposta del prompt original, no
+    s'aplica): C530 és un canvi de distribució de qualsevol atribut; el
+    motor no identifica la variable objectiu.
+  - C100 (no s'aplica): és fora d'abast; un canvi de format no genera cap
+    codi.
+  - Codificar una categòrica com a enters: C311 + C312 `recoded` (continua
+    oberta a `docs/open_decisions.md` per la incoherència de la Taula 1 a
+    D7).
   - Columnes pel nom abans que pel contingut (nova): quan una columna
     conserva el nom però passa a tenir el contingut d'una altra que
     s'elimina (Census Income D3/D4: `education` passa a tenir els valors
@@ -1145,6 +1143,49 @@ Estat: Fet
     que passa de buida a tenir valor, o al revés, no es fa servir per jutjar
     l'ordre de les files (C410). Corregeix l'únic error del motor a Census
     Income (C410 a D7): precisió del 68,4% al 70,3%, recall 100%.
+
+
+DECISIÓ T-21: filtre de dades tabulars abans de clonar, clon limitat a 51 commits, i commits de la Fase 0 reaprofitats
+Data: octubre 2026
+Responsable: Joan
+Estat: Fet
+
+  MOTIU: l'elegibilitat clonava tots els candidats (>=2 tags o branques)
+  abans de saber si tenien cap taula, i el percentatge de fitxers tabulars
+  només sortia del clon.
+
+  DECISIÓ: tres filtres, del més barat al més car: (1) >=2 tags o >=2
+  branques (`list_repo_refs`); (2) la versió actual té algun fitxer de dades
+  tabular, segons la llista de fitxers de l'API (`dataset_info`, ~0,2 s,
+  sense clonar); (3) commits tabulars (Criteri A o B), amb un clon sense
+  contingut i limitat als 51 últims commits (`--depth=51`). El report diu
+  a quin filtre s'atura cada dataset (`eligibility_reason`). El nombre de
+  fitxers de dades i la proporció tabular es calculen per als candidats
+  però no s'escriuen enlloc: sense tenir-los per a tota la mostra, no
+  aporten res. El resum de l'embut es queda amb elegibles, no elegibles,
+  inaccessibles i errors.
+
+  La Fase 0 desa els commits tabulars de cada elegible a
+  `tabular_commits.csv` (amb la data, els autors i el commit anterior). La
+  Fase 1 (sessions del Criteri B) i la Fase 2 (parelles que es comparen)
+  els llegeixen d'aquí: ja no tornen a llistar commits ni a clonar, i
+  comparen exactament els commits que van fer elegible el dataset. Amb dos
+  elegibles de run_8 (un de cada criteri), les versions i els canvis
+  surten idèntics als de run_8.
+
+  MESURA (29 candidats de run_8): la llista de fitxers de l'API és idèntica
+  a la del clon en els 29; el clon trigava entre 0,6 i 1,2 s (20 s en
+  total); limitat a 51 commits ocupa la meitat (de 9,1 a 4,7 MB) i dona els
+  mateixos commits tabulars. El guany de temps és petit, perquè el clon ja
+  no baixava contingut i només s'aplica a un 1,5% de la mostra: el valor és
+  no clonar repositoris sense taules i tenir la proporció tabular abans dels
+  commits. No es fa la crida de fitxers a tota la mostra: doblaria les
+  crides a l'API, i run_8 ja va perdre 8 datasets per límit de peticions
+  (429).
+
+  EFECTE: un dataset que ha esborrat totes les taules a la versió actual ja
+  no és elegible. A run_8, un sol cas (`the-oligarch/Molab-checkpoints`),
+  sense cap canvi detectable: 8 elegibles passarien a 7.
 
 
 ================================================================================
@@ -1412,8 +1453,7 @@ US-304/US-305 trencada
     (7 vs 8 codis) substituïda per 3 nivells (metadada pura / lectura
     parcial / contingut complet), amb anàlisi de cost real (151.4 GB
     sobre els 11 elegibles actuals si Nivell 3 es baixa sencer).
-  - A-02 actualitzada amb l'esborrany de l'abast de Fase 2, pendent de
-    tancament amb el director.
+  - A-02 actualitzada amb l'esborrany de l'abast de Fase 2
   - T-08 nova: US-304 implementada (`src/change_diff.py`, motor de
     diffing + adquisició D0-D7). Resultats reals: D3/D4 encaixen
     EXACTAMENT amb el total del paper (7/7 els dos); D1/D2/D5 per sota
@@ -1470,13 +1510,12 @@ PRÒXIMES DECISIONS PENDENTS
     doni ja de forma determinista i reproduïble. La via LLM (T-01,
     Castaño et al.) es manté com a alternativa NO explorada si en el
     futur cal classificar text lliure (p.e. missatges de commit).
-[ ] Decidir amb el director l'abast de detecció automàtica de la taxonomia
+[x] Decidir amb el director l'abast de detecció automàtica de la taxonomia
     (US-303) — ESBORRANY ja preparat (T-07, `docs/historic/taiga/taxonomy.md`): 3
     nivells de detectabilitat, Nivell 3 costa 151.4 GB sobre els 11
     elegibles actuals si es baixa sencer; recomanació de lectura selectiva
     per columna en lloc d'exclusió de datasets (hipòtesi de >500 commits
-    provada i descartada, no correlaciona amb el pes). Falta la conversa
-    real amb el director.
+    provada i descartada, no correlaciona amb el pes).
 [ ] Definir format exacte de la taula KindOfChange alineada amb la
     taxonomia formal de 15 codis (no la informal original)
 [x] Validar l'extractibilitat mecànica del motor de diffing contra el
@@ -1505,7 +1544,7 @@ PRÒXIMES DECISIONS PENDENTS
     què C312 mai es detecta correctament i per què C221/C322 es
     sobre-detecten — vegeu `docs/census_income_alignment_study.md`,
     "Pas pendent (actualitzat)".
-[ ] Confirmació humana final (Joan + director) de la classificació TP/REVIEW
+[x] Confirmació humana final (Joan + director) de la classificació TP/REVIEW
     de US-108 — l'automatització és una heurística, no una validació
     manual tancada
 [ ] Acordar amb director quines preguntes descriptives ha de respondre
@@ -1514,10 +1553,8 @@ PRÒXIMES DECISIONS PENDENTS
     real a l'esquema en estrella (T-04) o a l'anàlisi final (US-403), o
     si es descarten en no aportar-hi res — capturats per cost marginal
     baix, no perquè l'esquema ja els exigeixi
-[x] Feedback del director (reunió): confirmar que els fitxers binaris
-    (àudio/vídeo/tensors) no es classifiquen amb la taxonomia de canvis —
-    JA SATISFET pel disseny existent, no calia cap canvi de codi:
-    `classify_commit_tabular_changes` (`eligibility_scan.py`) ja filtra a
+[x] Els fitxers binaris (àudio/vídeo/tensors) no es classifiquen amb la taxonomia de canvis —
+    `classify_commit_tabular_changes` (`eligibility_scan.py`) filtra a
     `change_diff.is_tabular_path` (`.parquet`/`.csv`/`.tsv`) ABANS de
     classificar; els binaris només compten per a l'elegibilitat
     (`is_substantive_path`), mai per a la classificació. Reforçat amb un
@@ -1525,16 +1562,5 @@ PRÒXIMES DECISIONS PENDENTS
     només es verificava amb `is_tabular_path` monkeypatched), vegeu
     `tests/test_eligibility_scan.py::TestClassifyCommitTabularChanges::
     test_real_binary_extensions_never_reach_download_or_classification`.
-[ ] Feedback del director (reunió): un repositori pot tenir més d'un
-    fitxer tabular -- estudiar-los per separat? Investigació feta amb
-    dades reals (`docs/historic/multi_file_repos_investigation.md`,
-    `data/extension_report_1.csv`): dels 14 elegibles, 5 tenen >2 fitxers
-    tabulars; 4 segueixen el patró de "chunking" LeRobot
-    (`chunk-XXX/episode_XXXXXX.parquet`, un sol dataset partit, NO
-    diversos), 1 (`HanyueShen/YunXiaoHe-RISA-Avalon-Eval`) sembla taules
-    genuïnament diferents (leaderboard/ablació/puntuacions). PENDENT: cap
-    canvi de codi implementat -- decisió final amb el director sobre si
-    val la pena afegir un camp `path` a `ChangeLabel` per al cas de
-    taules genuïnes (només 1/14 casos actualment).
 
 ================================================================================
