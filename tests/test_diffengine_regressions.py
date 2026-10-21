@@ -100,11 +100,14 @@ def test_08_csv_to_parquet_is_nothing_because_c100_is_out_of_scope(base):
     assert codes(csv_bytes(base), parquet_bytes(base), ".csv", ".parquet") == set()
 
 
-def test_09_missing_token_change_is_c510_representation_only(base):
+@pytest.mark.parametrize("old_token,new_token", [("?", ""), ("?", "NA"), ("", "null"), ("NA", "?")])
+def test_09_changing_the_missing_value_symbol_is_not_a_change(base, old_token, new_token):
+    """`?`, una cel·la buida, `NA`... són el mateix buit: canviar-ne el símbol no és cap canvi, ni de
+    valors absents (C510) ni de tipus o valors (C311/C312/C321/C322), en categòriques i numèriques."""
     old = base.copy()
     old.loc[:5, "workclass"] = np.nan
-    got = labels(csv_bytes(old, na_rep="?"), csv_bytes(old, na_rep=""))
-    assert got == {("C510", "representation")}
+    old.loc[10:15, "score"] = np.nan
+    assert labels(csv_bytes(old, na_rep=old_token), csv_bytes(old, na_rep=new_token)) == set()
 
 
 def test_10_stripped_whitespace_is_c312_representation(base):

@@ -19,8 +19,7 @@ def detect_missing(ctx: Context) -> list[Change]:
     Canvis en els valors absents (C510), per columna:
     1. cel·les de files aparellades que passen de buides a tenir valor
        (`imputed...`) o al revés (`masking`);
-    2. canvi del token que vol dir "absent" (`?` → buit): `representation`;
-    3. si no hi ha cap cas 1, canvi de la proporció de buits de la columna: `rate`.
+    2. si no hi ha cap cas 1, canvi de la proporció de buits de la columna: `rate`.
 
     :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
     :return: els canvis trobats.
@@ -31,11 +30,8 @@ def detect_missing(ctx: Context) -> list[Change]:
         # Cel·les de files aparellades que passen de buides a tenir valor, o al revés.
         if cfg.null_transition_is_c510 and len(ctx.rows.pairs) and ctx.comparable(m):
             out += _null_transitions(ctx, m)
-        ko, kn = ctx.old.columns[m.old], ctx.new.columns[m.new]
         o_null, n_null = ctx.old.values[m.old].isna(), ctx.new.values[m.new].isna()
-        if cfg.report_representation and o_null.any() and n_null.any() and ko.missing_tokens != kn.missing_tokens \
-                and ko.missing_tokens and kn.missing_tokens:
-            out.append(change("C510", m, subtype="representation"))
+        # Si el pas anterior no ha trobat res, canvia la proporció de buits de tota la columna?
         if m.old in ctx.c510_columns:
             continue
         if _rate_changed(o_null, n_null, cfg):

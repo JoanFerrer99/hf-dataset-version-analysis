@@ -73,11 +73,11 @@ class EngineConfig:
     tria pel tipus que tenia a la versió antiga: C311 si era categòrica, C321
     si era numèrica. Amb `False`, es triaria pel tipus nou."""
     report_representation: bool = True
-    """Els canvis que només afecten com s'escriuen els valors es reporten, amb
-    el subtipus `representation`, en lloc d'amagar-los: la coma decimal o la
-    notació científica en una columna numèrica (C322) i el símbol que vol dir
-    "absent", p.e. `?` en lloc d'una cel·la buida (C510). Els espais o les
-    majúscules en una categòrica (C312 `representation`) es reporten sempre."""
+    """Els canvis que només afecten com s'escriuen els valors d'una columna
+    numèrica (coma decimal, notació científica) es reporten com a C322
+    `representation`, en lloc d'amagar-los. Els espais o les majúscules en una
+    categòrica (C312 `representation`) es reporten sempre. Canviar el símbol
+    que vol dir "absent" no es reporta mai."""
     transformation_suppresses_c530: bool = True
     """Si els valors nous d'una columna s'expliquen a partir dels antics amb una
     fórmula (C322: multiplicar per un factor, logaritme, min-max,
