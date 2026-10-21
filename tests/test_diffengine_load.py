@@ -18,7 +18,6 @@ def test_csv_missing_tokens_and_integer_column_with_gaps():
     t = load_table(b"id,age,wc\n1,30,Private\n2,,?\n3,41,Gov\n", ".csv")
     assert t.columns["age"].kind == NUMERIC and t.columns["age"].integer
     assert t.values["wc"].isna().tolist() == [False, True, False]
-    assert t.columns["wc"].missing_tokens == frozenset({"?"})
 
 
 def test_parquet_string_nulls_and_tokens_become_nulls():
@@ -26,7 +25,6 @@ def test_parquet_string_nulls_and_tokens_become_nulls():
     t = load_table(parquet(df), ".parquet")
     assert t.columns["wc"].kind == CATEGORICAL
     assert t.values["wc"].isna().tolist() == [False, True, True]
-    assert t.columns["wc"].missing_tokens == frozenset({"?"})
     assert t.columns["n"].integer
 
 

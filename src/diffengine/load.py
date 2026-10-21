@@ -6,8 +6,9 @@ un sol nul passa a `float`, un CSV porta espais després de les comes, i `?`
 vol dir "absent". Per això `load_table`:
 
 - Llegeix els CSV com a text i en detecta el separador i el dialecte.
-- Converteix els tokens d'absent (`?`, `NA`, buit…) en nuls, però en guarda
-  quins eren, per detectar si canvien (C510 `representation`).
+- Converteix els tokens d'absent (`?`, `NA`, buit…) en nuls. Tots són el
+  mateix buit: si una versió nova escriu els absents amb un altre símbol, no
+  surt cap canvi.
 - Dedueix el **tipus lògic** pels valors: `numeric`, `categorical`, `text`
   (text lliure) o `opaque` (imatges, àudio, vectors). Les cel·les opaques es
   converteixen en text determinista: serveixen per reconèixer files, però no
@@ -43,7 +44,6 @@ class Column:
     :ivar kind: `numeric`, `categorical`, `text` o `opaque`.
     :ivar integer: per a numèriques, si tots els valors no nuls són enters.
     :ivar raw_dtype: dtype físic (pandas/arrow) o `str` per a CSV.
-    :ivar missing_tokens: tokens d'absent trobats al text cru (CSV).
     :ivar exponent_share: proporció de valors escrits en notació científica (CSV).
     :ivar decimal_comma: el separador decimal és la coma (CSV).
     """
@@ -52,7 +52,6 @@ class Column:
     kind: str
     integer: bool = False
     raw_dtype: str = ""
-    missing_tokens: frozenset[str] = frozenset()
     exponent_share: float = 0.0
     decimal_comma: bool = False
 
@@ -220,10 +219,9 @@ def _from_typed(df: pd.DataFrame, fmt: str, config: EngineConfig) -> Table:
             v = s.astype(object).map(lambda x: None if is_missing(x) else str(x)).astype(object)
             tokens = set(config.missing_tokens)
             is_token = v.map(lambda x: not is_missing(x) and x.strip() in tokens).astype(bool)
-            found = frozenset(x.strip() for x in v[is_token]) if is_token.any() else frozenset()
             v = v.where(~is_token, None).astype(object)
             values[name] = v
-            columns[name] = Column(name, _text_or_categorical(v, config), raw_dtype=raw_dtype, missing_tokens=found)
+            columns[name] = Column(name, _text_or_categorical(v, config), raw_dtype=raw_dtype)
     return Table(fmt, pd.DataFrame(values, columns=list(df.columns)), columns)
 
 
@@ -247,7 +245,7 @@ def _from_csv(data: bytes, ext: str, config: EngineConfig) -> Table:
     """
     Llegeix un CSV o TSV com a text i decideix el tipus de cada columna pels
     valors. Els tokens de valor absent (`?`, `NA`, buit...) es converteixen en
-    buits, i es guarda quins eren.
+    buits.
 
     :param data: contingut del fitxer, en bytes.
     :param ext: `.csv` o `.tsv`.
@@ -277,7 +275,6 @@ def _from_csv(data: bytes, ext: str, config: EngineConfig) -> Table:
         cells = raw[name].astype(object)
         stripped = cells.str.strip()
         is_null = stripped.isin(tokens)
-        found_tokens = frozenset(stripped[is_null].unique())
         present = stripped[~is_null]
 
         decimal_comma = dialect["delimiter"] != "," and present.str.match(r"^-?\d+,\d+$").mean() > 0.5 \
@@ -290,13 +287,11 @@ def _from_csv(data: bytes, ext: str, config: EngineConfig) -> Table:
             values[name] = col
             exponent = present.str.contains(r"\d[eE][+-]?\d", regex=True).mean()
             columns[name] = Column(name, NUMERIC, integer=_integral(col), raw_dtype="str",
-                                   missing_tokens=found_tokens, exponent_share=float(exponent),
-                                   decimal_comma=bool(decimal_comma))
+                                   exponent_share=float(exponent), decimal_comma=bool(decimal_comma))
         else:
             v = cells.where(~is_null, None).astype(object)
             values[name] = v
-            columns[name] = Column(name, _text_or_categorical(v, config), raw_dtype="str",
-                                   missing_tokens=found_tokens)
+            columns[name] = Column(name, _text_or_categorical(v, config), raw_dtype="str")
     raw_view = raw.astype(object)
     return Table("csv", pd.DataFrame(values, columns=list(raw.columns)), columns, raw=raw_view, dialect=dialect)
 

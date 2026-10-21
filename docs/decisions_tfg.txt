@@ -1188,6 +1188,35 @@ Estat: Fet
   sense cap canvi detectable: 8 elegibles passarien a 7.
 
 
+DECISIÓ T-22: canviar el símbol de valor absent no és cap canvi
+Data: octubre 2026
+Responsable: Joan
+Estat: Fet
+
+  MOTIU: si una versió escrivia els absents amb un altre símbol (`?` → cel·la
+  buida, `NA`, `null`...), el motor marcava C510 `representation` a cada
+  columna amb buits. Les dades són les mateixes: només canvia com s'escriu
+  el buit.
+
+  COMPROVAT abans del canvi, amb una taula sintètica (columnes numèriques i
+  categòriques):
+  - Entre símbols que el motor reconeix com a absents (`?`, buit, `NA`,
+    `N/A`, `NaN`, `null`, `None`, `-`): mai C321 ni C322, ni cap altre codi
+    de tipus o de valors; només C510 `representation`.
+  - CSV amb `?` → parquet amb nuls reals (o al revés): cap codi.
+  - Un símbol que no és a la llista (p.e. `unknown`): en una columna
+    numèrica sí que surt C321 + C312, perquè la columna passa a tenir text.
+    Es manté així: una paraula com `unknown` pot ser una categoria real, i
+    per a un pipeline que llegeix la columna com a nombres el canvi és real.
+
+  DECISIÓ: el motor ja no marca el canvi de símbol d'absent. En llegir la
+  taula, tots els símbols de la llista són el mateix buit; es treu C510
+  `representation` i la informació que només servia per a aquest cas
+  (`Column.missing_tokens`). Test: `test_09` a
+  `tests/test_diffengine_regressions.py`, amb quatre parelles de símbols.
+  No afecta Census Income: cap versió hi tenia C510 `representation`.
+
+
 ================================================================================
 BLOC 4 — DECISIONS D'ABAST
 ================================================================================
