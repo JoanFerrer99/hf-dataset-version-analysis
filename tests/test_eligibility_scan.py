@@ -52,6 +52,12 @@ def _repo_with_a_table(monkeypatch):
     _current_files(monkeypatch, ["README.md", "data/train.csv"])
 
 
+@pytest.fixture(autouse=True)
+def _failures_in_tmp(monkeypatch, tmp_path):
+    # Les fallades d'un test van a la seva carpeta temporal, mai a data/failures.csv.
+    monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
+
+
 @contextmanager
 def _no_git_clone(dataset_id):
     # Sense clon (yield None): cap commit no compta, perquè no se sap quins
@@ -811,6 +817,34 @@ class TestCompareChangeUnits:
 
         assert changes == []
 
+    def test_every_table_pair_has_a_status_even_without_codes(self, monkeypatch):
+        from diffengine.output import Change, DiffResult
+        from diffengine.pairs import UnitPair
+
+        compared = [
+            # El mateix codi en dues columnes compta un sol cop, com a change_classification.csv.
+            UnitPair("default/train", ("train.csv",), ("train.csv",), status="ok",
+                     result=DiffResult("ok", [Change("C221", column="a"), Change("C221", column="b"),
+                                              Change("C223", column="c")])),
+            UnitPair("default/test", ("test.csv",), ("test.csv",), status="ok", result=DiffResult("ok", [])),
+            UnitPair("big/train", ("big.parquet",), ("big.parquet",), status="too_large"),
+            UnitPair("labels.json", ("labels.json",), ("labels.json",), status="parse_failed"),
+            # Una taula que desapareix no té fitxers nous: es diuen els antics.
+            UnitPair("old/train", ("old-0.parquet", "old-1.parquet"), (), status="absent_new"),
+        ]
+        monkeypatch.setattr(es.pairs, "compare_revisions", lambda *a, **kw: compared)
+
+        _, statuses = es.compare_change_units("org/ds", [("sha1", "sha2")], "tok", es.RETRY_CONFIG)
+
+        assert [(r["table"], r["file_path"], r["status"], r["n_codes"]) for r in statuses] == [
+            ("default/train", "train.csv", "ok", 2),
+            ("default/test", "test.csv", "ok", 0),
+            ("big/train", "big.parquet", "too_large", 0),
+            ("labels.json", "labels.json", "parse_failed", 0),
+            ("old/train", "old-0.parquet,old-1.parquet", "absent_new", 0),
+        ]
+        assert {(r["dataset_id"], r["version_from"], r["version_to"]) for r in statuses} == {("org/ds", "sha1", "sha2")}
+
     def test_no_units_means_no_hub_calls(self, monkeypatch):
         def must_not_be_called(*a, **kw):
             raise AssertionError("no s'havia de consultar el Hub")
@@ -968,8 +1002,10 @@ class TestRunClassification:
         def compare(dataset_id, units_to_compare, hf_token, retry_config):
             if dataset_id == "org/killed":
                 raise KeyboardInterrupt
-            return [{"dataset_id": dataset_id, "version_from": "c1", "version_to": "c2", "file_path": "t.csv",
-                     "code": "C421"}], []
+            return ([{"dataset_id": dataset_id, "version_from": "c1", "version_to": "c2", "file_path": "t.csv",
+                      "code": "C421"}],
+                    [{"dataset_id": dataset_id, "version_from": "c1", "version_to": "c2", "table": "t.csv",
+                      "file_path": "t.csv", "status": "ok", "n_codes": 1}])
 
         monkeypatch.setattr(es, "compare_change_units", compare)
 
@@ -978,6 +1014,8 @@ class TestRunClassification:
 
         out = pd.read_csv(tmp_path / "change_classification.csv")
         assert out["dataset_id"].tolist() == ["org/done"]
+        status = pd.read_csv(tmp_path / "comparison_status.csv")
+        assert status["dataset_id"].tolist() == ["org/done"]
 
     def test_writes_one_row_per_table_versions_and_code(self, monkeypatch, tmp_path):
         import pandas as pd
@@ -1003,6 +1041,36 @@ class TestRunClassification:
         assert out["code"].tolist() == ["C421", "C223"]
         assert out.iloc[0]["description"] == "Afegir fila"
         assert bool(out.iloc[1]["is_breaking"]) is True
+
+    def test_writes_the_status_of_every_comparison(self, monkeypatch, tmp_path):
+        import pandas as pd
+
+        from diffengine.output import Change, DiffResult
+        from diffengine.pairs import UnitPair
+
+        versions = _write_versions(tmp_path, {"org/ds": [("sha1", 1), ("sha2", 2), ("sha3", 3)]})
+        monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
+
+        def compare_revisions(dataset_id, old_rev, new_rev, token, call):
+            changes = [Change("C421"), Change("C510", column="a")] if new_rev == "sha2" else []
+            return [UnitPair("default/train", ("train.csv",), ("train.csv",), status="ok",
+                             result=DiffResult("ok", changes)),
+                    UnitPair("big/train", ("big.parquet",), ("big.parquet",), status="too_large")]
+
+        monkeypatch.setattr(es.pairs, "compare_revisions", compare_revisions)
+
+        es.run_classification(versions)
+
+        status = pd.read_csv(tmp_path / "comparison_status.csv")
+        assert list(status.columns) == ["dataset_id", "version_from", "version_to", "table", "file_path", "status",
+                                        "n_codes"]
+        assert status[["version_to", "table", "status", "n_codes"]].values.tolist() == [
+            ["sha2", "default/train", "ok", 2], ["sha2", "big/train", "too_large", 0],
+            ["sha3", "default/train", "ok", 0], ["sha3", "big/train", "too_large", 0]]
+        # n_codes és el nombre de files de la taula a change_classification.csv.
+        changes = pd.read_csv(tmp_path / "change_classification.csv")
+        per_table = changes.groupby(["version_to", "table"]).size()
+        assert all(per_table.get((r.version_to, r.table), 0) == r.n_codes for r in status.itertuples())
 
     def test_never_produces_c100(self, monkeypatch, tmp_path):
         # Un canvi de format (CSV -> parquet) seria C100, que és fora d'abast.
@@ -1035,6 +1103,7 @@ class TestRunClassification:
         output_csv = es.run_classification(str(versions))
 
         assert pd.read_csv(output_csv).empty
+        assert pd.read_csv(tmp_path / "comparison_status.csv").empty
 
 
 # ---------------------------------------------------------------------------
