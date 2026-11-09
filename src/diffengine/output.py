@@ -56,8 +56,8 @@ class DiffResult:
         return {c.code for c in self.changes}
 
 
-CLASSIFICATION_COLUMNS = ["dataset_id", "version_from", "version_to", "file_path", "code", "description",
-                          "is_breaking"]
+CLASSIFICATION_COLUMNS = ["dataset_id", "version_from", "version_to", "table", "file_path", "code",
+                          "description", "is_breaking"]
 
 
 def classification_frame(rows: list[dict]) -> pd.DataFrame:
@@ -67,10 +67,10 @@ def classification_frame(rows: list[dict]) -> pd.DataFrame:
     columnes, surt un sol cop.
 
     :param rows: una fila per canvi, amb `dataset_id`, `version_from`,
-        `version_to`, `file_path` i `code`.
+        `version_to`, `table`, `file_path` i `code`.
     :return: la taula, sense files repetides.
     """
-    out = pd.DataFrame(rows, columns=CLASSIFICATION_COLUMNS[:5])
+    out = pd.DataFrame(rows, columns=CLASSIFICATION_COLUMNS[:-2])
     out["description"] = out["code"].map(CODE_DESCRIPTIONS)
     out["is_breaking"] = out["code"].isin(BREAKING_CODES)
     return out.drop_duplicates().reset_index(drop=True)

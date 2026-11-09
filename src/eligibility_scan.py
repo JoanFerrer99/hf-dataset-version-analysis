@@ -650,7 +650,7 @@ def compare_change_units(
     :param units_to_compare: parelles `(SHA antic, SHA nou)` de `change_units`.
     :param hf_token: token de Hugging Face.
     :param retry_config: configuració de reintent (també per a les descàrregues).
-    :return: una fila per canvi (`dataset_id`, `version_from`, `version_to`, `file_path`, `code`).
+    :return: una fila per canvi (`dataset_id`, `version_from`, `version_to`, `table`, `file_path`, `code`).
     """
     retry = functools.partial(errors.with_retry, **retry_config)
     labels: list[dict] = []
@@ -898,7 +898,7 @@ def run_classification(input_csv: str) -> str:
     """
     Fase 2: classifica els canvis de cada dataset elegible del CSV i escriu
     `change_classification.csv` a `OUTPUT_DIR`: una fila per taula, parell de
-    versions i codi (`dataset_id, version_from, version_to, file_path, code,
+    versions i codi (`dataset_id, version_from, version_to, table, file_path, code,
     description, is_breaking`).
 
     Per a cada elegible:

@@ -776,7 +776,7 @@ class TestCompareChangeUnits:
         changes = es.compare_change_units("org/ds", [("sha1", "sha2")], "tok", es.RETRY_CONFIG)
 
         assert changes == [{"dataset_id": "org/ds", "version_from": "sha1", "version_to": "sha2",
-                            "file_path": "data/train.csv", "code": "C221"}]
+                            "table": "default/train", "file_path": "data/train.csv", "code": "C221"}]
 
     def test_download_failure_gives_no_changes(self, monkeypatch):
         monkeypatch.setattr(es.pairs, "compare_revisions", lambda *a, **kw: [self._fake_pair("download_failed")])
@@ -989,7 +989,7 @@ class TestRunClassification:
             {"org/ds": [es.TabularCommit("sha2", "sha1", datetime(2026, 1, 2), ())]})
 
         def row(code, column):
-            return {"dataset_id": "org/ds", "version_from": "sha1", "version_to": "sha2",
+            return {"dataset_id": "org/ds", "version_from": "sha1", "version_to": "sha2", "table": "default/train",
                     "file_path": "train.csv", "code": code, "column": column}
 
         monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
@@ -1002,7 +1002,7 @@ class TestRunClassification:
         out = pd.read_csv(output_csv)
         assert output_csv == str(tmp_path / "change_classification.csv")
         assert list(out.columns) == [
-            "dataset_id", "version_from", "version_to", "file_path", "code", "description", "is_breaking",
+            "dataset_id", "version_from", "version_to", "table", "file_path", "code", "description", "is_breaking",
         ]
         assert out["code"].tolist() == ["C421", "C223"]
         assert out.iloc[0]["description"] == "Afegir fila"
