@@ -1310,6 +1310,32 @@ Estat: Fet
   `version_to` i `file_path`. És la clau de `dim_table` al magatzem.
 
 
+DECISIÓ T-27: run_10 = Fases 0 i 1 de run_9 + Fase 2 tornada a executar
+Data: novembre 2026
+Responsable: Joan
+Estat: Fet
+
+  MOTIU: run_9 (25/10/2026) no té `change_classification.csv` (T-24), i les
+  carpetes `data/run_<id>/` no es toquen un cop escrites. El magatzem llegeix
+  una sola carpeta amb totes les fases.
+
+  DECISIÓ: la Fase 2 es torna a executar sobre les versions de run_9
+  (`eligibility_scan.py --classify-versions data/run_9/versions.csv`,
+  9/11/2026), que escriu a una carpeta nova, run_10. S'hi copien sense
+  canvis els fitxers de les Fases 0 i 1 de run_9 (`eligibility_report.csv`,
+  `funnel_summary.json`, `versions.csv`, `failures.csv`); no s'hi copia
+  `tabular_commits.csv`, que ja no forma part de la sortida (T-25). run_9 es
+  conserva tal com va sortir. Els fitxers de les Fases 0 i 1 de run_10 són
+  els d'abans de T-25: no tenen la proporció tabular ni les metadades.
+
+  RESULTAT: 8 datasets i 52 parelles de versions, sense cap fallada, en 11
+  minuts (amb part de les descàrregues ja a la caché local). 1.868 files: 3
+  datasets amb codis (pulsia/fr-bench-pdf2md en té 1.861, en 615 taules) i 5
+  sense cap codi. Sense l'estat de cada parell de taules, no se sap si
+  aquests 5 no tenen canvis o no s'han pogut comparar (p.e. `too_large`):
+  és la pregunta del pas 2 del pla de la Fase 3.
+
+
 ================================================================================
 BLOC 4 — DECISIONS D'ABAST
 ================================================================================
