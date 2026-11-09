@@ -53,14 +53,14 @@ def _patch_base_output_dir(monkeypatch, tmp_path):
 def _patch_run_sampling(monkeypatch, calls, eligibility_csv, eligible_total):
     def fake_run_sampling(**kwargs):
         calls.append(("run_sampling", kwargs))
-        return eligibility_csv, "funnel_summary.json", {"eligible": eligible_total}
+        return eligibility_csv, "funnel_summary.json", {"eligible": eligible_total}, {"org/ds": ["c1"]}
 
     monkeypatch.setattr(es, "run_sampling", fake_run_sampling)
 
 
 def _patch_run_extraction(monkeypatch, calls):
-    def fake_run_extraction(input_csv, output_csv, hf_token, retry_config, compute_size=True):
-        calls.append(("run_extraction", input_csv, output_csv, compute_size))
+    def fake_run_extraction(input_csv, output_csv, hf_token, retry_config, compute_size=True, tabular_commits=None):
+        calls.append(("run_extraction", input_csv, output_csv, compute_size, tabular_commits))
         return {"n_eligible": 1, "n_rows_written": 1}
 
     monkeypatch.setattr(ve, "run_extraction", fake_run_extraction)
@@ -90,6 +90,7 @@ class TestRunFullPipeline:
 
         assert [c[0] for c in calls] == ["run_sampling", "run_extraction", "run_classification"]
         assert calls[1][1] == eligibility_csv  # Fase 1b llegeix el CSV de la Fase 0-1
+        assert calls[1][4] == {"org/ds": ["c1"]}  # i rep en memòria els commits tabulars de la Fase 0-1
         assert calls[2][1] == calls[1][2]  # Fase 2 llegeix el versions.csv que escriu la Fase 1b
         assert result["run_dir"] == str(tmp_path / "run_1")
         assert result["eligibility_csv"] == eligibility_csv
@@ -150,8 +151,7 @@ class TestRunFullPipeline:
         )
 
         files = result["generated_files"]
-        assert files["Fase 0-1 (mostreig+elegibilitat)"] == [
-            eligibility_csv, "funnel_summary.json", str(tmp_path / "run_1" / "tabular_commits.csv")]
+        assert files["Fase 0-1 (mostreig+elegibilitat)"] == [eligibility_csv, "funnel_summary.json"]
         assert files["Fase 1b (versions)"] == [str(tmp_path / "run_1" / "versions.csv")]
         assert files["Fase 2 (classificació de canvis)"] == [str(tmp_path / "run_1" / "change_classification.csv")]
 
@@ -171,6 +171,7 @@ class TestRunFullPipeline:
         )
 
         assert [c[0] for c in calls] == ["run_extraction", "run_classification"]
+        assert calls[0][4] is None  # sense Fase 0-1, la Fase 1b torna a buscar els commits
         assert result["eligibility_csv"] == str(input_csv)
         assert result["eligible"] == 1
         # Fase 0-1 saltada -- no hi ha res a llistar per a aquesta fase.

@@ -23,7 +23,7 @@ import pytest
 from huggingface_hub.utils import HfHubHTTPError
 
 import version_extractor as ve
-from eligibility_scan import MIN_SUBSTANTIVE_GAP_HOURS, TabularCommit
+from eligibility_scan import MIN_SUBSTANTIVE_GAP_HOURS
 
 
 def make_http_error(status_code: int, message: str = "boom") -> HfHubHTTPError:
@@ -38,6 +38,11 @@ class _FakeCommit:
         self.created_at = created_at
         self.commit_id = commit_id
         self.authors = authors or []
+
+
+def _tabular_commit(commit_id, created_at, authors=()):
+    """Un commit tabular com els que retorna la Fase 0 (`list_repo_commits`)."""
+    return _FakeCommit("Add rows", created_at=created_at, commit_id=commit_id, authors=list(authors))
 
 
 class _FakeTag:
@@ -130,8 +135,8 @@ class TestBuildSessionsFromCommits:
     def test_commits_within_gap_form_one_session(self):
         base = datetime(2026, 1, 1, 12, 0, 0)
         commits = [
-            TabularCommit("c1", None, base, ("alice",)),
-            TabularCommit("c2", "c1", base + timedelta(hours=1), ("bob",)),
+            _tabular_commit("c1", base, ("alice",)),
+            _tabular_commit("c2", base + timedelta(hours=1), ("bob",)),
         ]
         sessions = ve.build_sessions_from_commits(commits)
         assert len(sessions) == 1
@@ -142,8 +147,8 @@ class TestBuildSessionsFromCommits:
     def test_commits_beyond_gap_form_separate_sessions(self):
         base = datetime(2026, 1, 1, 0, 0, 0)
         commits = [
-            TabularCommit("c1", None, base),
-            TabularCommit("c2", "c1", base + timedelta(hours=MIN_SUBSTANTIVE_GAP_HOURS + 1)),
+            _tabular_commit("c1", base),
+            _tabular_commit("c2", base + timedelta(hours=MIN_SUBSTANTIVE_GAP_HOURS + 1)),
         ]
         sessions = ve.build_sessions_from_commits(commits)
         assert [s["commit_sha"] for s in sessions] == ["c1", "c2"]
@@ -152,12 +157,12 @@ class TestBuildSessionsFromCommits:
         assert ve.build_sessions_from_commits([]) == []
 
     def test_commits_without_created_at_are_ignored(self):
-        assert ve.build_sessions_from_commits([TabularCommit("c1", None, None)]) == []
+        assert ve.build_sessions_from_commits([_tabular_commit("c1", None)]) == []
 
     def test_sessions_are_returned_in_chronological_order(self):
         base = datetime(2026, 1, 1)
         gap = timedelta(hours=MIN_SUBSTANTIVE_GAP_HOURS + 1)
-        commits = [TabularCommit("late", "early", base + 2 * gap), TabularCommit("early", None, base)]
+        commits = [_tabular_commit("late", base + 2 * gap), _tabular_commit("early", base)]
         sessions = ve.build_sessions_from_commits(commits)
         assert [s["commit_sha"] for s in sessions] == ["early", "late"]
 
@@ -195,7 +200,7 @@ class TestExtractVersionsForDataset:
     def test_criteria_b_uses_the_sessions_of_the_saved_commits(self, monkeypatch):
         # Els commits venen de la Fase 0: no s'han de tornar a llistar ni clonar.
         monkeypatch.setattr(ve, "list_repo_commits", lambda **kw: (_ for _ in ()).throw(AssertionError("no")))
-        commits = [TabularCommit("c1", None, datetime(2026, 1, 1), ("alice",))]
+        commits = [_tabular_commit("c1", datetime(2026, 1, 1), ("alice",))]
 
         rows = ve.extract_versions_for_dataset(
             "org/ds", "Criteri B: commits amb dades tabulars en >=2 sessions", "tok", ve.RETRY_CONFIG,
@@ -328,4 +333,24 @@ class TestRunExtraction:
         failures_df = pd.read_csv(tmp_path / "failures.csv")
         assert failures_df.iloc[0]["source"] == "version_extraction"
         assert failures_df.iloc[0]["dataset_id"] == "org/broken"
+
+    def test_commits_from_phase0_reach_their_dataset(self, monkeypatch, tmp_path):
+        # Amb la Fase 0 a la mateixa execució, els commits arriben en memòria; sense, `None` (es tornen a buscar).
+        input_csv = tmp_path / "eligibility_report.csv"
+        reason = "Criteri B: commits amb dades tabulars en >=2 sessions"
+        pd.DataFrame([{"dataset_id": ds, "eligible": True, "eligibility_reason": reason}
+                      for ds in ("org/a", "org/b")]).to_csv(input_csv, index=False)
+        received = {}
+
+        def fake_extract(dataset_id, eligibility_reason, token, cfg, compute_size=True, tabular_commits=None):
+            received[dataset_id] = tabular_commits
+            return []
+
+        monkeypatch.setattr(ve, "extract_versions_for_dataset", fake_extract)
+        commits = [_tabular_commit("c1", datetime(2026, 1, 1))]
+
+        ve.run_extraction(str(input_csv), str(tmp_path / "versions.csv"), "tok", ve.RETRY_CONFIG,
+                          compute_size=False, tabular_commits={"org/a": commits})
+
+        assert received == {"org/a": commits, "org/b": None}
 

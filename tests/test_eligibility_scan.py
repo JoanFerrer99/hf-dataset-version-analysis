@@ -11,7 +11,7 @@ Cobreixen:
 import os
 import random
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -342,10 +342,10 @@ class TestIsTabularCommit:
 
 
 class TestFindTabularCommits:
-    def test_returns_positions_of_tabular_commits(self, monkeypatch):
+    def test_returns_the_tabular_commits_in_order(self, monkeypatch):
         _files_by_title(monkeypatch)
         commits = [_FakeCommit("Add rows"), _FakeCommit("Update README"), _FakeCommit("Fix labels")]
-        assert es.find_tabular_commits(commits, "/fake/clone") == [0, 2]
+        assert es.find_tabular_commits(commits, "/fake/clone") == [commits[0], commits[2]]
 
 
 class TestEligibilityCriterion:
@@ -792,7 +792,7 @@ class TestCompareChangeUnits:
 
 
 # ---------------------------------------------------------------------------
-# Commits tabulars: la Fase 0 els desa i les Fases 1 i 2 els reaprofiten
+# Commits tabulars: la Fase 0 els retorna en memòria i la Fase 1 els reaprofita
 # ---------------------------------------------------------------------------
 
 def _record_units(monkeypatch):
@@ -808,19 +808,8 @@ def _record_units(monkeypatch):
     return calls
 
 
-def _write_phase0(tmp_path, reports, commits_by_dataset):
-    """Escriu un `eligibility_report.csv` i el `tabular_commits.csv` que la Fase 0 hi desa al costat."""
-    import pandas as pd
-
-    report = tmp_path / "eligibility_report.csv"
-    pd.DataFrame(reports).to_csv(report, index=False)
-    rows = [{"dataset_id": ds, "tabular_commits": commits} for ds, commits in commits_by_dataset.items()]
-    es.save_tabular_commits(rows, str(tmp_path / es.TABULAR_COMMITS_FILE))
-    return str(report)
-
-
 class TestTabularCommitsFromPhase0:
-    def test_eligible_dataset_keeps_its_tabular_commits_and_their_parents(self, monkeypatch, tmp_path):
+    def test_eligible_dataset_keeps_its_tabular_commits(self, monkeypatch, tmp_path):
         commits = [_FakeCommit(f"Add batch {i}", commit_id=f"c{i}") for i in (4, 3, 2, 1)]
         monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1", "v2"]))
         monkeypatch.setattr(es, "list_repo_commits", lambda **kw: commits)
@@ -831,9 +820,7 @@ class TestTabularCommitsFromPhase0:
 
         assert result["eligible"] is True
         assert result["num_tabular_commits"] == 4
-        # El pare és el commit següent de la llista; el més vell no en té de conegut.
-        assert [(c.commit_id, c.parent_id) for c in result["tabular_commits"]] == [
-            ("c4", "c3"), ("c3", "c2"), ("c2", "c1"), ("c1", None)]
+        assert result["tabular_commits"] == commits
 
     def test_ineligible_dataset_keeps_no_commits(self, monkeypatch, tmp_path):
         # Commits amb dades, però tots en una sola sessió i sense tags: no és elegible.
@@ -849,19 +836,7 @@ class TestTabularCommitsFromPhase0:
         assert result["eligible"] is False
         assert result["tabular_commits"] == []
 
-    def test_saved_commits_are_read_back_unchanged(self, tmp_path):
-        commits = [
-            es.TabularCommit("c2", "c1", datetime(2026, 1, 2, tzinfo=timezone.utc), ("ana", "bob")),
-            es.TabularCommit("c1", None, datetime(2026, 1, 1, tzinfo=timezone.utc), ()),
-        ]
-        report = _write_phase0(tmp_path, [{"dataset_id": "org/ds", "eligible": True}], {"org/ds": commits})
-
-        assert es.load_tabular_commits(report) == {"org/ds": commits}
-
-    def test_report_without_the_file_gives_nothing(self, tmp_path):
-        assert es.load_tabular_commits(str(tmp_path / "eligibility_report.csv")) == {}
-
-    def test_report_has_no_internal_fields_and_commits_go_to_their_own_file(self, monkeypatch, tmp_path):
+    def test_report_has_no_internal_fields_and_commits_are_not_written(self, monkeypatch, tmp_path):
         import pandas as pd
 
         monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
@@ -869,17 +844,22 @@ class TestTabularCommitsFromPhase0:
             "dataset_id": "org/ds", "num_tags": 2, "num_branches": 1, "num_tabular_commits": 1,
             "eligible": True, "eligibility_reason": es.ELIGIBILITY_REASONS["A"], "status": "classified",
             "error_category": "", "error": "", "num_data_files": 3, "tabular_file_share": 0.5,
-            "tabular_commits": [es.TabularCommit("c2", "c1", datetime(2026, 1, 2), ())],
+            "tabular_commits": [_FakeCommit("Add rows", commit_id="c2")],
         }
 
         csv_path, _, summary = es.write_results([row], total_scanned=1)
 
         report = pd.read_csv(csv_path)
         assert not set(es.INTERNAL_FIELDS) & set(report.columns)
-        saved = pd.read_csv(tmp_path / es.TABULAR_COMMITS_FILE)
-        assert saved[["dataset_id", "commit_id", "parent_id"]].values.tolist() == [["org/ds", "c2", "c1"]]
+        assert sorted(os.listdir(tmp_path)) == ["eligibility_report.csv", "funnel_summary.json"]
         assert {"eligible", "ineligible", "access_restricted", "errors"} <= set(summary)
         assert not any(k.startswith("with_") for k in summary)
+
+    def test_phase1_run_alone_looks_the_commits_up_again(self, monkeypatch):
+        commits = [_FakeCommit("Add rows", commit_id="c1")]
+        monkeypatch.setattr(es, "classify_dataset", lambda ds: {"dataset_id": ds, "tabular_commits": commits})
+
+        assert es.tabular_commits_of("org/ds") == commits
 
 
 def _write_versions(tmp_path, versions_by_dataset):
@@ -1027,35 +1007,39 @@ class TestRunClassification:
 
 
 # ---------------------------------------------------------------------------
-# run_sampling -- retorna (csv_path, json_path, summary) perquè un cridant
+# run_sampling -- retorna (csv_path, json_path, summary, tabular_commits) perquè un cridant
 # extern (src/run_pipeline.py) pugui encadenar altres fases amb el
-# mateix CSV sense re-derivar-ne la ruta. NOMÉS fa mostreig/elegibilitat --
+# mateix CSV sense re-derivar-ne la ruta, i passar els commits tabulars a la
+# Fase 1 sense escriure'ls. NOMÉS fa mostreig/elegibilitat --
 # encadenar la classificació de canvis és responsabilitat de l'orquestrador,
 # no d'aquesta funció (vegeu tests/test_run_pipeline.py).
 # ---------------------------------------------------------------------------
 
 class TestRunSamplingReturnValue:
-    def test_returns_csv_path_json_path_and_summary(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(es, "iter_all_dataset_ids", lambda: iter(["org/ds"]))
-        monkeypatch.setattr(es, "reservoir_sample_dataset_ids", lambda ids, n, m: (["org/ds"], 1))
+    def test_returns_csv_path_json_path_summary_and_tabular_commits(self, monkeypatch, tmp_path):
+        commits = [_FakeCommit("Add rows", commit_id="c1")]
+        monkeypatch.setattr(es, "iter_all_dataset_ids", lambda: iter(["org/ds", "org/no"]))
+        monkeypatch.setattr(es, "reservoir_sample_dataset_ids", lambda ids, n, m: (["org/ds", "org/no"], 2))
         monkeypatch.setattr(
             es, "classify_dataset_safe",
             lambda item: {
-                "dataset_id": "org/ds", "num_tags": 0, "num_branches": 0,
-                "num_tabular_commits": 0, "eligible": True,
+                "dataset_id": item[1], "num_tags": 0, "num_branches": 0,
+                "num_tabular_commits": 0, "eligible": item[1] == "org/ds",
                 "eligibility_reason": "x", "status": "classified",
-                "error_category": "", "error": "", "change_labels": [],
+                "error_category": "", "error": "", "tabular_commits": commits if item[1] == "org/ds" else [],
             },
         )
         monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
 
-        csv_path, json_path, summary = es.run_sampling(sample_size=1, max_scanned=None, num_threads=1)
+        csv_path, json_path, summary, tabular_commits = es.run_sampling(sample_size=2, max_scanned=None,
+                                                                        num_threads=1)
 
         assert csv_path == os.path.join(str(tmp_path), "eligibility_report.csv")
         assert json_path == os.path.join(str(tmp_path), "funnel_summary.json")
         assert summary["eligible"] == 1
         assert "eligible_total" not in summary
         assert os.path.exists(csv_path)
+        assert tabular_commits == {"org/ds": commits}  # només dels elegibles
 
 
 # ---------------------------------------------------------------------------
