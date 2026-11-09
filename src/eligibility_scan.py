@@ -654,7 +654,8 @@ def compare_change_units(
     """
     retry = functools.partial(errors.with_retry, **retry_config)
     labels: list[dict] = []
-    for old_rev, new_rev in units_to_compare:
+    for i, (old_rev, new_rev) in enumerate(units_to_compare, start=1):
+        log.info(f"    parella {i}/{len(units_to_compare)}: {old_rev[:7]} -> {new_rev[:7]}")
         compared = pairs.compare_revisions(dataset_id, old_rev, new_rev, hf_token, call=retry)
         labels += pairs.revision_rows(dataset_id, old_rev, new_rev, compared)
     return labels
@@ -906,7 +907,9 @@ def run_classification(input_csv: str) -> str:
       2. `change_units` en forma les parelles de revisions, segons el criteri
          que el va fer elegible (columna `eligibility_reason`);
       3. `compare_change_units` les compara amb el motor.
-    Una fallada d'un dataset queda a `failures.csv` i no atura la resta.
+    Una fallada d'un dataset queda a `failures.csv` i no atura la resta. Les
+    files de cada dataset s'afegeixen al fitxer en acabar-lo: si l'execució
+    s'atura a mitges, es conserva el que ja s'havia classificat.
 
     :param input_csv: un `eligibility_report.csv`.
     :return: ruta de `change_classification.csv`.
@@ -916,15 +919,16 @@ def run_classification(input_csv: str) -> str:
     log.info(f"Classificant canvis de {len(eligible)} datasets elegibles de {input_csv}...")
     saved = load_tabular_commits(input_csv)
 
-    all_changes: list[dict] = []
+    output_csv = os.path.join(OUTPUT_DIR, "change_classification.csv")
+    classification_frame([]).to_csv(output_csv, index=False, encoding="utf-8")
     for _, row in eligible.iterrows():
         dataset_id = row["dataset_id"]
         criterion = "A" if str(row["eligibility_reason"]).startswith("Criteri A") else "B"
         log.info(f"  - {dataset_id} (Criteri {criterion})")
         try:
             tabular_commits = saved[dataset_id] if dataset_id in saved else find_tabular_commits_again(dataset_id)
-            all_changes += compare_change_units(dataset_id, change_units(tabular_commits, criterion),
-                                                HF_TOKEN, RETRY_CONFIG)
+            changes = compare_change_units(dataset_id, change_units(tabular_commits, criterion),
+                                           HF_TOKEN, RETRY_CONFIG)
         except Exception as exc:
             category = errors.classify_error(exc)
             errors.append_failure_row(
@@ -933,9 +937,9 @@ def run_classification(input_csv: str) -> str:
                 source="classification",
             )
             log.warning(f"    Fallada ({category.value}): {dataset_id}")
+            continue
+        classification_frame(changes).to_csv(output_csv, mode="a", header=False, index=False, encoding="utf-8")
 
-    output_csv = os.path.join(OUTPUT_DIR, "change_classification.csv")
-    classification_frame(all_changes).to_csv(output_csv, index=False, encoding="utf-8")
     log.info(f"Classificació escrita a {output_csv}")
     return output_csv
 

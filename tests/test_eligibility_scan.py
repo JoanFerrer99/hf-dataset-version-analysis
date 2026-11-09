@@ -957,6 +957,30 @@ class TestRunClassification:
         failures = pd.read_csv(tmp_path / "failures.csv")
         assert failures[["dataset_id", "source"]].values.tolist() == [["org/bad", "classification"]]
 
+    def test_rows_of_finished_datasets_survive_a_run_stopped_halfway(self, monkeypatch, tmp_path):
+        # Execució run_9: el procés es va aturar al quart dataset i no en va quedar cap fila.
+        import pandas as pd
+
+        commits = {ds: [es.TabularCommit("c2", "c1", datetime(2026, 1, 2), ())] for ds in ("org/done", "org/killed")}
+        report = _write_phase0(
+            tmp_path, [{"dataset_id": ds, "eligible": True, "eligibility_reason": es.ELIGIBILITY_REASONS["A"]}
+                       for ds in commits], commits)
+        monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
+
+        def compare(dataset_id, units_to_compare, hf_token, retry_config):
+            if dataset_id == "org/killed":
+                raise KeyboardInterrupt
+            return [{"dataset_id": dataset_id, "version_from": "c1", "version_to": "c2", "file_path": "t.csv",
+                     "code": "C421"}]
+
+        monkeypatch.setattr(es, "compare_change_units", compare)
+
+        with pytest.raises(KeyboardInterrupt):
+            es.run_classification(report)
+
+        out = pd.read_csv(tmp_path / "change_classification.csv")
+        assert out["dataset_id"].tolist() == ["org/done"]
+
     def test_writes_one_row_per_table_versions_and_code(self, monkeypatch, tmp_path):
         import pandas as pd
 
