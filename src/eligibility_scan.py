@@ -28,10 +28,9 @@ treballa sobre una mostra.
    l'embut (`compute_funnel_stats`: proporció d'elegibles i quants intents
    calen per elegible, per fixar la mida de la mostra) i la llista de
    commits tabulars de cada elegible (`tabular_commits.csv`).
-4. **Classificació** (`run_classification`, Fase 2): per als elegibles,
-   compara versions consecutives amb el motor (`diffengine`) i escriu els
-   canvis. Llegeix els commits tabulars que ha desat la Fase 0: no torna a
-   llistar commits ni a clonar.
+4. **Classificació** (`run_classification`, Fase 2): compara cada versió
+   de `versions.csv` (Fase 1) amb la següent del mateix dataset, amb el
+   motor (`diffengine`), i escriu els canvis.
 
 Per llegir el codi: `classify_dataset` és el centre de tot; les funcions
 que crida apareixen a sota en el mateix ordre.
@@ -40,11 +39,11 @@ Detall: `docs/architecture.md`, seccions 7 i 9.
 Ús:
   python eligibility_scan.py --sample-size 2000 --threads 4 --seed 42
   python eligibility_scan.py --sample-size 200 --max-scanned 5000  # prova ràpida, esbiaixada
-  python eligibility_scan.py --classify-eligible ../data/run_8/eligibility_report.csv
+  python eligibility_scan.py --classify-versions ../data/run_8/versions.csv
 
 Output (cada execució en una carpeta nova, `data/run_<id>/`):
   eligibility_report.csv, funnel_summary.json, tabular_commits.csv   (mostreig)
-  change_classification.csv                     (--classify-eligible)
+  change_classification.csv                     (--classify-versions)
   failures.csv                                  (si hi ha fallades)
 """
 
@@ -602,41 +601,20 @@ def eligibility_criterion(n_tags: int, n_branches: int, tabular_commits: list, t
     return None
 
 
-def group_commits_into_sessions(commits: list) -> list[list]:
-    """
-    Agrupa commits en sessions amb `cluster_commit_times`.
-
-    :param commits: commits amb `created_at`; els que no en tenen s'ignoren.
-    :return: sessions de la més recent a la més antiga (sense ordre dins de cada sessió).
-    """
-    by_time: dict[datetime, list] = {}
-    for c in commits:
-        if getattr(c, "created_at", None) is not None:
-            by_time.setdefault(c.created_at, []).append(c)
-    clusters = cluster_commit_times(list(by_time))
-    return [[c for t in cluster for c in by_time[t]] for cluster in reversed(clusters)]
-
-
-def change_units(tabular_commits: list["TabularCommit"], criterion: str) -> list[tuple[str, str]]:
+def version_pairs(versions: pd.DataFrame) -> list[tuple[str, str]]:
     """
     Les parelles de revisions que es comparen a la Fase 2 (unitats de canvi,
-    decisió T-13):
+    decisió T-23): cada versió de `versions.csv` contra la següent, per
+    `version_order`. Criteri A: cada tag contra el tag següent; Criteri B, el
+    final de cada sessió contra el final de la sessió següent. Les versions
+    sense commit no es comparen, ni dues versions seguides amb el mateix
+    commit (dos tags al mateix commit).
 
-    - Criteri A: cada commit tabular contra el commit anterior de l'historial.
-      El commit més vell dels revisats no té anterior conegut i no es compara.
-    - Criteri B: el commit més recent de cada sessió contra el de la sessió
-      anterior. Els commits d'una mateixa sessió no es comparen entre ells.
-
-    :param tabular_commits: commits tabulars d'un dataset elegible, del més nou
-        al més vell, tal com els desa la Fase 0.
-    :param criterion: `"A"` o `"B"`.
-    :return: parelles `(SHA antic, SHA nou)`, de la més recent a la més antiga.
+    :param versions: les files d'un dataset a `versions.csv`.
+    :return: parelles `(SHA antic, SHA nou)`, de la més antiga a la més recent.
     """
-    if criterion == "A":
-        return [(c.parent_id, c.commit_id) for c in tabular_commits if c.parent_id]
-    sessions = group_commits_into_sessions(tabular_commits)
-    latest = [max(session, key=lambda c: c.created_at) for session in sessions]
-    return [(older.commit_id, newer.commit_id) for newer, older in zip(latest, latest[1:])]
+    shas = versions[versions["commit_sha"].fillna("") != ""].sort_values("version_order")["commit_sha"].tolist()
+    return [(old, new) for old, new in zip(shas, shas[1:]) if old != new]
 
 
 def compare_change_units(
@@ -647,7 +625,7 @@ def compare_change_units(
     de revisions, taula a taula (subset, split).
 
     :param dataset_id: dataset (`owner/name`).
-    :param units_to_compare: parelles `(SHA antic, SHA nou)` de `change_units`.
+    :param units_to_compare: parelles `(SHA antic, SHA nou)` de `version_pairs`.
     :param hf_token: token de Hugging Face.
     :param retry_config: configuració de reintent (també per a les descàrregues).
     :return: una fila per canvi (`dataset_id`, `version_from`, `version_to`, `table`, `file_path`, `code`).
@@ -894,41 +872,36 @@ def run_sampling(
     return csv_path, json_path, summary
 
 
-def run_classification(input_csv: str) -> str:
+def run_classification(versions_csv: str) -> str:
     """
-    Fase 2: classifica els canvis de cada dataset elegible del CSV i escriu
-    `change_classification.csv` a `OUTPUT_DIR`: una fila per taula, parell de
-    versions i codi (`dataset_id, version_from, version_to, table, file_path, code,
-    description, is_breaking`).
+    Fase 2: compara cada versió de `versions.csv` (Fase 1) amb la següent del
+    mateix dataset i escriu `change_classification.csv` a `OUTPUT_DIR`: una
+    fila per taula, parell de versions i codi (`dataset_id, version_from,
+    version_to, table, file_path, code, description, is_breaking`).
 
-    Per a cada elegible:
-      1. agafa els seus commits tabulars de `tabular_commits.csv`, el fitxer
-         que la Fase 0 desa al costat del report (`load_tabular_commits`);
-      2. `change_units` en forma les parelles de revisions, segons el criteri
-         que el va fer elegible (columna `eligibility_reason`);
-      3. `compare_change_units` les compara amb el motor.
-    Una fallada d'un dataset queda a `failures.csv` i no atura la resta. Les
-    files de cada dataset s'afegeixen al fitxer en acabar-lo: si l'execució
-    s'atura a mitges, es conserva el que ja s'havia classificat.
+    Per a cada dataset, `version_pairs` en forma les parelles de revisions i
+    `compare_change_units` les compara amb el motor. Una fallada d'un dataset
+    queda a `failures.csv` i no atura la resta. Les files de cada dataset
+    s'afegeixen al fitxer en acabar-lo: si l'execució s'atura a mitges, es
+    conserva el que ja s'havia classificat.
 
-    :param input_csv: un `eligibility_report.csv`.
+    :param versions_csv: un `versions.csv`.
     :return: ruta de `change_classification.csv`.
     """
-    df = pd.read_csv(input_csv)
-    eligible = df[df["eligible"] == True]  # noqa: E712
-    log.info(f"Classificant canvis de {len(eligible)} datasets elegibles de {input_csv}...")
-    saved = load_tabular_commits(input_csv)
+    try:
+        versions = pd.read_csv(versions_csv, dtype={"commit_sha": str})
+    except pd.errors.EmptyDataError:  # la Fase 1 no va extreure cap versió
+        versions = pd.DataFrame(columns=["dataset_id", "version_order", "commit_sha"])
+    by_dataset = versions.groupby("dataset_id", sort=False)
+    log.info(f"Classificant canvis de {by_dataset.ngroups} datasets de {versions_csv}...")
 
     output_csv = os.path.join(OUTPUT_DIR, "change_classification.csv")
     classification_frame([]).to_csv(output_csv, index=False, encoding="utf-8")
-    for _, row in eligible.iterrows():
-        dataset_id = row["dataset_id"]
-        criterion = "A" if str(row["eligibility_reason"]).startswith("Criteri A") else "B"
-        log.info(f"  - {dataset_id} (Criteri {criterion})")
+    for dataset_id, dataset_versions in by_dataset:
+        units_to_compare = version_pairs(dataset_versions)
+        log.info(f"  - {dataset_id}: {len(units_to_compare)} parelles de versions")
         try:
-            tabular_commits = saved[dataset_id] if dataset_id in saved else find_tabular_commits_again(dataset_id)
-            changes = compare_change_units(dataset_id, change_units(tabular_commits, criterion),
-                                           HF_TOKEN, RETRY_CONFIG)
+            changes = compare_change_units(dataset_id, units_to_compare, HF_TOKEN, RETRY_CONFIG)
         except Exception as exc:
             category = errors.classify_error(exc)
             errors.append_failure_row(
@@ -958,12 +931,12 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "--classify-eligible", default=None, metavar="CSV",
+        "--classify-versions", default=None, metavar="CSV",
         help=(
-            "Classifica els canvis (C210-C530) dels datasets elegibles d'aquest CSV "
-            "(eligibility_report.csv) EN LLOC de fer un mostreig nou -- "
+            "Classifica els canvis (C210-C530) entre versions consecutives "
+            "d'aquest versions.csv (Fase 1) EN LLOC de fer un mostreig nou -- "
             "ignora --sample-size/--max-scanned/--threads/--seed/--tags-only. "
-            "Útil per reclassificar un CSV d'un run previ sense tornar a "
+            "Útil per reclassificar les versions d'un run previ sense tornar a "
             "mostrejar; per encadenar mostreig+extracció+classificació en una "
             "sola execució, useu src/run_pipeline.py en lloc d'aquest flag."
         ),
@@ -1047,8 +1020,8 @@ if __name__ == "__main__":
     )
 
     new_run_dir()
-    if args.classify_eligible:
-        run_classification(args.classify_eligible)
+    if args.classify_versions:
+        run_classification(args.classify_versions)
     else:
         run_sampling(
             sample_size=args.sample_size,

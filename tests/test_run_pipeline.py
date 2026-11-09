@@ -2,8 +2,8 @@
 Tests unitaris per a `src/run_pipeline.py`.
 
 Cobreixen `eligibility_scan.new_run_dir` (numeració de carpetes `run_<id>`)
-i `run_full_pipeline`: l'ordre de crides, que el MATEIX `csv_path` flueix de
-la Fase 0-1 a la Fase 1b/2, que TOTS els outputs d'una execució es
+i `run_full_pipeline`: l'ordre de crides, que el `csv_path` de la Fase 0-1
+arriba a la Fase 1b i el `versions.csv` de la Fase 1b a la Fase 2, que TOTS els outputs d'una execució es
 redirigeixen a la mateixa carpeta `run_<id>/`, i els flags `--input-csv`/`--skip-*`. Cada fase
 individual (`eligibility_scan.run_sampling`, `version_extractor.
 run_extraction`, `eligibility_scan.run_classification`) ja té els seus
@@ -67,15 +67,15 @@ def _patch_run_extraction(monkeypatch, calls):
 
 
 def _patch_run_classification(monkeypatch, calls, output_csv="change_classification.csv"):
-    def fake_run_classification(input_csv):
-        calls.append(("run_classification", input_csv))
+    def fake_run_classification(versions_csv):
+        calls.append(("run_classification", versions_csv))
         return output_csv
 
     monkeypatch.setattr(es, "run_classification", fake_run_classification)
 
 
 class TestRunFullPipeline:
-    def test_full_chain_uses_same_csv_across_all_phases(self, monkeypatch, tmp_path):
+    def test_each_phase_reads_the_output_of_the_previous_one(self, monkeypatch, tmp_path):
         _patch_base_output_dir(monkeypatch, tmp_path)
         calls = []
         eligibility_csv = str(tmp_path / "run_1" / "eligibility_report.csv")
@@ -90,7 +90,7 @@ class TestRunFullPipeline:
 
         assert [c[0] for c in calls] == ["run_sampling", "run_extraction", "run_classification"]
         assert calls[1][1] == eligibility_csv  # Fase 1b llegeix el CSV de la Fase 0-1
-        assert calls[2][1] == eligibility_csv  # Fase 2 llegeix el MATEIX CSV, no un altre
+        assert calls[2][1] == calls[1][2]  # Fase 2 llegeix el versions.csv que escriu la Fase 1b
         assert result["run_dir"] == str(tmp_path / "run_1")
         assert result["eligibility_csv"] == eligibility_csv
         assert result["eligible"] == 1
@@ -192,7 +192,7 @@ class TestRunFullPipeline:
         assert result["versions_csv"] is None
         assert result["change_classification_csv"] is None
 
-    def test_skip_version_extraction_flag(self, monkeypatch, tmp_path):
+    def test_skip_version_extraction_also_skips_classification(self, monkeypatch, tmp_path):
         _patch_base_output_dir(monkeypatch, tmp_path)
         calls = []
         _patch_run_sampling(monkeypatch, calls, str(tmp_path / "run_1" / "eligibility_report.csv"), eligible_total=1)
@@ -204,8 +204,10 @@ class TestRunFullPipeline:
             input_csv=None, skip_version_extraction=True, skip_classification=False, skip_size=False,
         )
 
-        assert [c[0] for c in calls] == ["run_sampling", "run_classification"]
+        # La Fase 2 compara les versions de la Fase 1b: sense elles, no hi ha res a comparar.
+        assert [c[0] for c in calls] == ["run_sampling"]
         assert result["versions_csv"] is None
+        assert result["change_classification_csv"] is None
 
     def test_skip_classification_flag(self, monkeypatch, tmp_path):
         _patch_base_output_dir(monkeypatch, tmp_path)
