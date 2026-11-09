@@ -12,9 +12,10 @@ treballa sobre una mostra.
    més car; un dataset que no passa un filtre ja no arriba al següent:
    1. Té >=2 tags o >=2 branques? Una crida a l'API (`list_repo_refs`).
    2. La versió actual té algun fitxer de dades tabular? Una crida a l'API
-      (`list_current_files`) que dona la llista de fitxers, sense clonar
-      res. D'aquí surt també quina part dels fitxers de dades són tabulars
-      (`tabular_file_share`), que queda al report.
+      (`read_current_version`) que dona la llista de fitxers, sense clonar
+      res. D'aquí surten també quina part dels fitxers de dades són tabulars
+      (`tabular_file_share`) i les metadades del dataset (`dataset_metadata`:
+      data de creació, llicència i descàrregues), que queden al report.
    3. Els commits toquen dades tabulars prou vegades?
       - Criteri A: >=2 tags i >=2 commits que toquen dades tabulars; o
       - Criteri B: >=2 branques i commits que toquen dades tabulars
@@ -112,7 +113,7 @@ SUBSTANTIVE_DATA_EXTENSIONS = (
 
 MIN_SUBSTANTIVE_GAP_HOURS = 6.0
 MAX_COMMITS = 50  # commits revisats per dataset, del més nou al més vell
-INTERNAL_FIELDS = ("tabular_commits", "num_data_files", "tabular_file_share")
+INTERNAL_FIELDS = ("tabular_commits",)
 
 # Motiu que queda al report: el criteri que es compleix, o el filtre on s'atura el dataset.
 ELIGIBILITY_REASONS = {
@@ -222,8 +223,9 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
     Passos, del més barat al més car (si un falla, el dataset no és elegible i
     no es fa cap pas més):
       1. `list_repo_refs`: ha de tenir >=2 tags o >=2 branques.
-      2. `list_current_files`: la versió actual ha de tenir algun fitxer de
-         dades tabular (`tabular_file_share` > 0).
+      2. `read_current_version`: la versió actual ha de tenir algun fitxer de
+         dades tabular (`tabular_file_share` > 0). Les metadades del dataset
+         que dona la mateixa crida queden al report.
       3. `list_repo_commits` i un clon sense contingut (`bare_clone`):
          `find_tabular_commits` troba els commits que toquen dades tabulars, i
          `eligibility_criterion` decideix si es compleix el Criteri A o el B.
@@ -248,6 +250,9 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
         "tabular_commits": [],
         "num_data_files": None,
         "tabular_file_share": None,
+        "created_at": None,
+        "license": None,
+        "downloads": None,
     }
 
     try:
@@ -263,9 +268,11 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
             result["eligibility_reason"] = ELIGIBILITY_REASONS["no_version_marks"]
             return result
 
-        # Pas 2: quins fitxers té la versió actual i quina part de les dades és tabular (es guarda,
-        # però no s'escriu). Sense cap fitxer de dades tabular, no cal llistar els commits ni clonar.
-        result["num_data_files"], result["tabular_file_share"] = tabular_file_share(list_current_files(dataset_id))
+        # Pas 2: quins fitxers té la versió actual i quina part de les dades és tabular, més les
+        # metadades del dataset. Sense cap fitxer de dades tabular, no cal llistar els commits ni clonar.
+        files, metadata = read_current_version(dataset_id)
+        result.update(metadata)
+        result["num_data_files"], result["tabular_file_share"] = tabular_file_share(files)
         if not result["tabular_file_share"]:
             result["eligibility_reason"] = ELIGIBILITY_REASONS["no_tabular_files"]
             return result
@@ -343,17 +350,36 @@ def is_tabular_data_path(path: str) -> bool:
     return is_substantive_path(path) and units.is_tabular_path(path)
 
 
-def list_current_files(dataset_id: str) -> list[str]:
+def read_current_version(dataset_id: str) -> tuple[list[str], dict]:
     """
-    Fitxers de la versió actual del repositori, amb una sola crida a l'API
-    (`dataset_info`), sense clonar res. Dona la mateixa llista que el clon
-    (comprovat amb els 29 candidats de `run_8`) i triga uns 0,2 s.
+    Fitxers i metadades de la versió actual del repositori, amb una sola
+    crida a l'API (`dataset_info`), sense clonar res. Dona la mateixa llista
+    de fitxers que el clon (comprovat amb els 29 candidats de `run_8`) i
+    triga uns 0,2 s.
 
     :param dataset_id: dataset (`owner/name`).
-    :return: rutes dels fitxers dins del repositori.
+    :return: `(rutes dels fitxers dins del repositori, dataset_metadata)`.
     """
     info = errors.with_retry(dataset_info, repo_id=dataset_id, token=HF_TOKEN, **RETRY_CONFIG)
-    return [sibling.rfilename for sibling in (info.siblings or [])]
+    return [sibling.rfilename for sibling in (info.siblings or [])], dataset_metadata(info)
+
+
+def dataset_metadata(info) -> dict:
+    """
+    Les metadades d'un dataset que queden al report.
+
+    :param info: resposta de `dataset_info`.
+    :return: `created_at` (ISO 8601), `license` (de la fitxa del dataset; si
+        n'hi ha diverses, unides per comes) i `downloads` (dels últims 30 dies,
+        el dia de l'execució). `None` si l'API no en dona.
+    """
+    created_at = getattr(info, "created_at", None)
+    license_ = getattr(getattr(info, "card_data", None), "license", None)
+    return {
+        "created_at": created_at.isoformat() if created_at else None,
+        "license": ",".join(license_) if isinstance(license_, list) else license_,
+        "downloads": getattr(info, "downloads", None),
+    }
 
 
 def tabular_file_share(paths: list[str]) -> tuple[int, float | None]:

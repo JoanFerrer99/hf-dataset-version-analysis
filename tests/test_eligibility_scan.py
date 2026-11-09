@@ -11,7 +11,7 @@ Cobreixen:
 import os
 import random
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -23,17 +23,26 @@ class _FakeSibling:
         self.rfilename = rfilename
 
 
+class _FakeCardData:
+    def __init__(self, license):
+        self.license = license
+
+
 class _FakeRepoInfo:
-    """Resposta simulada de `dataset_info`: només la llista de fitxers (`siblings`)."""
+    """Resposta simulada de `dataset_info`: la llista de fitxers (`siblings`) i les metadades."""
 
-    def __init__(self, files):
+    def __init__(self, files, created_at=None, license=None, downloads=None):
         self.siblings = [_FakeSibling(f) for f in files]
+        self.created_at = created_at
+        self.card_data = _FakeCardData(license) if license else None
+        self.downloads = downloads
 
 
-def _current_files(monkeypatch, files):
-    """Simula els fitxers de la versió actual que retorna l'API (`list_current_files`)."""
+def _current_files(monkeypatch, files, **metadata):
+    """Simula els fitxers i les metadades de la versió actual que retorna l'API (`read_current_version`)."""
     calls = []
-    monkeypatch.setattr(es, "dataset_info", lambda **kw: calls.append(kw["repo_id"]) or _FakeRepoInfo(files))
+    monkeypatch.setattr(es, "dataset_info",
+                        lambda **kw: calls.append(kw["repo_id"]) or _FakeRepoInfo(files, **metadata))
     return calls
 
 
@@ -522,6 +531,7 @@ class TestClassifyDatasetFilters:
         assert result["eligible"] is False
         assert result["eligibility_reason"] == es.ELIGIBILITY_REASONS["no_version_marks"]
         assert files_calls == []
+        assert (result["num_data_files"], result["created_at"], result["downloads"]) == (None, None, None)
 
     def test_without_tabular_files_there_is_no_commit_listing_nor_clone(self, monkeypatch, tmp_path):
         monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1", "v2"]))
@@ -547,6 +557,22 @@ class TestClassifyDatasetFilters:
 
         assert (result["num_data_files"], result["tabular_file_share"]) == (3, round(1 / 3, 4))
         assert result["eligibility_reason"] == es.ELIGIBILITY_REASONS["no_tabular_commits"]
+
+    def test_dataset_metadata_is_reported_for_candidates(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1", "v2"]))
+        _current_files(monkeypatch, ["data/train.csv"], created_at=datetime(2025, 3, 1, tzinfo=timezone.utc),
+                       license=["mit", "cc-by-4.0"], downloads=42)
+        monkeypatch.setattr(es, "list_repo_commits", lambda **kw: iter([]))
+        _files_by_title(monkeypatch)
+        monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
+
+        result = es.classify_dataset("org/ds")
+
+        assert (result["created_at"], result["license"], result["downloads"]) == (
+            "2025-03-01T00:00:00+00:00", "mit,cc-by-4.0", 42)
+
+    def test_metadata_missing_in_the_api_is_empty(self):
+        assert es.dataset_metadata(_FakeRepoInfo([])) == {"created_at": None, "license": None, "downloads": None}
 
 
 class TestClassifyDatasetResultShape:
@@ -836,7 +862,7 @@ class TestTabularCommitsFromPhase0:
         assert result["eligible"] is False
         assert result["tabular_commits"] == []
 
-    def test_report_has_no_internal_fields_and_commits_are_not_written(self, monkeypatch, tmp_path):
+    def test_report_keeps_tabular_share_and_metadata_but_not_the_commits(self, monkeypatch, tmp_path):
         import pandas as pd
 
         monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
@@ -844,13 +870,16 @@ class TestTabularCommitsFromPhase0:
             "dataset_id": "org/ds", "num_tags": 2, "num_branches": 1, "num_tabular_commits": 1,
             "eligible": True, "eligibility_reason": es.ELIGIBILITY_REASONS["A"], "status": "classified",
             "error_category": "", "error": "", "num_data_files": 3, "tabular_file_share": 0.5,
+            "created_at": "2025-03-01T00:00:00+00:00", "license": "mit", "downloads": 42,
             "tabular_commits": [_FakeCommit("Add rows", commit_id="c2")],
         }
 
         csv_path, _, summary = es.write_results([row], total_scanned=1)
 
         report = pd.read_csv(csv_path)
-        assert not set(es.INTERNAL_FIELDS) & set(report.columns)
+        assert "tabular_commits" not in report.columns
+        assert report[["num_data_files", "tabular_file_share", "created_at", "license", "downloads"]].values.tolist() == [
+            [3, 0.5, "2025-03-01T00:00:00+00:00", "mit", 42]]
         assert sorted(os.listdir(tmp_path)) == ["eligibility_report.csv", "funnel_summary.json"]
         assert {"eligible", "ineligible", "access_restricted", "errors"} <= set(summary)
         assert not any(k.startswith("with_") for k in summary)
