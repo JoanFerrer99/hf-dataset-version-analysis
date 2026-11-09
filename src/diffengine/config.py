@@ -61,6 +61,11 @@ class EngineConfig:
     """Límit de columnes per a l'aparellament per "totes menys una"."""
     row_subtype_min_validity: float = 0.9
     """Validesa mínima per assignar un subtipus de fila (`outlier`, `predicate`...)."""
+    max_rule_rows: int = 100_000
+    """C422 `predicate`: màxim de files conservades amb què s'entrena la regla.
+    Si n'hi ha més, se n'agafa una mostra (amb pes, perquè la precisió es
+    mesuri igual): amb la taula sencera, una de milions de files no cap a la
+    memòria."""
 
     # --- Pas 4: detectar els canvis -----------------------------------------
     null_transition_is_c510: bool = True
