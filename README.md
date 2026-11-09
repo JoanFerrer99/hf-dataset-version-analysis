@@ -64,10 +64,11 @@ python src/run_pipeline.py --sample-size 2000 --threads 4 --seed 42             
 `run_pipeline.py` és l'orquestrador: encadena mostreig+elegibilitat
 (`eligibility_scan.py`, Fase 0-1), extracció de versions
 (`version_extractor.py`, Fase 1b) i classificació de canvis dels elegibles
-(Fase 2) en un sol comandament, reutilitzant el mateix CSV entre fases --
-sense pas manual d'un run a l'altre. `--skip-version-extraction`/
-`--skip-classification` ometen una fase concreta; `--input-csv <csv>` salta
-el mostreig i reutilitza un CSV d'un run previ.
+(Fase 2) en un sol comandament: cada fase llegeix el que escriu l'anterior
+(la Fase 2 compara les versions de `versions.csv`), sense pas manual d'un
+run a l'altre. `--skip-version-extraction` omet la Fase 1 i, per tant, la 2;
+`--skip-classification` omet la Fase 2; `--input-csv <csv>` salta el
+mostreig i reutilitza un CSV d'un run previ.
 
 ### Scripts individuals
 
@@ -77,7 +78,7 @@ separat:
 ```bash
 python src/eligibility_scan.py --sample-size 50 --threads 4 --seed 42  # només Fase 0-1
 python src/version_extractor.py --input data/run_<id>/eligibility_report.csv            # només Fase 1
-python src/eligibility_scan.py --classify-eligible data/run_<id>/eligibility_report.csv  # només Fase 2
+python src/eligibility_scan.py --classify-versions data/run_<id>/versions.csv            # només Fase 2
 ```
 
 ## Ús amb Docker

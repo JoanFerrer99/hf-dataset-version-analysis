@@ -1,11 +1,9 @@
 """
 Tots els llindars i les opcions del motor, en un sol lloc.
 
-Cada camp porta el valor per defecte i explica què fa el motor amb ell. Les
-opcions que encara s'han de confirmar amb el director s'expliquen a
-`docs/open_decisions.md`, i les que ja estan tancades, a
-`docs/decisions_tfg.txt` (T-20). Per provar uns altres valors sense tocar el
-codi: `dataclasses.replace(DEFAULT_CONFIG, alpha=0.05)`.
+Cada camp porta el valor per defecte i explica què fa el motor amb ell. El
+perquè de les opcions és a `docs/decisions_tfg.txt` (T-20). Per provar uns
+altres valors sense tocar el codi: `dataclasses.replace(DEFAULT_CONFIG, alpha=0.05)`.
 """
 
 from dataclasses import dataclass
