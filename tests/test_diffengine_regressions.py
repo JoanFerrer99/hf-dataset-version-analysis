@@ -1,19 +1,20 @@
 """
 Casos FP/FN coneguts del motor antic (prompt del motor v2) i casos reals trobats
 després (Census Income, execucions del pipeline), un test per cas. Les decisions
-que en canvien l'expectativa: una transformació no genera també C530 (cas 15), a
-`docs/open_decisions.md`; C100 fora d'abast (cas 8) i C530 sense target (casos 16 i
-17), a `docs/decisions_tfg.txt` (T-20).
+que en canvien l'expectativa (una transformació no genera també C530, cas 15; C100 fora
+d'abast, cas 8; C530 sense target, casos 16 i 17) són a `docs/decisions_tfg.txt` (T-20).
 Els casos 11 i 13 (fallada de descàrrega, dos fitxers) són del pas 1 (trobar les taules):
 `tests/test_diffengine_pairs.py`.
 """
 
 import io
+from dataclasses import replace
 
 import numpy as np
 import pandas as pd
 import pytest
 
+from diffengine.config import DEFAULT_CONFIG
 from diffengine.engine import diff_bytes
 
 
@@ -292,3 +293,19 @@ def test_28_removed_null_rows_matching_new_rows_are_not_a_reorder(base):
     got = codes(csv_bytes(old), csv_bytes(new))
     assert "C410" not in got
     assert {"C422", "C510"} <= got
+
+
+def test_29_rows_removed_by_a_rule_are_c422_predicate(base):
+    """Les files eliminades són les que compleixen una regla de dues condicions."""
+    new = base[~((base["workclass"] == "Unknown") & (base["age"] >= 40))]
+    assert ("C422", "predicate") in labels(csv_bytes(base), csv_bytes(new))
+
+
+@pytest.mark.parametrize("rule, expected", [(True, "predicate"), (False, "unexplained")])
+def test_30_removal_rule_on_a_sample_of_kept_rows(base, rule, expected):
+    """Execució run_9 (qld-unclaimed-money, 2,5 M de files): la regla s'entrena amb una mostra de les files
+    conservades, amb pes, i troba el mateix que amb la taula sencera, sense inventar-ne cap."""
+    removed = (base["workclass"] == "Unknown") & (base["age"] >= 40) if rule else base.index % 9 == 4
+    config = replace(DEFAULT_CONFIG, max_rule_rows=50)
+    result = diff_bytes(csv_bytes(base), ".csv", csv_bytes(base[~removed]), ".csv", config)
+    assert [c.subtype for c in result.changes if c.code == "C422"] == [expected]

@@ -1148,7 +1148,8 @@ Estat: Fet
 DECISIÓ T-21: filtre de dades tabulars abans de clonar, clon limitat a 51 commits, i commits de la Fase 0 reaprofitats
 Data: octubre 2026
 Responsable: Joan
-Estat: Fet
+Estat: Fet (revisada: la Fase 2 ja no fa servir els commits, T-23; ni
+       `tabular_commits.csv` ni la proporció tabular sense escriure, T-25)
 
   MOTIU: l'elegibilitat clonava tots els candidats (>=2 tags o branques)
   abans de saber si tenien cap taula, i el percentatge de fitxers tabulars
@@ -1215,6 +1216,124 @@ Estat: Fet
   (`Column.missing_tokens`). Test: `test_09` a
   `tests/test_diffengine_regressions.py`, amb quatre parelles de símbols.
   No afecta Census Income: cap versió hi tenia C510 `representation`.
+
+
+DECISIÓ T-23: la Fase 2 compara cada versió amb la següent
+Data: novembre 2026
+Responsable: Joan
+Estat: Fet
+
+  MOTIU: la Fase 2 formava les seves pròpies parelles a partir dels commits
+  tabulars de la Fase 0: amb el Criteri A, cada commit tabular contra el
+  commit anterior de l'historial. Així, un canvi de la Fase 2 no es podia
+  lligar a cap versió de `versions.csv` (els tags), que és el que mostrarà
+  el magatzem de dades (`fact_change` contra `dim_version`).
+
+  DECISIÓ: `run_classification` llegeix `versions.csv` i compara cada versió
+  amb la següent, per `version_order` (`version_pairs`): amb el Criteri A,
+  cada tag amb el tag següent; amb el B, el final de cada sessió amb el de
+  la sessió següent (el mateix que ja feia, T-13). Les versions sense commit
+  no es comparen, ni dues versions seguides amb el mateix commit. La CLI
+  passa de `--classify-eligible <report>` a `--classify-versions
+  <versions.csv>`, i `run_pipeline.py` no fa la Fase 2 si s'ha saltat la 1.
+
+  EFECTE: amb el Criteri A es comparen menys parelles (una per tag, no una
+  per commit tabular), i cada canvi té una versió d'origen i una de destí.
+  Sobre les versions de run_9: 52 parelles en 8 datasets.
+
+
+DECISIÓ T-24: la Fase 2 no perd el que ja ha classificat, i la regla de C422 té la memòria acotada
+Data: novembre 2026
+Responsable: Joan
+Estat: Fet
+
+  MOTIU: run_9 no té `change_classification.csv`. Reproduït amb la caché
+  local: el procés va morir per falta de memòria (codi 137) comparant
+  `National-Digital/qld-unclaimed-money` (2,55 M de files, 6 columnes), el
+  quart dels 8 elegibles. Carregar les dues versions i aparellar-les arriba
+  a 3,4 GB; el que la feia petar era buscar la regla de les 261 files
+  eliminades (C422 `predicate`): una matriu de 2,55 M × 101 enters de 64
+  bits (2 GB) i dues còpies més. I com que la Fase 2 només escrivia el
+  fitxer al final, es van perdre també els tres datasets ja acabats.
+
+  DECISIÓ:
+  - La regla s'entrena amb totes les files eliminades i una mostra de com
+    a molt 100.000 files conservades (`max_rule_rows`, llavor fixa). Cada
+    fila de la mostra pesa per les que representa, de manera que la
+    precisió es mesura igual que amb la taula sencera. Amb menys files, el
+    resultat és exactament el d'abans.
+  - `change_classification.csv` s'escriu per parts: la capçalera al
+    principi i les files de cada dataset en acabar-lo. El log diu per quina
+    parella va (`parella i/n`).
+
+  RESULTAT: la comparació de qld-unclaimed-money acaba en 2 minuts, amb un
+  màxim de 4,2 GB, i dona C312 `relabel` (`sender_name`), C421 `new` i C422
+  `unexplained`. Tests: `test_29` i `test_30` a
+  `tests/test_diffengine_regressions.py`, i
+  `test_rows_of_finished_datasets_survive_a_run_stopped_halfway`.
+
+
+DECISIÓ T-25: sense `tabular_commits.csv`; la proporció tabular i les metadades del dataset, al report
+Data: novembre 2026
+Responsable: Joan
+Estat: Fet
+
+  MOTIU: `tabular_commits.csv` repetia informació que ja és a
+  `versions.csv` i, des de T-23, només el feia servir la Fase 1. En canvi,
+  la proporció de fitxers tabulars de cada candidat sí que interessa, i no
+  s'escrivia enlloc (T-21).
+
+  DECISIÓ:
+  - Els commits tabulars dels elegibles es queden en memòria:
+    `run_sampling` els retorna i `run_pipeline.py` els passa a la Fase 1.
+    Si la Fase 1 s'executa sola, es tornen a buscar
+    (`tabular_commits_of`, que repeteix la Fase 0 per a aquell dataset).
+  - `eligibility_report.csv` guarda `num_data_files` i
+    `tabular_file_share`, i les metadades que dona la mateixa crida
+    (`dataset_info`): `created_at`, `license` (de la fitxa del dataset) i
+    `downloads` (dels últims 30 dies, el dia de l'execució). Són del
+    filtre 2, i per tant només es tenen per als candidats; la resta de la
+    mostra els té buits. No costen cap crida més.
+
+
+DECISIÓ T-26: columna `table` a `change_classification.csv`
+Data: novembre 2026
+Responsable: Joan
+Estat: Fet
+
+  MOTIU: un canvi és d'una taula (subset, split; T-20), però el fitxer de
+  sortida només en deia els fitxers. Una taula partida en shards sortia
+  amb una llista de fitxers que pot canviar d'una versió a l'altra.
+
+  DECISIÓ: nova columna `table`, amb la clau de la parella de taules
+  (`subset/split`, o la ruta d'un fitxer que no forma cap taula), entre
+  `version_to` i `file_path`. És la clau de `dim_table` al magatzem.
+
+
+DECISIÓ T-27: run_10 = Fases 0 i 1 de run_9 + Fase 2 tornada a executar
+Data: novembre 2026
+Responsable: Joan
+Estat: Fet
+
+  MOTIU: run_9 (25/10/2026) no té `change_classification.csv` (T-24), i les
+  carpetes `data/run_<id>/` no es toquen un cop escrites. El magatzem llegeix
+  una sola carpeta amb totes les fases.
+
+  DECISIÓ: la Fase 2 es torna a executar sobre les versions de run_9
+  (`eligibility_scan.py --classify-versions data/run_9/versions.csv`,
+  9/11/2026), que escriu a una carpeta nova, run_10. S'hi copien sense
+  canvis els fitxers de les Fases 0 i 1 de run_9 (`eligibility_report.csv`,
+  `funnel_summary.json`, `versions.csv`, `failures.csv`); no s'hi copia
+  `tabular_commits.csv`, que ja no forma part de la sortida (T-25). run_9 es
+  conserva tal com va sortir. Els fitxers de les Fases 0 i 1 de run_10 són
+  els d'abans de T-25: no tenen la proporció tabular ni les metadades.
+
+  RESULTAT: 8 datasets i 52 parelles de versions, sense cap fallada, en 11
+  minuts (amb part de les descàrregues ja a la caché local). 1.868 files: 3
+  datasets amb codis (pulsia/fr-bench-pdf2md en té 1.861, en 615 taules) i 5
+  sense cap codi. Sense l'estat de cada parell de taules, no se sap si
+  aquests 5 no tenen canvis o no s'han pogut comparar (p.e. `too_large`):
+  és la pregunta del pas 2 del pla de la Fase 3.
 
 
 ================================================================================

@@ -12,9 +12,10 @@ treballa sobre una mostra.
    més car; un dataset que no passa un filtre ja no arriba al següent:
    1. Té >=2 tags o >=2 branques? Una crida a l'API (`list_repo_refs`).
    2. La versió actual té algun fitxer de dades tabular? Una crida a l'API
-      (`list_current_files`) que dona la llista de fitxers, sense clonar
-      res. D'aquí surt també quina part dels fitxers de dades són tabulars
-      (`tabular_file_share`), que queda al report.
+      (`read_current_version`) que dona la llista de fitxers, sense clonar
+      res. D'aquí surten també quina part dels fitxers de dades són tabulars
+      (`tabular_file_share`) i les metadades del dataset (`dataset_metadata`:
+      data de creació, llicència i descàrregues), que queden al report.
    3. Els commits toquen dades tabulars prou vegades?
       - Criteri A: >=2 tags i >=2 commits que toquen dades tabulars; o
       - Criteri B: >=2 branques i commits que toquen dades tabulars
@@ -24,14 +25,14 @@ treballa sobre una mostra.
       en local, sense crides a l'API.
    Només compten els fitxers de dades tabulars (`is_tabular_data_path`):
    són els únics que el motor pot comparar.
-3. **Resultats** (`write_results`): el report per dataset, el resum de
+3. **Resultats** (`write_results`): el report per dataset i el resum de
    l'embut (`compute_funnel_stats`: proporció d'elegibles i quants intents
-   calen per elegible, per fixar la mida de la mostra) i la llista de
-   commits tabulars de cada elegible (`tabular_commits.csv`).
-4. **Classificació** (`run_classification`, Fase 2): per als elegibles,
-   compara versions consecutives amb el motor (`diffengine`) i escriu els
-   canvis. Llegeix els commits tabulars que ha desat la Fase 0: no torna a
-   llistar commits ni a clonar.
+   calen per elegible, per fixar la mida de la mostra). Els commits tabulars
+   de cada elegible no s'escriuen: `run_sampling` els retorna en memòria
+   per a la Fase 1.
+4. **Classificació** (`run_classification`, Fase 2): compara cada versió
+   de `versions.csv` (Fase 1) amb la següent del mateix dataset, amb el
+   motor (`diffengine`), i escriu els canvis.
 
 Per llegir el codi: `classify_dataset` és el centre de tot; les funcions
 que crida apareixen a sota en el mateix ordre.
@@ -40,11 +41,11 @@ Detall: `docs/architecture.md`, seccions 7 i 9.
 Ús:
   python eligibility_scan.py --sample-size 2000 --threads 4 --seed 42
   python eligibility_scan.py --sample-size 200 --max-scanned 5000  # prova ràpida, esbiaixada
-  python eligibility_scan.py --classify-eligible ../data/run_8/eligibility_report.csv
+  python eligibility_scan.py --classify-versions ../data/run_8/versions.csv
 
 Output (cada execució en una carpeta nova, `data/run_<id>/`):
-  eligibility_report.csv, funnel_summary.json, tabular_commits.csv   (mostreig)
-  change_classification.csv                     (--classify-eligible)
+  eligibility_report.csv, funnel_summary.json   (mostreig)
+  change_classification.csv                     (--classify-versions)
   failures.csv                                  (si hi ha fallades)
 """
 
@@ -112,8 +113,7 @@ SUBSTANTIVE_DATA_EXTENSIONS = (
 
 MIN_SUBSTANTIVE_GAP_HOURS = 6.0
 MAX_COMMITS = 50  # commits revisats per dataset, del més nou al més vell
-TABULAR_COMMITS_FILE = "tabular_commits.csv"
-INTERNAL_FIELDS = ("tabular_commits", "num_data_files", "tabular_file_share")
+INTERNAL_FIELDS = ("tabular_commits",)
 
 # Motiu que queda al report: el criteri que es compleix, o el filtre on s'atura el dataset.
 ELIGIBILITY_REASONS = {
@@ -223,13 +223,15 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
     Passos, del més barat al més car (si un falla, el dataset no és elegible i
     no es fa cap pas més):
       1. `list_repo_refs`: ha de tenir >=2 tags o >=2 branques.
-      2. `list_current_files`: la versió actual ha de tenir algun fitxer de
-         dades tabular (`tabular_file_share` > 0).
+      2. `read_current_version`: la versió actual ha de tenir algun fitxer de
+         dades tabular (`tabular_file_share` > 0). Les metadades del dataset
+         que dona la mateixa crida queden al report.
       3. `list_repo_commits` i un clon sense contingut (`bare_clone`):
          `find_tabular_commits` troba els commits que toquen dades tabulars, i
          `eligibility_criterion` decideix si es compleix el Criteri A o el B.
-         Si és elegible, aquests commits es guarden (`tabular_commits`): són
-         els que fan servir les Fases 1 i 2, sense tornar-los a buscar.
+         Si és elegible, aquests commits es guarden (`tabular_commits`, no
+         s'escriuen): la Fase 1 en fa les sessions del Criteri B sense
+         tornar-los a buscar.
 
     :param dataset_id: dataset (`owner/name`).
     :param tags_only: només permet el Criteri A.
@@ -248,6 +250,9 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
         "tabular_commits": [],
         "num_data_files": None,
         "tabular_file_share": None,
+        "created_at": None,
+        "license": None,
+        "downloads": None,
     }
 
     try:
@@ -263,9 +268,11 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
             result["eligibility_reason"] = ELIGIBILITY_REASONS["no_version_marks"]
             return result
 
-        # Pas 2: quins fitxers té la versió actual i quina part de les dades és tabular (es guarda,
-        # però no s'escriu). Sense cap fitxer de dades tabular, no cal llistar els commits ni clonar.
-        result["num_data_files"], result["tabular_file_share"] = tabular_file_share(list_current_files(dataset_id))
+        # Pas 2: quins fitxers té la versió actual i quina part de les dades és tabular, més les
+        # metadades del dataset. Sense cap fitxer de dades tabular, no cal llistar els commits ni clonar.
+        files, metadata = read_current_version(dataset_id)
+        result.update(metadata)
+        result["num_data_files"], result["tabular_file_share"] = tabular_file_share(files)
         if not result["tabular_file_share"]:
             result["eligibility_reason"] = ELIGIBILITY_REASONS["no_tabular_files"]
             return result
@@ -278,13 +285,13 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
         with bare_clone(dataset_id) as clone_dir:
             tabular = find_tabular_commits(commits, clone_dir)
         result["num_tabular_commits"] = len(tabular)
-        criterion = eligibility_criterion(n_tags, n_branches, [commits[i] for i in tabular], tags_only)
+        criterion = eligibility_criterion(n_tags, n_branches, tabular, tags_only)
         if criterion is None:
             result["eligibility_reason"] = ELIGIBILITY_REASONS["no_tabular_commits"]
             return result
         result["eligible"] = True
         result["eligibility_reason"] = ELIGIBILITY_REASONS[criterion]
-        result["tabular_commits"] = tabular_commit_records(commits, tabular)
+        result["tabular_commits"] = tabular
 
     except Exception as exc:
         category = errors.classify_error(exc)
@@ -343,17 +350,36 @@ def is_tabular_data_path(path: str) -> bool:
     return is_substantive_path(path) and units.is_tabular_path(path)
 
 
-def list_current_files(dataset_id: str) -> list[str]:
+def read_current_version(dataset_id: str) -> tuple[list[str], dict]:
     """
-    Fitxers de la versió actual del repositori, amb una sola crida a l'API
-    (`dataset_info`), sense clonar res. Dona la mateixa llista que el clon
-    (comprovat amb els 29 candidats de `run_8`) i triga uns 0,2 s.
+    Fitxers i metadades de la versió actual del repositori, amb una sola
+    crida a l'API (`dataset_info`), sense clonar res. Dona la mateixa llista
+    de fitxers que el clon (comprovat amb els 29 candidats de `run_8`) i
+    triga uns 0,2 s.
 
     :param dataset_id: dataset (`owner/name`).
-    :return: rutes dels fitxers dins del repositori.
+    :return: `(rutes dels fitxers dins del repositori, dataset_metadata)`.
     """
     info = errors.with_retry(dataset_info, repo_id=dataset_id, token=HF_TOKEN, **RETRY_CONFIG)
-    return [sibling.rfilename for sibling in (info.siblings or [])]
+    return [sibling.rfilename for sibling in (info.siblings or [])], dataset_metadata(info)
+
+
+def dataset_metadata(info) -> dict:
+    """
+    Les metadades d'un dataset que queden al report.
+
+    :param info: resposta de `dataset_info`.
+    :return: `created_at` (ISO 8601), `license` (de la fitxa del dataset; si
+        n'hi ha diverses, unides per comes) i `downloads` (dels últims 30 dies,
+        el dia de l'execució). `None` si l'API no en dona.
+    """
+    created_at = getattr(info, "created_at", None)
+    license_ = getattr(getattr(info, "card_data", None), "license", None)
+    return {
+        "created_at": created_at.isoformat() if created_at else None,
+        "license": ",".join(license_) if isinstance(license_, list) else license_,
+        "downloads": getattr(info, "downloads", None),
+    }
 
 
 def tabular_file_share(paths: list[str]) -> tuple[int, float | None]:
@@ -473,96 +499,11 @@ def is_tabular_commit(commit, clone_dir: str | None) -> bool:
     return bool(changed_paths) and any(is_tabular_data_path(p) for p in changed_paths)
 
 
-@dataclass(frozen=True)
-class TabularCommit:
-    """
-    Un commit que toca dades tabulars d'un dataset elegible. La Fase 0 els
-    desa a `tabular_commits.csv`, i les Fases 1 (versions per sessió) i 2
-    (parelles que es comparen) els llegeixen d'allà, sense tornar a llistar
-    els commits ni a clonar.
-
-    :ivar commit_id: SHA del commit.
-    :ivar parent_id: SHA del commit anterior de l'historial, o `None` si és el
-        més vell dels revisats (no se'n coneix l'anterior).
-    :ivar created_at: data del commit.
-    :ivar authors: autors del commit.
-    """
-
-    commit_id: str
-    parent_id: str | None
-    created_at: datetime | None
-    authors: tuple[str, ...] = ()
-
-
-def tabular_commit_records(commits: list, tabular: list[int]) -> list[TabularCommit]:
-    """
-    Converteix els commits tabulars en `TabularCommit`, amb el commit anterior
-    de cadascun (el següent de la llista, que va del més nou al més vell).
-
-    :param commits: commits de `list_repo_commits`, del més nou al més vell.
-    :param tabular: posicions dels commits tabulars (`find_tabular_commits`).
-    :return: un `TabularCommit` per commit tabular, en el mateix ordre.
-    """
-    return [
-        TabularCommit(
-            commit_id=commits[i].commit_id,
-            parent_id=commits[i + 1].commit_id if i + 1 < len(commits) else None,
-            created_at=getattr(commits[i], "created_at", None),
-            authors=tuple(getattr(commits[i], "authors", None) or ()),
-        )
-        for i in tabular
-    ]
-
-
-def save_tabular_commits(rows: list[dict], path: str) -> None:
-    """
-    Escriu els commits tabulars de tots els elegibles en un sol CSV: una fila
-    per commit (`dataset_id, commit_id, parent_id, created_at, authors`).
-
-    :param rows: files de `classify_dataset` (només en tenen els elegibles).
-    :param path: ruta de `tabular_commits.csv`.
-    """
-    records = [
-        {"dataset_id": row["dataset_id"], "commit_id": c.commit_id, "parent_id": c.parent_id,
-         "created_at": c.created_at.isoformat() if c.created_at else None, "authors": ",".join(c.authors)}
-        for row in rows for c in row.get("tabular_commits") or []
-    ]
-    pd.DataFrame(records, columns=["dataset_id", "commit_id", "parent_id", "created_at", "authors"]).to_csv(
-        path, index=False, encoding="utf-8")
-
-
-def load_tabular_commits(report_csv: str) -> dict[str, list[TabularCommit]]:
-    """
-    Llegeix els commits tabulars que la Fase 0 va desar al costat d'un
-    `eligibility_report.csv`.
-
-    :param report_csv: ruta del report; el fitxer es busca a la mateixa carpeta.
-    :return: per a cada dataset elegible, els seus commits tabulars, del més nou
-        al més vell. Buit si el report és d'una versió anterior del pipeline,
-        que no desava aquest fitxer.
-    """
-    path = os.path.join(os.path.dirname(os.path.abspath(report_csv)), TABULAR_COMMITS_FILE)
-    if not os.path.exists(path):
-        log.warning(f"No hi ha {TABULAR_COMMITS_FILE} al costat de {report_csv}: "
-                    "es tornaran a buscar els commits tabulars de cada elegible.")
-        return {}
-    df = pd.read_csv(path, dtype=str, keep_default_na=False)
-    saved: dict[str, list[TabularCommit]] = {}
-    for row in df.itertuples(index=False):
-        saved.setdefault(row.dataset_id, []).append(TabularCommit(
-            commit_id=row.commit_id,
-            parent_id=row.parent_id or None,
-            created_at=datetime.fromisoformat(row.created_at) if row.created_at else None,
-            authors=tuple(a for a in row.authors.split(",") if a),
-        ))
-    return saved
-
-
-def find_tabular_commits_again(dataset_id: str) -> list[TabularCommit]:
+def tabular_commits_of(dataset_id: str) -> list:
     """
     Torna a fer la Fase 0 per a un sol dataset i en retorna els commits
-    tabulars. Només fa falta per als reports d'execucions anteriors, que no
-    tenen `tabular_commits.csv`.
+    tabulars. Fa falta quan la Fase 1 s'executa sola, a partir d'un report:
+    els commits només es tenen en memòria durant la Fase 0.
 
     :param dataset_id: dataset (`owner/name`).
     :return: els commits tabulars, o una llista buida si ja no és elegible.
@@ -570,17 +511,15 @@ def find_tabular_commits_again(dataset_id: str) -> list[TabularCommit]:
     return classify_dataset(dataset_id)["tabular_commits"]
 
 
-def find_tabular_commits(commits: list, clone_dir: str | None) -> list[int]:
+def find_tabular_commits(commits: list, clone_dir: str | None) -> list:
     """
-    Posicions dels commits que toquen dades tabulars. Es guarda la posició, i
-    no el commit, perquè el Criteri A necessita el commit anterior
-    (`commits[i + 1]`, la llista va del més nou al més vell).
+    Commits que toquen dades tabulars.
 
     :param commits: commits de `list_repo_commits`, del més nou al més vell.
     :param clone_dir: clon bare, o `None`.
-    :return: posicions dins de `commits`, en el mateix ordre.
+    :return: els commits tabulars, en el mateix ordre.
     """
-    return [i for i, commit in enumerate(commits) if is_tabular_commit(commit, clone_dir)]
+    return [commit for commit in commits if is_tabular_commit(commit, clone_dir)]
 
 
 def eligibility_criterion(n_tags: int, n_branches: int, tabular_commits: list, tags_only: bool = False) -> str | None:
@@ -602,41 +541,20 @@ def eligibility_criterion(n_tags: int, n_branches: int, tabular_commits: list, t
     return None
 
 
-def group_commits_into_sessions(commits: list) -> list[list]:
-    """
-    Agrupa commits en sessions amb `cluster_commit_times`.
-
-    :param commits: commits amb `created_at`; els que no en tenen s'ignoren.
-    :return: sessions de la més recent a la més antiga (sense ordre dins de cada sessió).
-    """
-    by_time: dict[datetime, list] = {}
-    for c in commits:
-        if getattr(c, "created_at", None) is not None:
-            by_time.setdefault(c.created_at, []).append(c)
-    clusters = cluster_commit_times(list(by_time))
-    return [[c for t in cluster for c in by_time[t]] for cluster in reversed(clusters)]
-
-
-def change_units(tabular_commits: list["TabularCommit"], criterion: str) -> list[tuple[str, str]]:
+def version_pairs(versions: pd.DataFrame) -> list[tuple[str, str]]:
     """
     Les parelles de revisions que es comparen a la Fase 2 (unitats de canvi,
-    decisió T-13):
+    decisió T-23): cada versió de `versions.csv` contra la següent, per
+    `version_order`. Criteri A: cada tag contra el tag següent; Criteri B, el
+    final de cada sessió contra el final de la sessió següent. Les versions
+    sense commit no es comparen, ni dues versions seguides amb el mateix
+    commit (dos tags al mateix commit).
 
-    - Criteri A: cada commit tabular contra el commit anterior de l'historial.
-      El commit més vell dels revisats no té anterior conegut i no es compara.
-    - Criteri B: el commit més recent de cada sessió contra el de la sessió
-      anterior. Els commits d'una mateixa sessió no es comparen entre ells.
-
-    :param tabular_commits: commits tabulars d'un dataset elegible, del més nou
-        al més vell, tal com els desa la Fase 0.
-    :param criterion: `"A"` o `"B"`.
-    :return: parelles `(SHA antic, SHA nou)`, de la més recent a la més antiga.
+    :param versions: les files d'un dataset a `versions.csv`.
+    :return: parelles `(SHA antic, SHA nou)`, de la més antiga a la més recent.
     """
-    if criterion == "A":
-        return [(c.parent_id, c.commit_id) for c in tabular_commits if c.parent_id]
-    sessions = group_commits_into_sessions(tabular_commits)
-    latest = [max(session, key=lambda c: c.created_at) for session in sessions]
-    return [(older.commit_id, newer.commit_id) for newer, older in zip(latest, latest[1:])]
+    shas = versions[versions["commit_sha"].fillna("") != ""].sort_values("version_order")["commit_sha"].tolist()
+    return [(old, new) for old, new in zip(shas, shas[1:]) if old != new]
 
 
 def compare_change_units(
@@ -647,14 +565,15 @@ def compare_change_units(
     de revisions, taula a taula (subset, split).
 
     :param dataset_id: dataset (`owner/name`).
-    :param units_to_compare: parelles `(SHA antic, SHA nou)` de `change_units`.
+    :param units_to_compare: parelles `(SHA antic, SHA nou)` de `version_pairs`.
     :param hf_token: token de Hugging Face.
     :param retry_config: configuració de reintent (també per a les descàrregues).
-    :return: una fila per canvi (`dataset_id`, `version_from`, `version_to`, `file_path`, `code`).
+    :return: una fila per canvi (`dataset_id`, `version_from`, `version_to`, `table`, `file_path`, `code`).
     """
     retry = functools.partial(errors.with_retry, **retry_config)
     labels: list[dict] = []
-    for old_rev, new_rev in units_to_compare:
+    for i, (old_rev, new_rev) in enumerate(units_to_compare, start=1):
+        log.info(f"    parella {i}/{len(units_to_compare)}: {old_rev[:7]} -> {new_rev[:7]}")
         compared = pairs.compare_revisions(dataset_id, old_rev, new_rev, hf_token, call=retry)
         labels += pairs.revision_rows(dataset_id, old_rev, new_rev, compared)
     return labels
@@ -793,9 +712,7 @@ def new_run_dir(parent: str | None = None) -> str:
 def write_results(rows: list[dict], total_scanned: int) -> tuple[str, str, dict]:
     """
     Escriu a `OUTPUT_DIR` el report per dataset (`eligibility_report.csv`,
-    sense els camps interns), el resum de l'embut (`funnel_summary.json`) i
-    els commits tabulars dels elegibles (`tabular_commits.csv`), que fan
-    servir les Fases 1 i 2.
+    sense els camps interns) i el resum de l'embut (`funnel_summary.json`).
 
     :param rows: files de `classify_dataset`.
     :param total_scanned: mida de la població recorreguda.
@@ -805,7 +722,6 @@ def write_results(rows: list[dict], total_scanned: int) -> tuple[str, str, dict]
 
     csv_path = os.path.join(OUTPUT_DIR, "eligibility_report.csv")
     df.drop(columns=list(INTERNAL_FIELDS), errors="ignore").to_csv(csv_path, index=False, encoding="utf-8")
-    save_tabular_commits(rows, os.path.join(OUTPUT_DIR, TABULAR_COMMITS_FILE))
 
     total = len(rows)
     eligible = int(df["eligible"].sum())
@@ -844,7 +760,7 @@ def write_results(rows: list[dict], total_scanned: int) -> tuple[str, str, dict]
 
 def run_sampling(
     sample_size: int, max_scanned: int | None, num_threads: int, tags_only: bool = False
-) -> tuple[str, str, dict]:
+) -> tuple[str, str, dict, dict[str, list]]:
     """
     Fase 0 completa: mostreig, classificació d'elegibilitat en paral·lel i
     escriptura de resultats. No classifica canvis.
@@ -853,7 +769,8 @@ def run_sampling(
     :param max_scanned: límit de població a recórrer (proves).
     :param num_threads: threads per a la classificació.
     :param tags_only: es passa a `classify_dataset`.
-    :return: `(csv_path, json_path, summary)` de `write_results`.
+    :return: `(csv_path, json_path, summary)` de `write_results`, més els
+        commits tabulars de cada elegible (`dataset_id -> commits`), per a la Fase 1.
     """
     log.info(f"FASE 1: Reservoir sampling (objectiu={sample_size}, max_scanned={max_scanned})")
     dataset_ids, total_scanned = reservoir_sample_dataset_ids(
@@ -890,41 +807,40 @@ def run_sampling(
     print(f"  JSON: {json_path}")
     print(f"  Fallades (detall): {FAILURES_LOG_PATH}\n")
 
-    return csv_path, json_path, summary
+    tabular_commits = {r["dataset_id"]: r["tabular_commits"] for r in rows if r["eligible"]}
+    return csv_path, json_path, summary, tabular_commits
 
 
-def run_classification(input_csv: str) -> str:
+def run_classification(versions_csv: str) -> str:
     """
-    Fase 2: classifica els canvis de cada dataset elegible del CSV i escriu
-    `change_classification.csv` a `OUTPUT_DIR`: una fila per taula, parell de
-    versions i codi (`dataset_id, version_from, version_to, file_path, code,
-    description, is_breaking`).
+    Fase 2: compara cada versió de `versions.csv` (Fase 1) amb la següent del
+    mateix dataset i escriu `change_classification.csv` a `OUTPUT_DIR`: una
+    fila per taula, parell de versions i codi (`dataset_id, version_from,
+    version_to, table, file_path, code, description, is_breaking`).
 
-    Per a cada elegible:
-      1. agafa els seus commits tabulars de `tabular_commits.csv`, el fitxer
-         que la Fase 0 desa al costat del report (`load_tabular_commits`);
-      2. `change_units` en forma les parelles de revisions, segons el criteri
-         que el va fer elegible (columna `eligibility_reason`);
-      3. `compare_change_units` les compara amb el motor.
-    Una fallada d'un dataset queda a `failures.csv` i no atura la resta.
+    Per a cada dataset, `version_pairs` en forma les parelles de revisions i
+    `compare_change_units` les compara amb el motor. Una fallada d'un dataset
+    queda a `failures.csv` i no atura la resta. Les files de cada dataset
+    s'afegeixen al fitxer en acabar-lo: si l'execució s'atura a mitges, es
+    conserva el que ja s'havia classificat.
 
-    :param input_csv: un `eligibility_report.csv`.
+    :param versions_csv: un `versions.csv`.
     :return: ruta de `change_classification.csv`.
     """
-    df = pd.read_csv(input_csv)
-    eligible = df[df["eligible"] == True]  # noqa: E712
-    log.info(f"Classificant canvis de {len(eligible)} datasets elegibles de {input_csv}...")
-    saved = load_tabular_commits(input_csv)
+    try:
+        versions = pd.read_csv(versions_csv, dtype={"commit_sha": str})
+    except pd.errors.EmptyDataError:  # la Fase 1 no va extreure cap versió
+        versions = pd.DataFrame(columns=["dataset_id", "version_order", "commit_sha"])
+    by_dataset = versions.groupby("dataset_id", sort=False)
+    log.info(f"Classificant canvis de {by_dataset.ngroups} datasets de {versions_csv}...")
 
-    all_changes: list[dict] = []
-    for _, row in eligible.iterrows():
-        dataset_id = row["dataset_id"]
-        criterion = "A" if str(row["eligibility_reason"]).startswith("Criteri A") else "B"
-        log.info(f"  - {dataset_id} (Criteri {criterion})")
+    output_csv = os.path.join(OUTPUT_DIR, "change_classification.csv")
+    classification_frame([]).to_csv(output_csv, index=False, encoding="utf-8")
+    for dataset_id, dataset_versions in by_dataset:
+        units_to_compare = version_pairs(dataset_versions)
+        log.info(f"  - {dataset_id}: {len(units_to_compare)} parelles de versions")
         try:
-            tabular_commits = saved[dataset_id] if dataset_id in saved else find_tabular_commits_again(dataset_id)
-            all_changes += compare_change_units(dataset_id, change_units(tabular_commits, criterion),
-                                                HF_TOKEN, RETRY_CONFIG)
+            changes = compare_change_units(dataset_id, units_to_compare, HF_TOKEN, RETRY_CONFIG)
         except Exception as exc:
             category = errors.classify_error(exc)
             errors.append_failure_row(
@@ -933,9 +849,9 @@ def run_classification(input_csv: str) -> str:
                 source="classification",
             )
             log.warning(f"    Fallada ({category.value}): {dataset_id}")
+            continue
+        classification_frame(changes).to_csv(output_csv, mode="a", header=False, index=False, encoding="utf-8")
 
-    output_csv = os.path.join(OUTPUT_DIR, "change_classification.csv")
-    classification_frame(all_changes).to_csv(output_csv, index=False, encoding="utf-8")
     log.info(f"Classificació escrita a {output_csv}")
     return output_csv
 
@@ -954,12 +870,12 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "--classify-eligible", default=None, metavar="CSV",
+        "--classify-versions", default=None, metavar="CSV",
         help=(
-            "Classifica els canvis (C210-C530) dels datasets elegibles d'aquest CSV "
-            "(eligibility_report.csv) EN LLOC de fer un mostreig nou -- "
+            "Classifica els canvis (C210-C530) entre versions consecutives "
+            "d'aquest versions.csv (Fase 1) EN LLOC de fer un mostreig nou -- "
             "ignora --sample-size/--max-scanned/--threads/--seed/--tags-only. "
-            "Útil per reclassificar un CSV d'un run previ sense tornar a "
+            "Útil per reclassificar les versions d'un run previ sense tornar a "
             "mostrejar; per encadenar mostreig+extracció+classificació en una "
             "sola execució, useu src/run_pipeline.py en lloc d'aquest flag."
         ),
@@ -1043,8 +959,8 @@ if __name__ == "__main__":
     )
 
     new_run_dir()
-    if args.classify_eligible:
-        run_classification(args.classify_eligible)
+    if args.classify_versions:
+        run_classification(args.classify_versions)
     else:
         run_sampling(
             sample_size=args.sample_size,

@@ -287,9 +287,9 @@ def revision_rows(repo_id: str, old_rev: str, new_rev: str, pairs: list[UnitPair
     :param new_rev: commit nou.
     :param pairs: parelles ja comparades.
     :return: una fila per canvi, amb `dataset_id`, `version_from`,
-        `version_to`, `file_path` i `code`.
+        `version_to`, `table` (la clau de la parella), `file_path` i `code`.
     """
-    return [{"dataset_id": repo_id, "version_from": old_rev, "version_to": new_rev,
+    return [{"dataset_id": repo_id, "version_from": old_rev, "version_to": new_rev, "table": p.key,
              "file_path": ",".join(p.new_files), "code": c.code}
             for p in pairs if p.result is not None for c in p.result.changes]
 

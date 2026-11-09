@@ -14,9 +14,9 @@
 #   # version-extractor -- Fase 1b (seqüència de versions per dataset elegible):
 #   docker compose run --rm version-extractor --input data/run_<id>/eligibility_report.csv
 #
-#   # eligibility-scan --classify-eligible -- Fase 2 (US-305), reclassificar un CSV previ
-#   # sense tornar a mostrejar (mateix servei eligibility-scan, flag diferent):
-#   docker compose run --rm eligibility-scan --classify-eligible data/run_<id>/eligibility_report.csv
+#   # eligibility-scan --classify-versions -- Fase 2 (US-305), reclassificar les versions
+#   # d'un run previ sense tornar a mostrejar (mateix servei eligibility-scan, flag diferent):
+#   docker compose run --rm eligibility-scan --classify-versions data/run_<id>/versions.csv
 #
 # Requereix un fitxer .env a l'arrel amb HF_TOKEN=hf_xxx (vegeu README.md).
 # --remove-orphans neteja contenidors aturats d'execucions anteriors, no és

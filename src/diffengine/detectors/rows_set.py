@@ -145,6 +145,8 @@ def _has_removal_rule(ctx: Context, cols: list[str], removed: np.ndarray, kept: 
     """
     Entrena un arbre de decisió de profunditat 2 que separi les files eliminades
     de les conservades. Si l'encerta gairebé sempre, la regla explica l'eliminació.
+    Amb més de `max_rule_rows` files conservades, s'entrena amb una mostra
+    d'aquestes, i cada fila de la mostra pesa per les que representa.
 
     :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
     :param cols: columnes que pot fer servir la regla.
@@ -154,25 +156,29 @@ def _has_removal_rule(ctx: Context, cols: list[str], removed: np.ndarray, kept: 
     """
     from sklearn.tree import DecisionTreeClassifier
 
+    sample = kept
+    if len(kept) > ctx.config.max_rule_rows:
+        sample = np.sort(np.random.default_rng(0).choice(kept, ctx.config.max_rule_rows, replace=False))
+    idx = np.concatenate([removed, sample])
+    y = np.r_[np.ones(len(removed), dtype=int), np.zeros(len(sample), dtype=int)]
+    weight = np.where(y == 1, 1.0, len(kept) / len(sample))
+
     df = ctx.old.values[cols]
     feats = []
     for c in cols:
         if ctx.old.columns[c].kind == NUMERIC:
-            feats.append(df[c].fillna(df[c].median()).rename(c))
+            feats.append(df[c].iloc[idx].fillna(df[c].median()).rename(c))
         elif ctx.old.columns[c].kind != TEXT:
             # Un predicat només pot fer servir valors de les files eliminades: els 20 més freqüents.
-            values = df[c].fillna(NULL_TOKEN)
-            for v in values.iloc[removed].value_counts().index[:20]:
+            values = df[c].iloc[idx].fillna(NULL_TOKEN)
+            for v in values.iloc[:len(removed)].value_counts().index[:20]:
                 feats.append((values == v).astype(int).rename(f"{c}={v}"))
     if not feats:
         return False
     X = pd.concat(feats, axis=1)
-    y = np.zeros(len(df), dtype=int)
-    y[removed] = 1
-    idx = np.concatenate([removed, kept])
-    tree = DecisionTreeClassifier(max_depth=2, random_state=0).fit(X.iloc[idx], y[idx])
-    pred = tree.predict(X.iloc[idx])
-    tp = np.sum((pred == 1) & (y[idx] == 1))
-    precision = tp / max(np.sum(pred == 1), 1)
+    tree = DecisionTreeClassifier(max_depth=2, random_state=0).fit(X, y, sample_weight=weight)
+    pred = tree.predict(X)
+    tp = np.sum((pred == 1) & (y == 1))
+    precision = tp / max(np.sum(weight[pred == 1]), 1)
     recall = tp / max(len(removed), 1)
     return min(precision, recall) >= ctx.config.row_subtype_min_validity

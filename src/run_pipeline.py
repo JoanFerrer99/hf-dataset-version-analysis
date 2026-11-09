@@ -1,18 +1,20 @@
 """
 Orquestrador del pipeline: Fase 0 (`eligibility_scan.run_sampling`),
 Fase 1 (`version_extractor.run_extraction`) i Fase 2
-(`eligibility_scan.run_classification`) en una sola execució, amb el
-mateix CSV d'elegibilitat per a les tres. Les Fases 1 i 2 només
-processen els datasets elegibles.
+(`eligibility_scan.run_classification`) en una sola execució. La Fase 1
+llegeix els elegibles del CSV d'elegibilitat, i la Fase 2 compara les
+versions consecutives que ha escrit la Fase 1 (`versions.csv`): sense
+Fase 1, no hi ha Fase 2.
 
 Ús:
   python run_pipeline.py --sample-size 50 --threads 4 --seed 42 --max-scanned 5000  # prova ràpida
   python run_pipeline.py --sample-size 2000 --threads 4 --seed 42                    # execució principal
   python run_pipeline.py --input-csv ../data/run_8/eligibility_report.csv            # salta la Fase 0, reutilitza un CSV existent
   python run_pipeline.py --sample-size 2000 --skip-classification                    # només Fase 0-1/1b
+  python eligibility_scan.py --classify-versions ../data/run_8/versions.csv          # només Fase 2
 
 Output: tot dins d'una carpeta nova, `data/run_<id>/` (mai sobreescriu):
-  eligibility_report.csv, funnel_summary.json, tabular_commits.csv (Fase 0)
+  eligibility_report.csv, funnel_summary.json (Fase 0)
   versions.csv (Fase 1)
   change_classification.csv (Fase 2)
   failures.csv (si hi ha fallades)
@@ -50,7 +52,7 @@ def run_full_pipeline(
 
     :param sample_size, max_scanned, num_threads, tags_only: per a la Fase 0.
     :param input_csv: si es dona, salta la Fase 0 i usa aquest CSV.
-    :param skip_version_extraction: omet la Fase 1.
+    :param skip_version_extraction: omet la Fase 1 i, per tant, la 2.
     :param skip_classification: omet la Fase 2.
     :param skip_size: no calcula la mida de cada versió a la Fase 1.
     :return: `run_dir`, `eligibility_csv`, `eligible`, `versions_csv`,
@@ -72,15 +74,13 @@ def run_full_pipeline(
         log.info(f"Fase 0-1 saltada -- reutilitzant {input_csv}")
         eligibility_csv = input_csv
         eligible = int(pd.read_csv(eligibility_csv)["eligible"].sum())
+        tabular_commits = None  # la Fase 1 els torna a buscar
     else:
-        eligibility_csv, funnel_summary_json, summary = es.run_sampling(
+        eligibility_csv, funnel_summary_json, summary, tabular_commits = es.run_sampling(
             sample_size=sample_size, max_scanned=max_scanned, num_threads=num_threads, tags_only=tags_only,
         )
         eligible = summary["eligible"]
-        generated_files["Fase 0-1 (mostreig+elegibilitat)"] += [
-            eligibility_csv, funnel_summary_json,
-            os.path.join(os.path.dirname(eligibility_csv), es.TABULAR_COMMITS_FILE),
-        ]
+        generated_files["Fase 0-1 (mostreig+elegibilitat)"] += [eligibility_csv, funnel_summary_json]
 
     outputs["eligibility_csv"] = eligibility_csv
     outputs["eligible"] = eligible
@@ -94,15 +94,18 @@ def run_full_pipeline(
     else:
         log.info(f"FASE 1b: Extraient versions dels {eligible} datasets elegibles...")
         versions_csv = os.path.join(run_dir, "versions.csv")
-        ve.run_extraction(eligibility_csv, versions_csv, es.HF_TOKEN, ve.RETRY_CONFIG, compute_size=not skip_size)
+        ve.run_extraction(eligibility_csv, versions_csv, es.HF_TOKEN, ve.RETRY_CONFIG, compute_size=not skip_size,
+                          tabular_commits=tabular_commits)
         outputs["versions_csv"] = versions_csv
         generated_files["Fase 1b (versions)"].append(versions_csv)
 
     if skip_classification:
         log.info("FASE 2 saltada (--skip-classification).")
+    elif outputs["versions_csv"] is None:
+        log.info("FASE 2 saltada: compara les versions de la Fase 1b, que s'ha saltat.")
     else:
         log.info(f"FASE 2: Classificant canvis dels {eligible} datasets elegibles...")
-        change_classification_csv = es.run_classification(eligibility_csv)
+        change_classification_csv = es.run_classification(outputs["versions_csv"])
         outputs["change_classification_csv"] = change_classification_csv
         generated_files["Fase 2 (classificació de canvis)"].append(change_classification_csv)
 
@@ -131,7 +134,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--skip-version-extraction", action="store_true",
-        help="Omet la Fase 1b (extracció de versions dels elegibles).",
+        help="Omet la Fase 1b (extracció de versions dels elegibles) i, per tant, la Fase 2.",
     )
     parser.add_argument(
         "--skip-classification", action="store_true",
