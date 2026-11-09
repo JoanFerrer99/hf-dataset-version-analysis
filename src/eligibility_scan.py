@@ -45,7 +45,7 @@ Detall: `docs/architecture.md`, seccions 7 i 9.
 
 Output (cada execució en una carpeta nova, `data/run_<id>/`):
   eligibility_report.csv, funnel_summary.json   (mostreig)
-  change_classification.csv                     (--classify-versions)
+  change_classification.csv, comparison_status.csv   (--classify-versions)
   failures.csv                                  (si hi ha fallades)
 """
 
@@ -72,7 +72,7 @@ from huggingface_hub import HfApi, dataset_info, list_repo_commits, list_repo_re
 
 import errors
 from diffengine import pairs, units
-from diffengine.output import classification_frame
+from diffengine.output import classification_frame, status_frame
 from errors import ErrorCategory
 
 
@@ -114,6 +114,7 @@ SUBSTANTIVE_DATA_EXTENSIONS = (
 MIN_SUBSTANTIVE_GAP_HOURS = 6.0
 MAX_COMMITS = 50  # commits revisats per dataset, del més nou al més vell
 INTERNAL_FIELDS = ("tabular_commits",)
+COMPARISON_STATUS_FILE = "comparison_status.csv"
 
 # Motiu que queda al report: el criteri que es compleix, o el filtre on s'atura el dataset.
 ELIGIBILITY_REASONS = {
@@ -559,7 +560,7 @@ def version_pairs(versions: pd.DataFrame) -> list[tuple[str, str]]:
 
 def compare_change_units(
     dataset_id: str, units_to_compare: list[tuple[str, str]], hf_token: str | None, retry_config: dict,
-) -> list[dict]:
+) -> tuple[list[dict], list[dict]]:
     """
     Compara amb el motor (`diffengine.pairs.compare_revisions`) cada parella
     de revisions, taula a taula (subset, split).
@@ -568,15 +569,18 @@ def compare_change_units(
     :param units_to_compare: parelles `(SHA antic, SHA nou)` de `version_pairs`.
     :param hf_token: token de Hugging Face.
     :param retry_config: configuració de reintent (també per a les descàrregues).
-    :return: una fila per canvi (`dataset_id`, `version_from`, `version_to`, `table`, `file_path`, `code`).
+    :return: `(canvis, estats)`: una fila per canvi (`pairs.revision_rows`) i
+        una per parell de taules, també sense codis (`pairs.status_rows`).
     """
     retry = functools.partial(errors.with_retry, **retry_config)
     labels: list[dict] = []
+    statuses: list[dict] = []
     for i, (old_rev, new_rev) in enumerate(units_to_compare, start=1):
         log.info(f"    parella {i}/{len(units_to_compare)}: {old_rev[:7]} -> {new_rev[:7]}")
         compared = pairs.compare_revisions(dataset_id, old_rev, new_rev, hf_token, call=retry)
         labels += pairs.revision_rows(dataset_id, old_rev, new_rev, compared)
-    return labels
+        statuses += pairs.status_rows(dataset_id, old_rev, new_rev, compared)
+    return labels, statuses
 
 
 def has_time_dispersed_substantive_commits(
@@ -814,15 +818,20 @@ def run_sampling(
 def run_classification(versions_csv: str) -> str:
     """
     Fase 2: compara cada versió de `versions.csv` (Fase 1) amb la següent del
-    mateix dataset i escriu `change_classification.csv` a `OUTPUT_DIR`: una
-    fila per taula, parell de versions i codi (`dataset_id, version_from,
-    version_to, table, file_path, code, description, is_breaking`).
+    mateix dataset i escriu a `OUTPUT_DIR`:
+
+    - `change_classification.csv`: una fila per taula, parell de versions i
+      codi (`dataset_id, version_from, version_to, table, file_path, code,
+      description, is_breaking`);
+    - `comparison_status.csv`: una fila per taula i parell de versions, també
+      sense cap codi (`dataset_id, version_from, version_to, table,
+      file_path, status, n_codes`).
 
     Per a cada dataset, `version_pairs` en forma les parelles de revisions i
     `compare_change_units` les compara amb el motor. Una fallada d'un dataset
     queda a `failures.csv` i no atura la resta. Les files de cada dataset
-    s'afegeixen al fitxer en acabar-lo: si l'execució s'atura a mitges, es
-    conserva el que ja s'havia classificat.
+    s'afegeixen als dos fitxers en acabar-lo: si l'execució s'atura a mitges,
+    es conserva el que ja s'havia classificat.
 
     :param versions_csv: un `versions.csv`.
     :return: ruta de `change_classification.csv`.
@@ -835,12 +844,14 @@ def run_classification(versions_csv: str) -> str:
     log.info(f"Classificant canvis de {by_dataset.ngroups} datasets de {versions_csv}...")
 
     output_csv = os.path.join(OUTPUT_DIR, "change_classification.csv")
+    status_csv = os.path.join(OUTPUT_DIR, COMPARISON_STATUS_FILE)
     classification_frame([]).to_csv(output_csv, index=False, encoding="utf-8")
+    status_frame([]).to_csv(status_csv, index=False, encoding="utf-8")
     for dataset_id, dataset_versions in by_dataset:
         units_to_compare = version_pairs(dataset_versions)
         log.info(f"  - {dataset_id}: {len(units_to_compare)} parelles de versions")
         try:
-            changes = compare_change_units(dataset_id, units_to_compare, HF_TOKEN, RETRY_CONFIG)
+            changes, statuses = compare_change_units(dataset_id, units_to_compare, HF_TOKEN, RETRY_CONFIG)
         except Exception as exc:
             category = errors.classify_error(exc)
             errors.append_failure_row(
@@ -851,8 +862,9 @@ def run_classification(versions_csv: str) -> str:
             log.warning(f"    Fallada ({category.value}): {dataset_id}")
             continue
         classification_frame(changes).to_csv(output_csv, mode="a", header=False, index=False, encoding="utf-8")
+        status_frame(statuses).to_csv(status_csv, mode="a", header=False, index=False, encoding="utf-8")
 
-    log.info(f"Classificació escrita a {output_csv}")
+    log.info(f"Classificació escrita a {output_csv}, i l'estat de cada comparació a {status_csv}")
     return output_csv
 
 

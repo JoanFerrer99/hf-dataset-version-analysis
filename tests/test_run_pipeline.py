@@ -153,7 +153,8 @@ class TestRunFullPipeline:
         files = result["generated_files"]
         assert files["Fase 0-1 (mostreig+elegibilitat)"] == [eligibility_csv, "funnel_summary.json"]
         assert files["Fase 1b (versions)"] == [str(tmp_path / "run_1" / "versions.csv")]
-        assert files["Fase 2 (classificació de canvis)"] == [str(tmp_path / "run_1" / "change_classification.csv")]
+        assert files["Fase 2 (classificació de canvis)"] == [str(tmp_path / "run_1" / "change_classification.csv"),
+                                                              str(tmp_path / "run_1" / "comparison_status.csv")]
 
     def test_input_csv_skips_run_sampling(self, monkeypatch, tmp_path):
         _patch_base_output_dir(monkeypatch, tmp_path)

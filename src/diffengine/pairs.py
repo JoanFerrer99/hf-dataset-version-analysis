@@ -3,7 +3,8 @@ Pas 1 (segona part): aparellar les taules de dues revisions i comparar-les.
 
 Aquí comença una comparació de revisions: `compare_revisions` fa el pas 1 i
 crida `engine.diff_tables` (passos 3 i 4) per a cada parell; `revision_rows`
-converteix els canvis en files de sortida (pas 5).
+converteix els canvis en files de sortida (pas 5), i `status_rows`, l'estat
+de cada parell.
 
 - Cada revisió es llista amb l'API (`list_revision`) i se'n resolen les
   taules (`units.resolve_units`).
@@ -292,6 +293,26 @@ def revision_rows(repo_id: str, old_rev: str, new_rev: str, pairs: list[UnitPair
     return [{"dataset_id": repo_id, "version_from": old_rev, "version_to": new_rev, "table": p.key,
              "file_path": ",".join(p.new_files), "code": c.code}
             for p in pairs if p.result is not None for c in p.result.changes]
+
+
+def status_rows(repo_id: str, old_rev: str, new_rev: str, pairs: list[UnitPair]) -> list[dict]:
+    """
+    L'estat de cada parella comparada, també de les que no tenen cap codi:
+    així es distingeix "sense canvis" (`ok` sense codis, `identical_content`)
+    de "no s'ha pogut comparar" (`too_large`, `parse_failed`...).
+
+    :param repo_id: repositori de Hugging Face.
+    :param old_rev: commit antic.
+    :param new_rev: commit nou.
+    :param pairs: parelles ja comparades.
+    :return: una fila per parella, amb `dataset_id`, `version_from`,
+        `version_to`, `table`, `file_path` (els fitxers nous, o els antics si
+        la taula ha desaparegut), `status` i `n_codes` (codis diferents).
+    """
+    return [{"dataset_id": repo_id, "version_from": old_rev, "version_to": new_rev, "table": p.key,
+             "file_path": ",".join(p.new_files or p.old_files), "status": p.status,
+             "n_codes": len(p.result.codes) if p.result is not None else 0}
+            for p in pairs]
 
 
 def compare_revisions(repo_id: str, old_rev: str, new_rev: str, token: str | None, call: Call = direct_call,

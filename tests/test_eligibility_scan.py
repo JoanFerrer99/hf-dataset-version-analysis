@@ -799,7 +799,7 @@ class TestCompareChangeUnits:
         result = DiffResult("ok", [Change("C221", column="b", subtype="unexplained")])
         monkeypatch.setattr(es.pairs, "compare_revisions", lambda *a, **kw: [self._fake_pair(result=result)])
 
-        changes = es.compare_change_units("org/ds", [("sha1", "sha2")], "tok", es.RETRY_CONFIG)
+        changes, _ = es.compare_change_units("org/ds", [("sha1", "sha2")], "tok", es.RETRY_CONFIG)
 
         assert changes == [{"dataset_id": "org/ds", "version_from": "sha1", "version_to": "sha2",
                             "table": "default/train", "file_path": "data/train.csv", "code": "C221"}]
@@ -807,14 +807,16 @@ class TestCompareChangeUnits:
     def test_download_failure_gives_no_changes(self, monkeypatch):
         monkeypatch.setattr(es.pairs, "compare_revisions", lambda *a, **kw: [self._fake_pair("download_failed")])
 
-        assert es.compare_change_units("org/ds", [("sha1", "sha2")], "tok", es.RETRY_CONFIG) == []
+        changes, _ = es.compare_change_units("org/ds", [("sha1", "sha2")], "tok", es.RETRY_CONFIG)
+
+        assert changes == []
 
     def test_no_units_means_no_hub_calls(self, monkeypatch):
         def must_not_be_called(*a, **kw):
             raise AssertionError("no s'havia de consultar el Hub")
 
         monkeypatch.setattr(es.pairs, "compare_revisions", must_not_be_called)
-        assert es.compare_change_units("org/ds", [], "tok", es.RETRY_CONFIG) == []
+        assert es.compare_change_units("org/ds", [], "tok", es.RETRY_CONFIG) == ([], [])
 
 
 # ---------------------------------------------------------------------------
@@ -828,7 +830,7 @@ def _record_units(monkeypatch):
     def fake(dataset_id, units_to_compare, hf_token, retry_config):
         calls.extend(units_to_compare)
         return [{"dataset_id": dataset_id, "version_from": o, "version_to": n, "file_path": "train.csv",
-                 "code": "C421"} for o, n in units_to_compare]
+                 "code": "C421"} for o, n in units_to_compare], []
 
     monkeypatch.setattr(es, "compare_change_units", fake)
     return calls
@@ -946,7 +948,7 @@ class TestRunClassification:
             if dataset_id == "org/bad":
                 raise ValueError("boom")
             return [{"dataset_id": dataset_id, "version_from": "c1", "version_to": "c2", "file_path": "t.csv",
-                     "code": "C421"}]
+                     "code": "C421"}], []
 
         monkeypatch.setattr(es, "compare_change_units", compare)
 
@@ -967,7 +969,7 @@ class TestRunClassification:
             if dataset_id == "org/killed":
                 raise KeyboardInterrupt
             return [{"dataset_id": dataset_id, "version_from": "c1", "version_to": "c2", "file_path": "t.csv",
-                     "code": "C421"}]
+                     "code": "C421"}], []
 
         monkeypatch.setattr(es, "compare_change_units", compare)
 
@@ -988,8 +990,8 @@ class TestRunClassification:
 
         monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
         # El mateix codi en dues columnes de la mateixa taula surt un sol cop.
-        monkeypatch.setattr(es, "compare_change_units", lambda *a: [row("C421", None), row("C223", "a"),
-                                                                     row("C223", "b")])
+        monkeypatch.setattr(es, "compare_change_units", lambda *a: ([row("C421", None), row("C223", "a"),
+                                                                      row("C223", "b")], []))
 
         output_csv = es.run_classification(versions)
 
@@ -1018,7 +1020,7 @@ class TestRunClassification:
         pair = UnitPair("default/train", ("data.csv",), ("data.parquet",), status="ok", result=result)
         monkeypatch.setattr(es.pairs, "compare_revisions", lambda *a, **kw: [pair])
 
-        labels = es.compare_change_units("org/ds", [("c1", "c2")], "tok", es.RETRY_CONFIG)
+        labels, _ = es.compare_change_units("org/ds", [("c1", "c2")], "tok", es.RETRY_CONFIG)
 
         assert all(label["code"] != "C100" for label in labels)
 

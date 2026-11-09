@@ -16,7 +16,7 @@ Fase 1, no hi ha Fase 2.
 Output: tot dins d'una carpeta nova, `data/run_<id>/` (mai sobreescriu):
   eligibility_report.csv, funnel_summary.json (Fase 0)
   versions.csv (Fase 1)
-  change_classification.csv (Fase 2)
+  change_classification.csv, comparison_status.csv (Fase 2)
   failures.csv (si hi ha fallades)
 Al final s'imprimeix la llista de fitxers generats per fase.
 """
@@ -107,7 +107,10 @@ def run_full_pipeline(
         log.info(f"FASE 2: Classificant canvis dels {eligible} datasets elegibles...")
         change_classification_csv = es.run_classification(outputs["versions_csv"])
         outputs["change_classification_csv"] = change_classification_csv
-        generated_files["Fase 2 (classificació de canvis)"].append(change_classification_csv)
+        generated_files["Fase 2 (classificació de canvis)"] += [
+            change_classification_csv,
+            os.path.join(os.path.dirname(change_classification_csv), es.COMPARISON_STATUS_FILE),
+        ]
 
     if os.path.exists(es.FAILURES_LOG_PATH):
         generated_files["Fallades (totes les fases)"] = [es.FAILURES_LOG_PATH]
