@@ -14,6 +14,9 @@ models:
         description: Ordre del pas (1 = mostra, 5 = elegibles).
       - name: stage
         description: "`sample`, `classified`, `version_marks`, `tabular_files` o `eligible`."
+        data_tests:
+          - unique
+          - not_null
       - name: n_datasets
         description: Datasets que arriben a aquest pas.
       - name: n_dropped
@@ -35,12 +38,21 @@ models:
       següent) s'han fet per dataset, i quantes no s'han pogut fer? Una fila
       per unitat de canvi, amb el recompte de taules per estat. Les
       proporcions dels altres marts es calculen només sobre `is_compared`.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: ["dataset_id", "version_from", "version_to"]
     columns:
       - name: unit_status
         description: >
           `compared` (alguna taula comparada), `not_compared` (cap, i alguna massa
           gran o que no s'ha pogut baixar o llegir), `no_common_table` (només
           taules afegides, eliminades o excloses), `no_tables` o `failed`.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["compared", "not_compared", "no_common_table", "no_tables", "failed"]
       - name: is_compared
         description: Alguna taula de la unitat s'ha comparat.
       - name: n_tables_not_compared
@@ -58,6 +70,9 @@ models:
     columns:
       - name: code
         description: Codi de la taxonomia.
+        data_tests:
+          - unique
+          - not_null
       - name: n_changes
         description: Files de fact_change (un canvi per taula).
       - name: n_units
@@ -73,6 +88,11 @@ models:
     columns:
       - name: criterion
         description: "`A`, `B` o `all`."
+        data_tests:
+          - unique
+          - accepted_values:
+              arguments:
+                values: ["A", "B", "all"]
       - name: n_compared_units
         description: Comparacions fetes (unitats `is_compared`).
       - name: share_with_breaking_change
@@ -94,6 +114,10 @@ models:
     description: >
       Pregunta: els datasets del Criteri A (tags) i del B (sessions) canvien de
       manera diferent? Una fila per criteri i perspectiva (també sense canvis).
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: ["criterion", "perspective"]
     columns:
       - name: criterion
         description: "`A` o `B`."
@@ -109,6 +133,9 @@ models:
     columns:
       - name: dataset_id
         description: Dataset de Hugging Face.
+        data_tests:
+          - unique
+          - not_null
       - name: n_versions
         description: Versions de versions.csv.
       - name: n_compared_units
@@ -124,6 +151,9 @@ models:
     columns:
       - name: code
         description: Codi de la taxonomia.
+        data_tests:
+          - unique
+          - not_null
       - name: precision
         description: tp / (tp + fp).
       - name: recall
