@@ -634,7 +634,8 @@ descàrregues es fan.
   a la caché local de HF). Baixar el contingut complet de totes les
   versions de 11 elegibles es va estimar en 151 GB (un sol dataset en
   pesava 78): per això el salt per hash, el límit de bytes per taula
-  (`max_unit_bytes`) i el filtre d'elegibles.
+  (`max_unit_bytes`, un paràmetre de l'execució: `--max-table-mb`, 500 MB
+  per defecte) i el filtre d'elegibles.
 - Comparar una taula de `r` files i `c` columnes: majoritàriament O(r·c)
   per passada, vectoritzat. La memòria és el límit pràctic: una taula de
   2,5 M de files (run_9, `qld-unclaimed-money`) en fa servir uns 4 GB i
@@ -642,8 +643,10 @@ descàrregues es fan.
   `predicate`) s'entrena amb una mostra de 100.000 files conservades
   (`max_rule_rows`, decisió T-24).
 
-Límits fixos: 50 commits per dataset (`MAX_COMMITS` a la Fase 0), 500 MB per taula,
-30 s per clonar, 10 s per `git show`.
+Límits fixos: 50 commits per dataset (`MAX_COMMITS` a la Fase 0), 30 s per clonar,
+10 s per `git show`. La mida màxima d'una taula és un paràmetre de l'execució
+(`--max-table-mb` a `run_pipeline.py` i a `eligibility_scan.py --classify-versions`;
+500 MB per defecte, decisió T-35).
 
 ---
 

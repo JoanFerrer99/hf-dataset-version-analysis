@@ -1574,6 +1574,27 @@ Estat: Fet
     A contra B) esperen les preguntes acordades amb el director.
 
 
+DECISIÓ T-35: la mida màxima d'una taula és un paràmetre de l'execució
+Data: novembre 2026
+Responsable: Joan (acordat amb el director a la reunió de seguiment)
+Estat: Fet
+
+  MOTIU: una comparació del director no acabava. Era la memòria: el motor
+  carrega les dues versions d'una taula senceres, i el límit (500 MB,
+  `max_unit_bytes`) era fix al codi. Amb un paràmetre, cada execució pot
+  triar-lo segons la màquina, sense tocar el codi.
+
+  DECISIÓ:
+  - `--max-table-mb` a `run_pipeline.py` i a `eligibility_scan.py
+    --classify-versions`. Per defecte, 500 (el valor de `DEFAULT_CONFIG`; 1 MB
+    = 1024² bytes). Ha de ser més gran que 0.
+  - Es compara amb la suma de les dues versions de la taula, com abans: per
+    sobre, no es descarrega i queda amb l'estat `too_large`.
+  - El motor no canvia: `eligibility_scan.engine_config` fa una còpia de
+    `DEFAULT_CONFIG` amb el límit nou i la passa fins a
+    `pairs.compare_revisions`. El valor surt al log de la Fase 2.
+
+
 ================================================================================
 BLOC 4 — DECISIONS D'ABAST
 ================================================================================

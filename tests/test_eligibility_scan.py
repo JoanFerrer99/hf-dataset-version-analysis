@@ -10,6 +10,7 @@ Cobreixen:
 
 import os
 import random
+import sys
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
@@ -852,6 +853,53 @@ class TestCompareChangeUnits:
         monkeypatch.setattr(es.pairs, "compare_revisions", must_not_be_called)
         assert es.compare_change_units("org/ds", [], "tok", es.RETRY_CONFIG) == ([], [])
 
+    def test_passes_the_engine_config_to_the_engine(self, monkeypatch):
+        seen = []
+        monkeypatch.setattr(es.pairs, "compare_revisions", lambda *a, **kw: seen.append(kw["config"]) or [])
+        config = es.engine_config(1)
+
+        es.compare_change_units("org/ds", [("sha1", "sha2")], "tok", es.RETRY_CONFIG, config)
+
+        assert seen == [config]
+
+
+class TestMaxTableSize:
+    """La mida màxima d'una taula és un paràmetre de l'execució (`--max-table-mb`)."""
+
+    def test_the_default_is_the_engine_default(self):
+        assert es.DEFAULT_MAX_TABLE_MB == 500
+        assert es.engine_config() == es.DEFAULT_CONFIG
+
+    def test_megabytes_become_bytes_and_nothing_else_changes(self):
+        from dataclasses import replace
+
+        config = es.engine_config(1.5)
+
+        assert config.max_unit_bytes == int(1.5 * 1024**2)
+        assert replace(config, max_unit_bytes=es.DEFAULT_CONFIG.max_unit_bytes) == es.DEFAULT_CONFIG
+
+    def test_cli_reads_the_limit(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["eligibility_scan.py", "--classify-versions", "v.csv", "--max-table-mb",
+                                          "1000"])
+        assert es.parse_args().max_table_mb == 1000
+
+    @pytest.mark.parametrize("value", ["0", "-5", "molt"])
+    def test_cli_rejects_a_limit_that_is_not_a_positive_number(self, monkeypatch, value):
+        monkeypatch.setattr(sys, "argv", ["eligibility_scan.py", "--classify-versions", "v.csv", "--max-table-mb",
+                                          value])
+        with pytest.raises(SystemExit):
+            es.parse_args()
+
+    def test_run_classification_uses_the_limit(self, monkeypatch, tmp_path):
+        versions = _write_versions(tmp_path, {"org/ds": [("sha1", 1), ("sha2", 2)]})
+        monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
+        seen = []
+        monkeypatch.setattr(es, "compare_change_units", lambda *a: seen.append(a[4]) or ([], []))
+
+        es.run_classification(versions, es.engine_config(3))
+
+        assert [c.max_unit_bytes for c in seen] == [3 * 1024**2]
+
 
 # ---------------------------------------------------------------------------
 # Commits tabulars: la Fase 0 els retorna en memòria i la Fase 1 els reaprofita
@@ -861,7 +909,7 @@ def _record_units(monkeypatch):
     """Substitueix la comparació per una que només apunta les parelles rebudes."""
     calls = []
 
-    def fake(dataset_id, units_to_compare, hf_token, retry_config):
+    def fake(dataset_id, units_to_compare, hf_token, retry_config, config=None):
         calls.extend(units_to_compare)
         return [{"dataset_id": dataset_id, "version_from": o, "version_to": n, "file_path": "train.csv",
                  "code": "C421"} for o, n in units_to_compare], []
@@ -978,7 +1026,7 @@ class TestRunClassification:
         monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
         monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
 
-        def compare(dataset_id, units_to_compare, hf_token, retry_config):
+        def compare(dataset_id, units_to_compare, hf_token, retry_config, config=None):
             if dataset_id == "org/bad":
                 raise ValueError("boom")
             return [{"dataset_id": dataset_id, "version_from": "c1", "version_to": "c2", "file_path": "t.csv",
@@ -999,7 +1047,7 @@ class TestRunClassification:
         versions = _write_versions(tmp_path, {ds: [("c1", 1), ("c2", 2)] for ds in ("org/done", "org/killed")})
         monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
 
-        def compare(dataset_id, units_to_compare, hf_token, retry_config):
+        def compare(dataset_id, units_to_compare, hf_token, retry_config, config=None):
             if dataset_id == "org/killed":
                 raise KeyboardInterrupt
             return ([{"dataset_id": dataset_id, "version_from": "c1", "version_to": "c2", "file_path": "t.csv",
@@ -1051,7 +1099,7 @@ class TestRunClassification:
         versions = _write_versions(tmp_path, {"org/ds": [("sha1", 1), ("sha2", 2), ("sha3", 3)]})
         monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
 
-        def compare_revisions(dataset_id, old_rev, new_rev, token, call):
+        def compare_revisions(dataset_id, old_rev, new_rev, token, call, config=None):
             changes = [Change("C421"), Change("C510", column="a")] if new_rev == "sha2" else []
             return [UnitPair("default/train", ("train.csv",), ("train.csv",), status="ok",
                              result=DiffResult("ok", changes)),

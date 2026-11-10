@@ -12,6 +12,7 @@ exercir.
 """
 
 import os
+import sys
 
 import pandas as pd
 import pytest
@@ -68,8 +69,8 @@ def _patch_run_extraction(monkeypatch, calls):
 
 
 def _patch_run_classification(monkeypatch, calls, output_csv="change_classification.csv"):
-    def fake_run_classification(versions_csv):
-        calls.append(("run_classification", versions_csv))
+    def fake_run_classification(versions_csv, config=None):
+        calls.append(("run_classification", versions_csv, config))
         return output_csv
 
     monkeypatch.setattr(es, "run_classification", fake_run_classification)
@@ -241,6 +242,26 @@ class TestRunFullPipeline:
 
         compute_size = next(c[3] for c in calls if c[0] == "run_extraction")
         assert compute_size is False
+
+    def test_max_table_size_reaches_the_classification(self, monkeypatch, tmp_path):
+        _patch_base_output_dir(monkeypatch, tmp_path)
+        calls = []
+        _patch_run_sampling(monkeypatch, calls, str(tmp_path / "run_1" / "eligibility_report.csv"), eligible_total=1)
+        _patch_run_extraction(monkeypatch, calls)
+        _patch_run_classification(monkeypatch, calls)
+
+        rp.run_full_pipeline(
+            sample_size=1, max_scanned=None, num_threads=1, tags_only=False,
+            input_csv=None, skip_version_extraction=False, skip_classification=False, skip_size=False,
+            max_table_mb=2,
+        )
+
+        config = next(c[2] for c in calls if c[0] == "run_classification")
+        assert config.max_unit_bytes == 2 * 1024**2
+
+    def test_cli_max_table_size_defaults_to_the_engine_limit(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["run_pipeline.py", "--sample-size", "5"])
+        assert rp.parse_args().max_table_mb == es.DEFAULT_MAX_TABLE_MB == 500
 
 
 # ---------------------------------------------------------------------------

@@ -1,8 +1,11 @@
 """Tests del pas 1 del motor (`diffengine.pairs`): aparellament de taules i estats, sense xarxa."""
 
+from dataclasses import replace
+
 import pandas as pd
 
 from diffengine import pairs
+from diffengine.config import DEFAULT_CONFIG
 from diffengine.units import resolve_units
 
 
@@ -83,6 +86,29 @@ class TestComparePair:
         pairs.compare_pair("org/ds", pair, old, new, None, {"max_retries": 1, "base_wait_s": 0, "max_wait_s": 0})
         assert pair.status == "download_failed"
         assert pair.result is None
+
+    def test_table_over_the_size_limit_is_not_downloaded(self, monkeypatch):
+        def must_not_download(*a):
+            raise AssertionError("no s'havia de descarregar")
+        monkeypatch.setattr(pairs, "_load_files", must_not_download)
+        old = revision("a", {"train.csv": "h1"})  # 100 bytes per fitxer: 200 entre les dues versions
+        new = revision("b", {"train.csv": "h2"})
+        pair = pairs.pair_units(old, new)[0]
+
+        pairs.compare_pair("org/ds", pair, old, new, None, config=replace(DEFAULT_CONFIG, max_unit_bytes=199))
+
+        assert (pair.status, pair.result) == ("too_large", None)
+
+    def test_table_at_the_size_limit_is_compared(self, monkeypatch):
+        base = pd.DataFrame({"a": range(50)})
+        self._setup(monkeypatch, {("a", "train.csv"): _csv(base), ("b", "train.csv"): _csv(base.iloc[:40])})
+        old = revision("a", {"train.csv": "h1"})
+        new = revision("b", {"train.csv": "h2"})
+        pair = pairs.pair_units(old, new)[0]
+
+        pairs.compare_pair("org/ds", pair, old, new, None, config=replace(DEFAULT_CONFIG, max_unit_bytes=200))
+
+        assert pair.status == "ok"
 
     def test_two_changed_files_give_separate_results(self, monkeypatch):
         """Cas 13."""

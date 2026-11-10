@@ -60,7 +60,7 @@ import logging
 import subprocess
 import tempfile
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Iterable, Iterator
@@ -72,6 +72,7 @@ from huggingface_hub import HfApi, dataset_info, list_repo_commits, list_repo_re
 
 import errors
 from diffengine import pairs, units
+from diffengine.config import DEFAULT_CONFIG, EngineConfig
 from diffengine.output import classification_frame, status_frame
 from errors import ErrorCategory
 
@@ -115,6 +116,8 @@ MIN_SUBSTANTIVE_GAP_HOURS = 6.0
 MAX_COMMITS = 50  # commits revisats per dataset, del més nou al més vell
 INTERNAL_FIELDS = ("tabular_commits",)
 COMPARISON_STATUS_FILE = "comparison_status.csv"
+MB = 1024**2
+DEFAULT_MAX_TABLE_MB = DEFAULT_CONFIG.max_unit_bytes // MB
 
 # Motiu que queda al report: el criteri que es compleix, o el filtre on s'atura el dataset.
 ELIGIBILITY_REASONS = {
@@ -560,6 +563,7 @@ def version_pairs(versions: pd.DataFrame) -> list[tuple[str, str]]:
 
 def compare_change_units(
     dataset_id: str, units_to_compare: list[tuple[str, str]], hf_token: str | None, retry_config: dict,
+    config: EngineConfig = DEFAULT_CONFIG,
 ) -> tuple[list[dict], list[dict]]:
     """
     Compara amb el motor (`diffengine.pairs.compare_revisions`) cada parella
@@ -569,6 +573,7 @@ def compare_change_units(
     :param units_to_compare: parelles `(SHA antic, SHA nou)` de `version_pairs`.
     :param hf_token: token de Hugging Face.
     :param retry_config: configuració de reintent (també per a les descàrregues).
+    :param config: llindars del motor (p.e. la mida màxima d'una taula).
     :return: `(canvis, estats)`: una fila per canvi (`pairs.revision_rows`) i
         una per parell de taules, també sense codis (`pairs.status_rows`).
     """
@@ -577,7 +582,7 @@ def compare_change_units(
     statuses: list[dict] = []
     for i, (old_rev, new_rev) in enumerate(units_to_compare, start=1):
         log.info(f"    parella {i}/{len(units_to_compare)}: {old_rev[:7]} -> {new_rev[:7]}")
-        compared = pairs.compare_revisions(dataset_id, old_rev, new_rev, hf_token, call=retry)
+        compared = pairs.compare_revisions(dataset_id, old_rev, new_rev, hf_token, call=retry, config=config)
         labels += pairs.revision_rows(dataset_id, old_rev, new_rev, compared)
         statuses += pairs.status_rows(dataset_id, old_rev, new_rev, compared)
     return labels, statuses
@@ -815,7 +820,19 @@ def run_sampling(
     return csv_path, json_path, summary, tabular_commits
 
 
-def run_classification(versions_csv: str) -> str:
+def engine_config(max_table_mb: float = DEFAULT_MAX_TABLE_MB) -> EngineConfig:
+    """
+    Els llindars del motor per a una execució: els de `DEFAULT_CONFIG`, amb la
+    mida màxima d'una taula que es dona.
+
+    :param max_table_mb: mida màxima d'una taula, en MB (1 MB = 1024² bytes),
+        sumant la versió antiga i la nova. Per sobre, no es compara (`too_large`).
+    :return: la configuració del motor.
+    """
+    return replace(DEFAULT_CONFIG, max_unit_bytes=int(max_table_mb * MB))
+
+
+def run_classification(versions_csv: str, config: EngineConfig = DEFAULT_CONFIG) -> str:
     """
     Fase 2: compara cada versió de `versions.csv` (Fase 1) amb la següent del
     mateix dataset i escriu a `OUTPUT_DIR`:
@@ -834,6 +851,7 @@ def run_classification(versions_csv: str) -> str:
     es conserva el que ja s'havia classificat.
 
     :param versions_csv: un `versions.csv`.
+    :param config: llindars del motor (`engine_config`).
     :return: ruta de `change_classification.csv`.
     """
     try:
@@ -841,7 +859,8 @@ def run_classification(versions_csv: str) -> str:
     except pd.errors.EmptyDataError:  # la Fase 1 no va extreure cap versió
         versions = pd.DataFrame(columns=["dataset_id", "version_order", "commit_sha"])
     by_dataset = versions.groupby("dataset_id", sort=False)
-    log.info(f"Classificant canvis de {by_dataset.ngroups} datasets de {versions_csv}...")
+    log.info(f"Classificant canvis de {by_dataset.ngroups} datasets de {versions_csv} (taules de fins a "
+             f"{config.max_unit_bytes / MB:g} MB)...")
 
     output_csv = os.path.join(OUTPUT_DIR, "change_classification.csv")
     status_csv = os.path.join(OUTPUT_DIR, COMPARISON_STATUS_FILE)
@@ -851,7 +870,7 @@ def run_classification(versions_csv: str) -> str:
         units_to_compare = version_pairs(dataset_versions)
         log.info(f"  - {dataset_id}: {len(units_to_compare)} parelles de versions")
         try:
-            changes, statuses = compare_change_units(dataset_id, units_to_compare, HF_TOKEN, RETRY_CONFIG)
+            changes, statuses = compare_change_units(dataset_id, units_to_compare, HF_TOKEN, RETRY_CONFIG, config)
         except Exception as exc:
             category = errors.classify_error(exc)
             errors.append_failure_row(
@@ -872,6 +891,21 @@ def run_classification(versions_csv: str) -> str:
 # Punt d'entrada amb argparse
 # ---------------------------------------------------------------------------
 
+def positive_float(text: str) -> float:
+    """
+    Tipus d'argument de la CLI: un nombre més gran que 0.
+
+    :raises argparse.ArgumentTypeError: si no ho és.
+    """
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"no és un nombre: {text}") from None
+    if value <= 0:
+        raise argparse.ArgumentTypeError(f"ha de ser més gran que 0: {text}")
+    return value
+
+
 def parse_args() -> argparse.Namespace:
     """
     Arguments de la CLI. Sense cap argument mostra l'ajuda i surt, perquè
@@ -890,6 +924,13 @@ def parse_args() -> argparse.Namespace:
             "Útil per reclassificar les versions d'un run previ sense tornar a "
             "mostrejar; per encadenar mostreig+extracció+classificació en una "
             "sola execució, useu src/run_pipeline.py en lloc d'aquest flag."
+        ),
+    )
+    parser.add_argument(
+        "--max-table-mb", type=positive_float, default=DEFAULT_MAX_TABLE_MB, metavar="MB",
+        help=(
+            "Amb --classify-versions: mida màxima d'una taula (1 MB = 1024² bytes), sumant la versió antiga i "
+            "la nova. Les més grans no es descarreguen ni es comparen: queden amb l'estat too_large."
         ),
     )
     parser.add_argument(
@@ -972,7 +1013,7 @@ if __name__ == "__main__":
 
     new_run_dir()
     if args.classify_versions:
-        run_classification(args.classify_versions)
+        run_classification(args.classify_versions, engine_config(args.max_table_mb))
     else:
         run_sampling(
             sample_size=args.sample_size,

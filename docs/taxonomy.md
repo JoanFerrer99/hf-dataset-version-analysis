@@ -130,5 +130,6 @@ Límits que encara té:
 - **Files duplicades i ordre (C410).** Quan hi ha files idèntiques,
   quina còpia correspon a quina és ambigu; en combinació amb altres canvis
   pot aparèixer un C410 que no hi és.
-- **Taules massa grans.** Per sobre de `max_unit_bytes` el parell queda
-  amb l'estat `too_large` i sense codis.
+- **Taules massa grans.** Per sobre de la mida màxima (`--max-table-mb`,
+  500 MB per defecte, sumant les dues versions) el parell queda amb l'estat
+  `too_large` i sense codis.

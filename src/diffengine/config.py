@@ -22,7 +22,8 @@ class EngineConfig:
     max_unit_bytes: int = 500 * 1024**2
     """Mida màxima d'una taula, sumant la versió antiga i la nova. Per sobre,
     no es descarrega ni es compara: la parella queda amb l'estat `too_large` i
-    sense cap codi."""
+    sense cap codi. A la Fase 2 és un paràmetre de l'execució (`--max-table-mb`,
+    en MB; decisió T-35)."""
 
     # --- Pas 2: llegir cada taula -------------------------------------------
     missing_tokens: tuple[str, ...] = ("", "?", "NA", "N/A", "n/a", "NaN", "nan", "null", "NULL", "None", "none", "-")

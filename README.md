@@ -151,5 +151,6 @@ Detall: `docs/warehouse.md` (capes i esquema en estrella),
 - `--threads`: processament en paral·lel
 - `--max-scanned`: limit opcional nomes per proves rapides
 - `--seed`: mostra reproduible
+- `--max-table-mb`: mida màxima d'una taula, en MB (500 per defecte); les més grans no es comparen i queden com a `too_large`
 - `--skip-version-extraction` / `--skip-classification` (`run_pipeline.py`): ometen una fase concreta
 - `--input-csv` (`run_pipeline.py`): salta el mostreig, reutilitza un CSV d'un run previ
