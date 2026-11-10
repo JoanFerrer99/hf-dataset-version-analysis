@@ -97,7 +97,7 @@ docker compose build
 # encadenat entre fases -- vegeu Quickstart més amunt):
 docker compose run --rm --remove-orphans run-pipeline --sample-size 50 --threads 4 --seed 42 --max-scanned 5000
 ls data/run_<id>/                           # eligibility_report.csv, funnel_summary.json, versions.csv,
-                                            # change_classification.csv (nomes si hi ha elegibles)
+# change_classification.csv (nomes
 ```
 
 `--remove-orphans` neteja contenidors aturats d'execucions anteriors amb
@@ -121,15 +121,15 @@ cap de nou. Sense `docker compose`, l'equivalent amb `docker run` (l'imatge
 usa `run_pipeline.py` com a entrypoint per defecte; sobreescriu-lo per a un
 script individual):
 
-## Magatzem, interfície i figures (Fase 3)
+## Esquema, interfície i figures (Fase 3)
 
 `run_pipeline.py` construeix el magatzem al final de cada execució
 (`--skip-warehouse` ho omet). Per a una execució ja feta, com la de
 referència (run_9):
 
 ```bash
-python src/build_warehouse.py --run-dir data/run_9                       # data/warehouse/run_9.duckdb (dbt build: models i tests)
-WAREHOUSE_PATH=data/warehouse/run_9.duckdb streamlit run ui/app.py       # interfície a http://localhost:8501
+python src/build_warehouse.py --run-dir data/<run_id>                       # data/warehouse/run_9.duckdb (dbt build: models i tests)
+WAREHOUSE_PATH=data/warehouse/<run_id>.duckdb streamlit run ui/app.py       # interfície a http://localhost:8501
 python src/figures/make_all.py                                           # figures a docs/figures/
 ```
 
