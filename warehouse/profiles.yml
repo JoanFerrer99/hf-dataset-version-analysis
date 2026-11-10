@@ -1,0 +1,9 @@
+# El fitxer .duckdb surt de WAREHOUSE_PATH (per defecte, warehouse/hf_changes.duckdb,
+# relatiu a l'arrel del repositori, d'on s'executa dbt).
+hf_changes:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('WAREHOUSE_PATH', 'warehouse/hf_changes.duckdb') }}"
+      threads: 4

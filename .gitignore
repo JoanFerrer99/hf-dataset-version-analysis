@@ -152,3 +152,9 @@ __marimo__/
 dataset_versions_*.csv
 *.log
 debug_*.py
+
+# Magatzem de dades (Fase 3)
+warehouse/target/
+warehouse/logs/
+*.duckdb
+*.duckdb.wal

@@ -1,0 +1,47 @@
+version: 2
+
+seeds:
+  - name: taxonomy
+    description: >
+      Els 14 codis tabulars de la taxonomia (C100, metadades, és fora d'abast):
+      docs/architecture.md, secció 2.6, i docs/taxonomy.md. Els nivells segueixen
+      les xifres del codi: level_1 és la perspectiva (C2, C3, C4, C5), level_2 el
+      grup de dues xifres (p.e. C22, C31) i level_3 el canvi concret.
+    config:
+      column_types:
+        code: varchar
+        name: varchar
+        perspective: varchar
+        level_1: varchar
+        level_2: varchar
+        level_3: varchar
+        is_breaking: boolean
+    columns:
+      - name: code
+        description: Codi de la taxonomia (C210...C530).
+        data_tests:
+          - unique
+          - not_null
+      - name: name
+        description: El canvi, en català.
+        data_tests:
+          - not_null
+      - name: perspective
+        description: Categoria del paper (Columns Set, Column Kind, Rows Set, Data Characteristics).
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["Columns Set", "Column Kind", "Rows Set", "Data Characteristics"]
+      - name: level_1
+        description: Perspectiva, en català (primera xifra del codi).
+      - name: level_2
+        description: Grup de dues xifres del codi.
+      - name: level_3
+        description: El canvi concret (tercera xifra).
+      - name: is_breaking
+        description: >
+          Trenca l'execució d'un pipeline que llegeix per nom, posició, tipus o
+          ordre (C210, C222, C223, C311, C321, C410). Igual que
+          diffengine.output.BREAKING_CODES.
+        data_tests:
+          - not_null

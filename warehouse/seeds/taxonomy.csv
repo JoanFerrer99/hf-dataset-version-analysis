@@ -1,0 +1,15 @@
+code,name,perspective,level_1,level_2,level_3,is_breaking
+C210,Ordre de columnes,Columns Set,Conjunt de columnes,Ordre de columnes,Ordre de columnes,true
+C221,Afegir columna,Columns Set,Conjunt de columnes,"Afegir, eliminar o renombrar columnes",Afegir columna,false
+C222,Eliminar columna,Columns Set,Conjunt de columnes,"Afegir, eliminar o renombrar columnes",Eliminar columna,true
+C223,Renombrar columna,Columns Set,Conjunt de columnes,"Afegir, eliminar o renombrar columnes",Renombrar columna,true
+C311,Tipus d'una columna categòrica,Column Kind,Característiques d'una columna,Columna categòrica,Tipus,true
+C312,Valors d'una columna categòrica,Column Kind,Característiques d'una columna,Columna categòrica,Valors,false
+C321,Tipus d'una columna numèrica,Column Kind,Característiques d'una columna,Columna numèrica,Tipus,true
+C322,Valors d'una columna numèrica,Column Kind,Característiques d'una columna,Columna numèrica,Valors,false
+C410,Ordre de files,Rows Set,Conjunt de files,Ordre de files,Ordre de files,true
+C421,Afegir fila,Rows Set,Conjunt de files,Afegir o eliminar files,Afegir fila,false
+C422,Eliminar fila,Rows Set,Conjunt de files,Afegir o eliminar files,Eliminar fila,false
+C510,Valors absents (missings),Data Characteristics,Característiques estadístiques,Valors absents,Valors absents,false
+C520,Correlacions,Data Characteristics,Característiques estadístiques,Correlacions,Correlacions,false
+C530,Distribució de les dades,Data Characteristics,Característiques estadístiques,Distribució,Distribució,false

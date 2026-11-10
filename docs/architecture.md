@@ -229,7 +229,8 @@ python src/run_pipeline.py --sample-size 2000 --threads 4 --seed 42             
 ```
 src/                Codi del pipeline: un script per fase i el motor de detecció de canvis
   diffengine/       El motor, com a paquet de Python (s'explica a docs/validacio_census_income.md, secció 1)
-tests/              Tests automàtics (pytest), sense xarxa
+warehouse/          Magatzem de la Fase 3: projecte dbt sobre DuckDB (docs/warehouse.md)
+tests/              Tests automàtics (pytest), sense xarxa; fixtures/run_sample/ és una execució sintètica
 data/               Resultats de les execucions (secció 10)
 docs/               Documentació (ordre de lectura: docs/README.md)
 ```

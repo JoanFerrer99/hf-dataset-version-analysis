@@ -1,0 +1,8 @@
+dataset_id,version_from,version_to,table,file_path,code,description,is_breaking
+org/tags-a,918f09b384b3713c230529ad77468ed674b65be7,760acc7bfda7ec19525c1fcdbe03d47f5dad7849,default/train,data/train.csv,C221,Afegir columna,False
+org/tags-a,918f09b384b3713c230529ad77468ed674b65be7,760acc7bfda7ec19525c1fcdbe03d47f5dad7849,default/train,data/train.csv,C421,Afegir fila,False
+org/tags-a,760acc7bfda7ec19525c1fcdbe03d47f5dad7849,0ceae369daffd369238497d513623e7913583b9a,default/train,data/train.csv,C222,Eliminar columna,True
+org/tags-a,760acc7bfda7ec19525c1fcdbe03d47f5dad7849,0ceae369daffd369238497d513623e7913583b9a,default/train,data/train.csv,C223,Renombrar columna,True
+org/tags-a,760acc7bfda7ec19525c1fcdbe03d47f5dad7849,0ceae369daffd369238497d513623e7913583b9a,default/train,data/train.csv,C510,Missings,False
+org/sessions-b,79056055f42ccdb532fe6afbecefbedabf279f6c,5b94c8aff45f5e67782591858b50d5e7c1c75d7b,default/train,"data/train-00000-of-00002.parquet,data/train-00001-of-00002.parquet",C312,Valors d'una columna categòrica,False
+org/sessions-b,79056055f42ccdb532fe6afbecefbedabf279f6c,5b94c8aff45f5e67782591858b50d5e7c1c75d7b,default/train,"data/train-00000-of-00002.parquet,data/train-00001-of-00002.parquet",C530,Distribució de les dades,False
