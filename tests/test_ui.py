@@ -13,7 +13,7 @@ from streamlit.testing.v1 import AppTest
 import build_warehouse as bw
 
 APP = os.path.join(bw.REPO_ROOT, "ui", "app.py")
-PAGES = ["pages/home.py", "pages/sampling.py", "pages/versions.py", "pages/changes.py", "pages/explorer.py"]
+PAGES = ["app_pages/home.py", "app_pages/sampling.py", "app_pages/versions.py", "app_pages/changes.py", "app_pages/explorer.py"]
 
 
 @pytest.fixture
@@ -91,14 +91,14 @@ def _page(app, page, **state):
 
 
 def test_sampling_page_shows_the_funnel_and_both_criteria(app):
-    _page(app, "pages/sampling.py")
+    _page(app, "app_pages/sampling.py")
 
     assert app.dataframe[0].value["Hi arriben"].tolist() == [12, 10, 6, 4, 3]
     assert {m.label: m.value for m in app.metric} == {"Criteri A: tags": "2", "Criteri B: sessions de commits": "1"}
 
 
 def test_versions_page_lists_every_version_with_its_commit_link(app):
-    _page(app, "pages/versions.py")
+    _page(app, "app_pages/versions.py")
 
     versions = app.dataframe[0].value
     assert len(versions) == 7
@@ -106,16 +106,16 @@ def test_versions_page_lists_every_version_with_its_commit_link(app):
 
 
 def test_filters_restrict_the_data_and_are_kept_across_pages(app):
-    _page(app, "pages/versions.py", filter_criteria=["B"])
+    _page(app, "app_pages/versions.py", filter_criteria=["B"])
     assert set(app.dataframe[0].value["dataset_id"]) == {"org/sessions-b"}
 
-    _page(app, "pages/home.py")
-    _page(app, "pages/versions.py")
+    _page(app, "app_pages/home.py")
+    _page(app, "app_pages/versions.py")
     assert set(app.dataframe[0].value["dataset_id"]) == {"org/sessions-b"}
 
 
 def test_changes_page_applies_perspective_and_breaking_filters(app):
-    _page(app, "pages/changes.py", filter_perspectives=["Rows Set"], filter_breaking="Només no trencadors")
+    _page(app, "app_pages/changes.py", filter_perspectives=["Rows Set"], filter_breaking="Només no trencadors")
 
     frequency = app.dataframe[0].value
     assert frequency["code"].tolist() == ["C421", "C422"]
@@ -123,7 +123,7 @@ def test_changes_page_applies_perspective_and_breaking_filters(app):
 
 
 def test_explorer_drills_down_from_a_dataset_to_its_codes(app):
-    _page(app, "pages/explorer.py", explorer_dataset="org/tags-a", explorer_unit=1)
+    _page(app, "app_pages/explorer.py", explorer_dataset="org/tags-a", explorer_unit=1)
 
     units, changes = app.dataframe[0].value, app.dataframe[1].value
     assert units["label_to"].tolist() == ["v1.1", "v2.0"]
@@ -132,7 +132,7 @@ def test_explorer_drills_down_from_a_dataset_to_its_codes(app):
 
 
 def test_explorer_says_why_a_comparison_has_no_codes(app):
-    _page(app, "pages/explorer.py", explorer_dataset="org/tags-c")
+    _page(app, "app_pages/explorer.py", explorer_dataset="org/tags-c")
 
     assert "no s'ha pogut fer" in app.info[0].value
 

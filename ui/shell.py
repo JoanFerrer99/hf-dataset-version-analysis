@@ -17,19 +17,21 @@ import streamlit as st
 HERE = os.path.dirname(os.path.abspath(__file__))
 BRAND = "Canvis en datasets de Hugging Face"
 
-# Les pàgines, en l'ordre de la navegació: el títol és també l'identificador.
+# Les pàgines, en l'ordre de la navegació: el títol és també l'identificador. La carpeta és
+# app_pages/ i no pages/: Streamlit tracta pages/ com una aplicació antiga de diverses pàgines, i un
+# enllaç directe (p.e. /coverage) obriria la pàgina sola, sense app.py (ni navegació ni capçalera).
 PAGES = [
-    {"path": "pages/home.py", "title": "Inici", "eyebrow": "Fase 3 · Panorama",
+    {"path": "app_pages/home.py", "title": "Inici", "eyebrow": "Fase 3 · Panorama",
      "subtitle": "Com canvien els datasets publicats a Hugging Face d'una versió a la següent, i amb quina "
                  "freqüència apareix cada tipus de canvi?"},
-    {"path": "pages/sampling.py", "title": "Mostreig i elegibilitat", "eyebrow": "Fase 0",
+    {"path": "app_pages/sampling.py", "title": "Mostreig i elegibilitat", "eyebrow": "Fase 0",
      "subtitle": "Quants datasets de la mostra passen cada filtre, i quina proporció té més d'una versió de "
                  "dades tabulars."},
-    {"path": "pages/versions.py", "title": "Versions", "eyebrow": "Fase 1",
+    {"path": "app_pages/versions.py", "title": "Versions", "eyebrow": "Fase 1",
      "subtitle": "Les versions de cada dataset elegible al llarg del temps: tags o sessions de commits."},
-    {"path": "pages/changes.py", "title": "Canvis", "eyebrow": "Fase 2",
+    {"path": "app_pages/changes.py", "title": "Canvis", "eyebrow": "Fase 2",
      "subtitle": "Quins canvis surten, quants trenquen un pipeline i com evolucionen al llarg del temps."},
-    {"path": "pages/explorer.py", "title": "Explorador", "eyebrow": "Fase 2 · Detall",
+    {"path": "app_pages/explorer.py", "title": "Explorador", "eyebrow": "Fase 2 · Detall",
      "subtitle": "Un dataset, les seves comparacions, i a quines taules hi ha canvis i de quin tipus."},
 ]
 
