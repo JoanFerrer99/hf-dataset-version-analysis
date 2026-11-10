@@ -1,5 +1,5 @@
 """
-Interfície de consulta del magatzem (Fase 3): sis pàgines, una per tema.
+Interfície de consulta del magatzem (Fase 3): un visualitzador interactiu de l'execució, en cinc pàgines.
 
 La navegació nativa de Streamlit està amagada (`position="hidden"`): la fa la
 barra de `shell.nav_bar`, un component HTML amb Tailwind que envia la pàgina

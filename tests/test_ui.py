@@ -13,8 +13,7 @@ from streamlit.testing.v1 import AppTest
 import build_warehouse as bw
 
 APP = os.path.join(bw.REPO_ROOT, "ui", "app.py")
-PAGES = ["pages/home.py", "pages/sampling.py", "pages/versions.py", "pages/changes.py", "pages/explorer.py",
-         "pages/validation.py"]
+PAGES = ["pages/home.py", "pages/sampling.py", "pages/versions.py", "pages/changes.py", "pages/explorer.py"]
 
 
 @pytest.fixture
@@ -51,7 +50,7 @@ def test_the_shell_draws_the_navigation_and_the_page_header(app):
     components = _components(app)
     nav, header = components["hf_nav"], components["hf_header"]
     assert [page["title"] for page in nav["pages"]] == ["Inici", "Mostreig i elegibilitat", "Versions", "Canvis",
-                                                        "Explorador", "Validació"]
+                                                        "Explorador"]
     assert nav["active"] == "Inici"
     assert "run_sample" in nav["badge"]
     assert header["title"] == "Inici"
@@ -136,13 +135,6 @@ def test_explorer_says_why_a_comparison_has_no_codes(app):
     _page(app, "pages/explorer.py", explorer_dataset="org/tags-c")
 
     assert "no s'ha pogut fer" in app.info[0].value
-
-
-def test_validation_page_shows_the_overall_measures(app):
-    _page(app, "pages/validation.py")
-
-    assert [m.label for m in app.metric] == ["Precisió", "Recall", "F1"]
-    assert len(app.dataframe[0].value) > 0
 
 
 # ---------------------------------------------------------------------------

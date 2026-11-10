@@ -408,32 +408,3 @@ def explorer_changes(dataset_id: str, version_from: str, version_to: str, filter
         where d.dataset_id = ? and vf.commit_sha = ? and vt.commit_sha = ? and {where}
         order by t.table_path, k.code
     """, [dataset_id, version_from, version_to] + params)
-
-
-def census_validation() -> pd.DataFrame:
-    """
-    :return: `mart_census_validation`: per codi, encerts, errors, precisió, recall i F1 contra el paper.
-    """
-    return _query("""
-        select code, name, perspective, true_positives, false_negatives, false_positives, precision, recall, f1
-        from mart_census_validation
-        order by code
-    """)
-
-
-def census_totals() -> dict:
-    """
-    :return: precisió, recall i F1 de tots els codis junts (sumant encerts i errors), i els recomptes.
-    """
-    row = _query("""
-        select
-            sum(true_positives) as tp,
-            sum(false_negatives) as fn,
-            sum(false_positives) as fp
-        from mart_census_validation
-    """).iloc[0]
-    tp, fn, fp = (int(row[c]) for c in ("tp", "fn", "fp"))
-    precision = tp / (tp + fp) if tp + fp else None
-    recall = tp / (tp + fn) if tp + fn else None
-    f1 = 2 * precision * recall / (precision + recall) if precision and recall else None
-    return {"tp": tp, "fn": fn, "fp": fp, "precision": precision, "recall": recall, "f1": f1}

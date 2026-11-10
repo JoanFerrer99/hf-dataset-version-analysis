@@ -31,8 +31,6 @@ PAGES = [
      "subtitle": "Quins canvis surten, quants trenquen un pipeline i com evolucionen al llarg del temps."},
     {"path": "pages/explorer.py", "title": "Explorador", "eyebrow": "Fase 2 · Detall",
      "subtitle": "Un dataset, les seves comparacions, i a quines taules hi ha canvis i de quin tipus."},
-    {"path": "pages/validation.py", "title": "Validació", "eyebrow": "Motor de detecció",
-     "subtitle": "Com encerta el motor els codis que el paper marca a mà a Census Income."},
 ]
 
 
