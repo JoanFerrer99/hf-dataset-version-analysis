@@ -58,6 +58,13 @@ def _query(sql: str, params: list | None = None) -> pd.DataFrame:
 
 HF = "https://huggingface.co/datasets/"
 SOURCE_LABELS = {"tag": "Tag", "commit_session": "Sessió de commits", "commit": "Commit"}
+UNIT_STATUS_LABELS = {
+    "compared": "Comparada",
+    "not_compared": "No comparada: massa gran, o no s'ha pogut baixar o llegir",
+    "no_common_table": "Cap taula en comú: només taules afegides, eliminades o excloses",
+    "no_tables": "Sense cap taula",
+    "failed": "La Fase 2 va fallar en aquest dataset",
+}
 
 
 def _conditions(filters, dataset: str | None = None, criterion: str | None = None, perspective: str | None = None,
@@ -331,3 +338,73 @@ def changes_by_quarter(filters=None) -> pd.DataFrame:
         group by t.year, t.quarter, t.year_quarter, k.perspective, k.level_1
         order by t.year, t.quarter, k.perspective
     """, params)
+
+
+def explorer_datasets(filters=None) -> list[str]:
+    """
+    :param filters: filtres de dataset i criteri.
+    :return: els datasets que es poden explorar amb aquests filtres.
+    """
+    where, params = _conditions(filters, dataset="dataset_id", criterion="eligibility_criterion")
+    return _query(f"select dataset_id from dim_dataset where {where} order by dataset_id", params)["dataset_id"].tolist()
+
+
+def explorer_units(dataset_id: str) -> pd.DataFrame:
+    """
+    :param dataset_id: el dataset.
+    :return: les seves comparacions (una versió contra la següent), amb l'estat i els enllaços als dos commits.
+    """
+    df = _query(f"""
+        select
+            version_from,
+            version_to,
+            label_from,
+            label_to,
+            date_to,
+            unit_status,
+            n_tables,
+            n_tables_compared,
+            n_tables_not_compared,
+            n_codes,
+            n_breaking_codes,
+            '{HF}' || dataset_id || '/commit/' || version_from as url_from,
+            '{HF}' || dataset_id || '/commit/' || version_to as url_to
+        from mart_change_units
+        where dataset_id = ?
+        order by date_to, label_to
+    """, [dataset_id])
+    df["status_label"] = df["unit_status"].map(UNIT_STATUS_LABELS)
+    return df
+
+
+def explorer_changes(dataset_id: str, version_from: str, version_to: str, filters=None) -> pd.DataFrame:
+    """
+    :param dataset_id: el dataset.
+    :param version_from: SHA de la versió antiga.
+    :param version_to: SHA de la versió nova.
+    :param filters: filtres de perspectiva i trencador.
+    :return: una fila per taula i codi detectat entre les dues versions, amb la descripció del codi.
+    """
+    where, params = _conditions(filters, perspective="k.perspective", breaking="k.is_breaking")
+    return _query(f"""
+        select
+            t.table_path,
+            t.format,
+            k.code,
+            k.name,
+            k.level_1,
+            k.is_breaking
+        from fact_change as f
+        inner join dim_dataset as d
+            on d.dataset_key = f.dataset_key
+        inner join dim_version as vf
+            on vf.version_key = f.version_from_key
+        inner join dim_version as vt
+            on vt.version_key = f.version_to_key
+        inner join dim_table as t
+            on t.table_key = f.table_key
+        inner join dim_kind_of_change as k
+            on k.kind_key = f.kind_key
+        where d.dataset_id = ? and vf.commit_sha = ? and vt.commit_sha = ? and {where}
+        order by t.table_path, k.code
+    """, [dataset_id, version_from, version_to] + params)
