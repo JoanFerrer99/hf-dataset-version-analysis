@@ -1489,6 +1489,51 @@ Estat: Fet
     només lectura i un cursor per consulta.
 
 
+
+DECISIÓ T-33: estructura de la interfície amb components HTML (CCv2) i Tailwind compilat
+Data: novembre 2026
+Responsable: Joan
+Estat: Fet
+
+  MOTIU: una interfície amb una navegació i unes capçaleres pròpies (Tailwind),
+  sense el menú lateral de Streamlit, amb components HTML que envien els clics a
+  Python.
+
+  DECISIÓ:
+  - Els components (barra de navegació, capçalera de pàgina, targetes de xifres;
+    `ui/components/*.js`, `ui/shell.py`) fan servir `st.components.v2` (CCv2),
+    que ve amb Streamlit 1.66: el JavaScript envia els clics a Python amb
+    `setTriggerValue`, sense iframes. Es va descartar `streamlit-bridge`
+    (1.1.8, febrer de 2025): és un component v1 (un iframe amagat que publica
+    un objecte a `window.top` i fa servir `Streamlit.setComponentValue`), una
+    API que Streamlit ja no recomana per a components nous, i afegia una
+    dependència.
+  - Tailwind 4.3.3, compilat a `ui/static/tailwind.css` (8,6 kB) amb només les
+    classes dels components (`ui/styles/`, amb `package.json` i
+    `package-lock.json`). El CSS va dins del shadow root de cada component: no
+    toca els elements natius de Streamlit, i els colors surten del tema actiu
+    (`--st-*`), en clar i en fosc. En execució (i a Docker) no cal Node. Es va
+    descartar el CDN de Tailwind: necessita internet al navegador i no és per
+    a producció. Un test comprova que cada classe dels components és al CSS
+    compilat.
+  - La navegació nativa està amagada amb `st.navigation(position="hidden")`,
+    sense CSS. Sense res a la barra lateral, Streamlit no la dibuixa.
+  - Els filtres passen de la barra lateral (pla de la Fase 3, pas 9) a una
+    barra plegable sota la capçalera, que diu quants n'hi ha d'actius; es
+    conserven en canviar de pàgina igual que abans.
+  - `ui/.streamlit/config.toml`: el color d'accent és el blau dels gràfics,
+    un to per mode (#256abf en clar i #5598e7 en fosc, contrast de 5,4:1 i
+    6,3:1 amb el fons en els dos sentits), i sense el botó "Deploy"
+    (`toolbarMode = "minimal"`).
+  - Tests: `AppTest` no pot fer clic dins d'un component CCv2, però en veu el
+    nom i les dades; els tests comproven la navegació, la capçalera i les
+    targetes a partir d'una execució normal de `app.py` (`switch_page` només
+    executa la pàgina, no `app.py`). El clic real (navegació i targetes) es va
+    provar amb Chrome sense pantalla (Playwright), en clar i en fosc.
+  - Nota per compilar: en aquesta màquina, npm es queda penjat descarregant si
+    prova IPv6; amb `NODE_OPTIONS=--dns-result-order=ipv4first` funciona.
+
+
 ================================================================================
 BLOC 4 — DECISIONS D'ABAST
 ================================================================================

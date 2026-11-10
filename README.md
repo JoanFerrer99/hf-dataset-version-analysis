@@ -137,6 +137,11 @@ Amb Docker: `docker compose run --rm warehouse --run-dir data/run_9` i
 `docker compose up ui` (per defecte, munta `data/warehouse/run_9.duckdb` de
 només lectura; un altre fitxer amb `WAREHOUSE_FILE=...`).
 
+La navegació, la capçalera i les targetes de la interfície són components HTML
+amb Tailwind (`ui/components/`, decisió T-33). El CSS ja és compilat a
+`ui/static/tailwind.css`; només cal tornar-lo a compilar si es canvien les
+classes dels components (cal Node 20+): `cd ui/styles && npm ci && npm run build`.
+
 Detall: `docs/warehouse.md` (capes i esquema en estrella),
 `docs/validacio_magatzem.md` (conciliació) i `docs/figures/README.md`.
 
