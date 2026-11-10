@@ -1,0 +1,3 @@
+timestamp,source,dataset_id,error_category,error_message,retries_attempted
+2026-01-15T09:10:00+00:00,sampling,org/gated,access_restricted,403 Client Error,0
+2026-01-15T09:20:00+00:00,sampling,org/busy,rate_limited,429 Client Error,5

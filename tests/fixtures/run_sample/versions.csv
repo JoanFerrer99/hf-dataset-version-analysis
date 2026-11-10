@@ -1,0 +1,8 @@
+dataset_id,version_label,version_order,version_source,commit_sha,commit_date,authors,approx_size_bytes,session_commit_count,status
+org/tags-a,v1.0,1,tag,918f09b384b3713c230529ad77468ed674b65be7,2025-01-10T10:00:00+00:00,ana,1000,1,ok
+org/tags-a,v1.1,2,tag,760acc7bfda7ec19525c1fcdbe03d47f5dad7849,2025-03-05T10:00:00+00:00,ana,1200,1,ok
+org/tags-a,v2.0,3,tag,0ceae369daffd369238497d513623e7913583b9a,2025-06-20T10:00:00+00:00,"ana,bob",1500,1,ok
+org/sessions-b,session-1,1,commit_session,79056055f42ccdb532fe6afbecefbedabf279f6c,2025-02-01T09:00:00+00:00,carla,5000,2,ok
+org/sessions-b,session-2,2,commit_session,5b94c8aff45f5e67782591858b50d5e7c1c75d7b,2025-02-15T18:00:00+00:00,carla,5400,2,ok
+org/tags-c,v1,1,tag,7fb649d1127aad5b2f8ef7df739cd71d6ac82df3,2025-04-10T10:00:00+00:00,dani,900000000,1,ok
+org/tags-c,v2,2,tag,df1ccbc65c03fe212ced98ac5a4ccbac92009d86,2025-07-01T10:00:00+00:00,dani,950000000,1,ok

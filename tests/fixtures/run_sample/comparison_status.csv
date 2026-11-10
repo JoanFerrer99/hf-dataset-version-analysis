@@ -1,0 +1,9 @@
+dataset_id,version_from,version_to,table,file_path,status,n_codes
+org/tags-a,918f09b384b3713c230529ad77468ed674b65be7,760acc7bfda7ec19525c1fcdbe03d47f5dad7849,default/train,data/train.csv,ok,2
+org/tags-a,918f09b384b3713c230529ad77468ed674b65be7,760acc7bfda7ec19525c1fcdbe03d47f5dad7849,default/test,data/test.csv,identical_content,0
+org/tags-a,760acc7bfda7ec19525c1fcdbe03d47f5dad7849,0ceae369daffd369238497d513623e7913583b9a,default/train,data/train.csv,ok,3
+org/tags-a,760acc7bfda7ec19525c1fcdbe03d47f5dad7849,0ceae369daffd369238497d513623e7913583b9a,default/test,data/test.csv,ok,0
+org/tags-a,760acc7bfda7ec19525c1fcdbe03d47f5dad7849,0ceae369daffd369238497d513623e7913583b9a,meta/info.parquet,meta/info.parquet,excluded,0
+org/sessions-b,79056055f42ccdb532fe6afbecefbedabf279f6c,5b94c8aff45f5e67782591858b50d5e7c1c75d7b,default/train,"data/train-00000-of-00002.parquet,data/train-00001-of-00002.parquet",ok,2
+org/sessions-b,79056055f42ccdb532fe6afbecefbedabf279f6c,5b94c8aff45f5e67782591858b50d5e7c1c75d7b,labels.json,labels.json,parse_failed,0
+org/tags-c,7fb649d1127aad5b2f8ef7df739cd71d6ac82df3,df1ccbc65c03fe212ced98ac5a4ccbac92009d86,default/train,data/train.parquet,too_large,0
