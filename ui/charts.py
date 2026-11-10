@@ -78,3 +78,32 @@ def share_with_interval(df: pd.DataFrame, category: str, share: str, low: str, h
     labels = base.mark_text(align="left", dx=10, dy=-10, color=palette["text"]).encode(
         x=f"{share}:Q", text=alt.Text(f"{share}:Q", format=".2%" if not full_scale else ".1%"))
     return _axes((interval + points + labels).properties(height=max(len(df), 1) * 48), palette)
+
+
+def timeline(df: pd.DataFrame, palette: dict) -> alt.Chart:
+    """
+    Línia temporal de versions: una fila per dataset, un punt per versió (color
+    i forma segons si és un tag o una sessió) i una línia fina de la primera a
+    l'última.
+
+    :param df: `data.versions` (dataset_id, commit_date, source_label, version_label, commit_sha).
+    """
+    # El color i la forma segueixen el tipus de versió; a la llegenda, només els que hi ha.
+    styles = {"Tag": (palette["series"][0], "circle"), "Sessió de commits": (palette["series"][1], "square"),
+              "Commit": (palette["series"][2], "triangle-up")}
+    present = [source for source in styles if source in set(df["source_label"])]
+    y = alt.Y("dataset_id:N", title=None, axis=alt.Axis(labelLimit=320))
+    span = alt.Chart(df).mark_rule(strokeWidth=1, color=palette["deemphasis"]).encode(
+        y=y, x="min(commit_date):T", x2="max(commit_date):T")
+    points = alt.Chart(df).mark_point(filled=True, size=90, opacity=1, stroke=palette["surface"], strokeWidth=2).encode(
+        y=y,
+        x=alt.X("commit_date:T", title="Data del commit", scale=alt.Scale(padding=14)),
+        color=alt.Color("source_label:N", title="Versió",
+                        scale=alt.Scale(domain=present, range=[styles[p][0] for p in present])),
+        shape=alt.Shape("source_label:N", title="Versió",
+                        scale=alt.Scale(domain=present, range=[styles[p][1] for p in present])),
+        tooltip=[alt.Tooltip("dataset_id:N", title="Dataset"), alt.Tooltip("version_label:N", title="Versió"),
+                 alt.Tooltip("source_label:N", title="Tipus"), alt.Tooltip("commit_date:T", title="Data"),
+                 alt.Tooltip("commit_sha:N", title="Commit")],
+    )
+    return _axes((span + points).properties(height=max(df["dataset_id"].nunique(), 1) * 40 + 30), palette)

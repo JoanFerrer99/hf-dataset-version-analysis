@@ -56,6 +56,55 @@ def _query(sql: str, params: list | None = None) -> pd.DataFrame:
         cursor.close()
 
 
+HF = "https://huggingface.co/datasets/"
+SOURCE_LABELS = {"tag": "Tag", "commit_session": "Sessió de commits", "commit": "Commit"}
+
+
+def _conditions(filters, dataset: str | None = None, criterion: str | None = None, perspective: str | None = None,
+                breaking: str | None = None) -> tuple[str, list]:
+    """
+    Les condicions SQL dels filtres de la barra lateral que s'apliquen a una consulta.
+
+    :param filters: un `filters.Filters`, o `None` (sense filtres).
+    :param dataset: columna del dataset a la consulta, si s'hi filtra.
+    :param criterion: columna del criteri d'elegibilitat, si s'hi filtra.
+    :param perspective: columna de la perspectiva, si s'hi filtra.
+    :param breaking: columna de si és trencador, si s'hi filtra.
+    :return: `(condició, paràmetres)`; `true` si no n'hi ha cap.
+    """
+    clauses, params = [], []
+    if filters is not None:
+        for column, values in ((dataset, filters.datasets), (criterion, filters.criteria),
+                               (perspective, filters.perspectives)):
+            if column and values:
+                clauses.append(f"{column} in ({', '.join('?' * len(values))})")
+                params += list(values)
+        if breaking and filters.breaking is not None:
+            clauses.append(f"{breaking} = ?")
+            params.append(filters.breaking)
+    return (" and ".join(clauses) or "true"), params
+
+
+def dataset_ids() -> list[str]:
+    """
+    :return: els datasets elegibles, per ordre alfabètic.
+    """
+    return _query("select dataset_id from dim_dataset order by dataset_id")["dataset_id"].tolist()
+
+
+def perspectives() -> dict[str, str]:
+    """
+    :return: perspectiva (nom del paper) -> etiqueta en català, en l'ordre dels codis.
+    """
+    df = _query("""
+        select perspective, any_value(level_1) as label
+        from dim_kind_of_change
+        group by perspective
+        order by min(code)
+    """)
+    return dict(zip(df["perspective"], df["label"]))
+
+
 def run_info() -> dict:
     """
     :return: `run_id` (la carpeta de l'execució) i `run_date` (el dia de l'execució).
@@ -125,3 +174,56 @@ def funnel() -> pd.DataFrame:
         from mart_funnel
         order by stage_order
     """)
+
+
+def versions(filters=None) -> pd.DataFrame:
+    """
+    :param filters: filtres de dataset i criteri.
+    :return: una fila per versió, amb l'enllaç al commit a Hugging Face.
+    """
+    where, params = _conditions(filters, dataset="v.dataset_id", criterion="d.eligibility_criterion")
+    df = _query(f"""
+        select
+            v.dataset_id,
+            d.eligibility_criterion,
+            v.version_label,
+            v.version_order,
+            v.version_source,
+            v.commit_date,
+            v.commit_sha,
+            '{HF}' || v.dataset_id || '/commit/' || v.commit_sha as commit_url
+        from dim_version as v
+        inner join dim_dataset as d
+            on d.dataset_id = v.dataset_id
+        where {where}
+        order by v.dataset_id, v.version_order
+    """, params)
+    df["source_label"] = df["version_source"].map(SOURCE_LABELS)
+    return df
+
+
+def dataset_profiles(filters=None) -> pd.DataFrame:
+    """
+    :param filters: filtres de dataset i criteri.
+    :return: `mart_dataset_profile`, amb l'enllaç al dataset a Hugging Face.
+    """
+    where, params = _conditions(filters, dataset="dataset_id", criterion="eligibility_criterion")
+    return _query(f"""
+        select
+            dataset_id,
+            '{HF}' || dataset_id as dataset_url,
+            eligibility_criterion,
+            n_versions,
+            first_version_at,
+            last_version_at,
+            n_units,
+            n_compared_units,
+            n_units_with_change,
+            n_tables,
+            n_changes,
+            n_breaking_changes,
+            codes
+        from mart_dataset_profile
+        where {where}
+        order by dataset_id
+    """, params)
