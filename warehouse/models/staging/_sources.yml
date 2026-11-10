@@ -31,3 +31,13 @@ sources:
         description: Totes les fases, una fila per fallada. Només existeix si n'hi ha hagut.
         meta:
           external_location: "read_csv('{{ var('run_dir') }}/failures.csv', header = true, all_varchar = true)"
+
+  - name: census
+    description: >
+      La validació del motor amb Census Income (`data/census_income/run_<id>/`,
+      variable `census_dir`), que escriu `validate_census_income.py`.
+    tables:
+      - name: paper_comparison_by_code
+        description: Encerts, falsos negatius i falsos positius per codi, contra la Taula 1 del paper.
+        meta:
+          external_location: "read_csv('{{ var('census_dir') }}/paper_comparison_by_code.csv', header = true, all_varchar = true)"
