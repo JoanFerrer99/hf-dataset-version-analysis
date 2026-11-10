@@ -31,8 +31,10 @@ DARK = {
     "ordinal": ["#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95"],
 }
 
-# Ordre fix de les perspectives de la taxonomia (categories del paper).
+# Ordre fix de les perspectives de la taxonomia (categories del paper) i el seu nom en català.
 PERSPECTIVES = ["Columns Set", "Column Kind", "Rows Set", "Data Characteristics"]
+PERSPECTIVE_LABELS = {"Columns Set": "Conjunt de columnes", "Column Kind": "Característiques d'una columna",
+                      "Rows Set": "Conjunt de files", "Data Characteristics": "Característiques estadístiques"}
 
 
 def current() -> dict:
@@ -48,6 +50,6 @@ def current() -> dict:
 def perspective_scale(palette: dict) -> tuple[list[str], list[str]]:
     """
     :param palette: `LIGHT` o `DARK`.
-    :return: `(domini, colors)` per a una escala de color per perspectiva.
+    :return: `(noms en català, colors)` per a una escala de color per perspectiva.
     """
-    return PERSPECTIVES, palette["series"][:len(PERSPECTIVES)]
+    return [PERSPECTIVE_LABELS[p] for p in PERSPECTIVES], palette["series"][:len(PERSPECTIVES)]

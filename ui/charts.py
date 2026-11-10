@@ -8,6 +8,8 @@ manera que el color no és mai l'única manera de llegir una categoria.
 import altair as alt
 import pandas as pd
 
+import palette as palettes
+
 BAR = 18  # gruix de les barres (px)
 # Números a la catalana a tots els gràfics (1.868; 0,42%).
 LOCALE = alt.Locale(number=alt.NumberLocale(decimal=",", thousands=".", grouping=[3], currency=["", " €"]))
@@ -107,3 +109,57 @@ def timeline(df: pd.DataFrame, palette: dict) -> alt.Chart:
                  alt.Tooltip("commit_sha:N", title="Commit")],
     )
     return _axes((span + points).properties(height=max(df["dataset_id"].nunique(), 1) * 40 + 30), palette)
+
+
+def _perspective_color(palette: dict, present: set[str]) -> alt.Color:
+    """Color per perspectiva (`level_1`, en català), sempre el mateix per a cada una; a la llegenda, només les presents."""
+    domain, colors = palettes.perspective_scale(palette)
+    pairs = [(d, c) for d, c in zip(domain, colors) if d in present]
+    return alt.Color("level_1:N", title="Perspectiva",
+                     scale=alt.Scale(domain=[d for d, _ in pairs], range=[c for _, c in pairs]))
+
+
+def code_bars(df: pd.DataFrame, measure: str, measure_title: str, palette: dict) -> alt.Chart:
+    """
+    Una barra horitzontal per codi, en l'ordre de la taxonomia, del color de la
+    seva perspectiva. Els codis trencadors ho diuen a l'etiqueta.
+
+    :param df: `data.code_frequency`.
+    :param measure: columna del valor (`n_changes` o `n_units`).
+    """
+    df = df.assign(label=df["code"] + " " + df["name"] + df["is_breaking"].map({True: " (trencador)", False: ""}))
+    return _axes(alt.Chart(df).mark_bar(size=BAR, cornerRadiusEnd=4).encode(
+        y=alt.Y("label:N", sort=list(df["label"]), title=None, axis=alt.Axis(labelLimit=360)),
+        x=alt.X(f"{measure}:Q", title=measure_title, axis=alt.Axis(format=",d", tickMinStep=1)),
+        color=_perspective_color(palette, set(df["level_1"])),
+        tooltip=[alt.Tooltip("code:N", title="Codi"), alt.Tooltip("name:N", title="Canvi"),
+                 alt.Tooltip("level_1:N", title="Perspectiva"), alt.Tooltip("n_changes:Q", title="Canvis", format=",d"),
+                 alt.Tooltip("n_units:Q", title="Comparacions"),
+                 alt.Tooltip("share_of_compared_units:Q", title="De les comparacions fetes", format=".1%")],
+    ).properties(height=len(df) * 30 + 20), palette)
+
+
+def stacked_by_quarter(df: pd.DataFrame, palette: dict) -> alt.Chart:
+    """
+    Canvis per trimestre, apilats per perspectiva, amb 2 px del color del fons entre segments.
+
+    :param df: `data.changes_by_quarter`.
+    """
+    quarters = sorted(df["year_quarter"].unique(), key=lambda q: (int(q[:4]), int(q[-1])))
+    x = alt.X("year_quarter:O", sort=quarters, title="Trimestre de la versió nova",
+              axis=alt.Axis(labelAngle=0, labelOverlap="greedy"))
+    bars = alt.Chart(df).mark_bar(size=24, stroke=palette["surface"], strokeWidth=2).encode(
+        x=x,
+        y=alt.Y("sum(n_changes):Q", title="Canvis", axis=alt.Axis(format=",d", tickMinStep=1)),
+        color=_perspective_color(palette, set(df["level_1"])),
+        order=alt.Order("perspective_order:Q"),
+        tooltip=[alt.Tooltip("year_quarter:O", title="Trimestre"), alt.Tooltip("level_1:N", title="Perspectiva"),
+                 alt.Tooltip("sum(n_changes):Q", title="Canvis", format=",d"),
+                 alt.Tooltip("sum(n_units):Q", title="Comparacions")],
+    ).transform_calculate(
+        perspective_order=f"indexof({palettes.PERSPECTIVES!r}, datum.perspective)"
+    )
+    # El total de cada trimestre a sobre de la columna: també es llegeixen els trimestres amb pocs canvis.
+    totals = alt.Chart(df).mark_text(dy=-8, color=palette["text"]).encode(
+        x=x, y="sum(n_changes):Q", text=alt.Text("sum(n_changes):Q", format=",d"))
+    return _axes((bars + totals).properties(height=320), palette)

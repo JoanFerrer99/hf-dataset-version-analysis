@@ -227,3 +227,107 @@ def dataset_profiles(filters=None) -> pd.DataFrame:
         where {where}
         order by dataset_id
     """, params)
+
+
+def code_frequency(filters=None) -> pd.DataFrame:
+    """
+    La freqüència de cada codi (com `mart_code_frequency`), amb els filtres
+    de la barra lateral: es calcula sobre l'estrella. Sense filtres, dona el
+    mateix que el mart.
+
+    :param filters: filtres de dataset, criteri, perspectiva i trencador.
+    :return: una fila per codi de les perspectives triades, també sense canvis.
+    """
+    units_where, units_params = _conditions(filters, dataset="d.dataset_id", criterion="d.eligibility_criterion")
+    changes_where, changes_params = _conditions(filters, dataset="d.dataset_id", criterion="d.eligibility_criterion",
+                                                perspective="k.perspective", breaking="k.is_breaking")
+    kinds_where, kinds_params = _conditions(filters, perspective="k.perspective", breaking="k.is_breaking")
+    return _query(f"""
+        with compared as (
+            select count(*) filter (where u.is_compared) as n_compared_units
+            from mart_change_units as u
+            inner join dim_dataset as d
+                on d.dataset_id = u.dataset_id
+            where {units_where}
+        ),
+
+        changes as (
+            select f.kind_key, f.dataset_key, f.version_to_key, f.change_count
+            from fact_change as f
+            inner join dim_dataset as d
+                on d.dataset_key = f.dataset_key
+            inner join dim_kind_of_change as k
+                on k.kind_key = f.kind_key
+            where {changes_where}
+        )
+
+        select
+            k.code,
+            k.name,
+            k.perspective,
+            k.level_1,
+            k.is_breaking,
+            cast(coalesce(sum(c.change_count), 0) as bigint) as n_changes,
+            count(distinct c.version_to_key) as n_units,
+            count(distinct c.dataset_key) as n_datasets,
+            any_value(compared.n_compared_units) as n_compared_units,
+            case when any_value(compared.n_compared_units) > 0
+                then count(distinct c.version_to_key) / any_value(compared.n_compared_units) end
+                as share_of_compared_units
+        from dim_kind_of_change as k
+        left join changes as c
+            on c.kind_key = k.kind_key
+        cross join compared
+        where {kinds_where}
+        group by k.code, k.name, k.perspective, k.level_1, k.is_breaking
+        order by k.code
+    """, units_params + changes_params + kinds_params)
+
+
+def breaking_share(filters=None) -> pd.DataFrame:
+    """
+    :param filters: s'hi aplica el filtre de criteri (el mart no és per dataset).
+    :return: `mart_breaking_share`: per criteri i en total (`all`), amb l'interval de Wilson.
+    """
+    rows = _query("""
+        select criterion, n_compared_units, n_units_with_change, n_units_with_breaking_change,
+               share_with_change, share_with_breaking_change,
+               share_with_breaking_change_low, share_with_breaking_change_high
+        from mart_breaking_share
+        order by criterion
+    """)
+    if filters is not None and filters.criteria:
+        rows = rows[rows["criterion"].isin(filters.criteria)]
+    labels = {"A": "Criteri A: tags", "B": "Criteri B: sessions", "all": "Tots"}
+    return rows.assign(criterion_label=rows["criterion"].map(labels))
+
+
+def changes_by_quarter(filters=None) -> pd.DataFrame:
+    """
+    :param filters: filtres de dataset, criteri, perspectiva i trencador.
+    :return: canvis per trimestre (de la versió nova) i perspectiva, com `mart_changes_by_quarter`.
+    """
+    where, params = _conditions(filters, dataset="d.dataset_id", criterion="d.eligibility_criterion",
+                                perspective="k.perspective", breaking="k.is_breaking")
+    return _query(f"""
+        select
+            t.year,
+            t.quarter,
+            t.year_quarter,
+            k.perspective,
+            k.level_1,
+            cast(sum(f.change_count) as bigint) as n_changes,
+            count(*) filter (where k.is_breaking) as n_breaking_changes,
+            count(distinct f.version_to_key) as n_units,
+            count(distinct f.dataset_key) as n_datasets
+        from fact_change as f
+        inner join dim_date as t
+            on t.date_key = f.date_key
+        inner join dim_kind_of_change as k
+            on k.kind_key = f.kind_key
+        inner join dim_dataset as d
+            on d.dataset_key = f.dataset_key
+        where {where}
+        group by t.year, t.quarter, t.year_quarter, k.perspective, k.level_1
+        order by t.year, t.quarter, k.perspective
+    """, params)
