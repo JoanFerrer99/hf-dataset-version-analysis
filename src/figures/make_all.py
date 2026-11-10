@@ -74,7 +74,11 @@ def main(argv: list[str]) -> int:
         log.error(f"No hi ha el magatzem a {args.warehouse or common.warehouse_path()}: "
                   "python src/build_warehouse.py --run-dir data/run_<id>")
         return 1
-    make(args.names, args.warehouse, args.out)
+    try:
+        make(args.names, args.warehouse, args.out)
+    except ValueError as exc:
+        log.error(exc)
+        return 1
     return 0
 
 
