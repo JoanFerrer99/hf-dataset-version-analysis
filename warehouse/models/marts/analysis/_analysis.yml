@@ -1,0 +1,162 @@
+version: 2
+
+# Marts de consulta (MA5): un per pregunta. És la proposta de partida
+# (pla de la Fase 3, annex D), pendent d'acordar amb el director.
+
+models:
+  - name: mart_funnel
+    description: >
+      Pregunta: quants datasets passen cada filtre de la Fase 0, i quina proporció
+      és elegible? Una fila per pas (mostra, classificats, filtres 1-3). Les
+      proporcions són sobre els classificats, amb l'interval de Wilson al 95%.
+    columns:
+      - name: stage_order
+        description: Ordre del pas (1 = mostra, 5 = elegibles).
+      - name: stage
+        description: "`sample`, `classified`, `version_marks`, `tabular_files` o `eligible`."
+        data_tests:
+          - unique
+          - not_null
+      - name: n_datasets
+        description: Datasets que arriben a aquest pas.
+      - name: n_dropped
+        description: Datasets que es queden en aquest pas (al pas 2, inaccessibles i errors).
+      - name: n_criterion_a
+        description: Elegibles pel Criteri A (només al pas 5).
+      - name: n_criterion_b
+        description: Elegibles pel Criteri B (només al pas 5).
+      - name: share_of_classified
+        description: n_datasets / classificats.
+      - name: share_low
+        description: Límit inferior de l'interval de Wilson al 95%.
+      - name: share_high
+        description: Límit superior de l'interval de Wilson al 95%.
+
+  - name: mart_change_units
+    description: >
+      Pregunta: quantes comparacions (unitats de canvi, una versió contra la
+      següent) s'han fet per dataset, i quantes no s'han pogut fer? Una fila
+      per unitat de canvi, amb el recompte de taules per estat. Les
+      proporcions dels altres marts es calculen només sobre `is_compared`.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: ["dataset_id", "version_from", "version_to"]
+    columns:
+      - name: unit_status
+        description: >
+          `compared` (alguna taula comparada), `not_compared` (cap, i alguna massa
+          gran o que no s'ha pogut baixar o llegir), `no_common_table` (només
+          taules afegides, eliminades o excloses), `no_tables` o `failed`.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["compared", "not_compared", "no_common_table", "no_tables", "failed"]
+      - name: is_compared
+        description: Alguna taula de la unitat s'ha comparat.
+      - name: n_tables_not_compared
+        description: Taules massa grans, que no s'han pogut baixar o que no s'han pogut llegir.
+      - name: n_codes
+        description: Files de la unitat a change_classification.csv (un codi per taula).
+      - name: has_breaking_change
+        description: Algun canvi trencador a la unitat.
+
+  - name: mart_code_frequency
+    description: >
+      Pregunta: amb quina freqüència surt cada codi i cada perspectiva? Una fila
+      per codi (els 14, també els que no surten), amb els canvis (taules), les
+      comparacions afectades i la proporció sobre les comparacions fetes.
+    columns:
+      - name: code
+        description: Codi de la taxonomia.
+        data_tests:
+          - unique
+          - not_null
+      - name: n_changes
+        description: Files de fact_change (un canvi per taula).
+      - name: n_units
+        description: Comparacions (unitats de canvi) amb el codi en alguna taula.
+      - name: share_of_compared_units
+        description: n_units / comparacions fetes.
+
+  - name: mart_breaking_share
+    description: >
+      Pregunta: quina proporció de les comparacions fetes té almenys un canvi
+      trencador? Per criteri (`A`, `B`) i en total (`all`), amb l'interval de
+      Wilson al 95%.
+    columns:
+      - name: criterion
+        description: "`A`, `B` o `all`."
+        data_tests:
+          - unique
+          - accepted_values:
+              arguments:
+                values: ["A", "B", "all"]
+      - name: n_compared_units
+        description: Comparacions fetes (unitats `is_compared`).
+      - name: share_with_breaking_change
+        description: Proporció amb almenys un canvi trencador.
+
+  - name: mart_changes_by_quarter
+    description: >
+      Pregunta: com evolucionen els canvis al llarg del temps, per perspectiva?
+      Una fila per trimestre (de la versió nova) i perspectiva amb canvis.
+    columns:
+      - name: year_quarter
+        description: Any i trimestre (p.e. 2025-T1).
+      - name: n_changes
+        description: Canvis (files de fact_change).
+      - name: n_units
+        description: Comparacions amb algun canvi de la perspectiva aquell trimestre.
+
+  - name: mart_criterion_comparison
+    description: >
+      Pregunta: els datasets del Criteri A (tags) i del B (sessions) canvien de
+      manera diferent? Una fila per criteri i perspectiva (també sense canvis).
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: ["criterion", "perspective"]
+    columns:
+      - name: criterion
+        description: "`A` o `B`."
+      - name: share_of_compared_units
+        description: Comparacions fetes del criteri amb algun canvi de la perspectiva.
+      - name: share_of_criterion_changes
+        description: Part dels canvis del criteri que són d'aquesta perspectiva.
+
+  - name: mart_dataset_profile
+    description: >
+      Pregunta: com és cada dataset elegible? Versions, comparacions fetes i no
+      fetes, taules, canvis, codis i canvis trencadors. Una fila per dataset.
+    columns:
+      - name: dataset_id
+        description: Dataset de Hugging Face.
+        data_tests:
+          - unique
+          - not_null
+      - name: n_versions
+        description: Versions de versions.csv.
+      - name: n_compared_units
+        description: Comparacions fetes (alguna taula comparada).
+      - name: codes
+        description: Codis diferents detectats, separats per comes.
+
+  - name: mart_census_validation
+    description: >
+      Pregunta: com encerta el motor els codis de la Taula 1 del paper (Census
+      Income)? Una fila per codi que surt al paper o al motor, amb precisió,
+      recall i F1 (buits quan el denominador és 0).
+    columns:
+      - name: code
+        description: Codi de la taxonomia.
+        data_tests:
+          - unique
+          - not_null
+      - name: precision
+        description: tp / (tp + fp).
+      - name: recall
+        description: tp / (tp + fn).
+      - name: f1
+        description: Mitjana harmònica de precisió i recall.
