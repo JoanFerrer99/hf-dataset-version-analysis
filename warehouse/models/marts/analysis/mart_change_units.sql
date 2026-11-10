@@ -2,15 +2,14 @@
 -- fet per dataset, i quantes no s'han pogut fer. Una fila per unitat de canvi.
 -- Les unitats surten de versions.csv igual que a la Fase 2 (`version_pairs`):
 -- per `version_order`, sense commits buits ni dues versions seguides amb el
--- mateix commit. `unit_status`:
---   compared         alguna taula s'ha comparat (ok o identical_content)
---   not_compared     cap taula comparada, i alguna massa gran o que no s'ha pogut baixar o llegir
---   no_common_table  només taules afegides o eliminades senceres, o excloses
---   no_tables        cap parell de taules
---   failed           la Fase 2 va fallar en aquest dataset (failures.csv)
--- Les proporcions es calculen només sobre les unitats `compared`. A més dels grups,
--- hi ha el recompte de taules de cada estat (`n_tables_<estat>`), per saber per què
--- no s'ha pogut fer una comparació.
+-- mateix commit. Cada unitat compara el dataset sencer (T-37): té un sol estat
+-- (`comparison_status`) a comparison_status.csv. `unit_status` l'agrupa:
+--   compared      comparat (ok o identical_content)
+--   not_compared  massa gran, o no s'ha pogut baixar o llegir
+--   no_data       una de les versions (o les dues) no té cap fitxer de dades
+--   failed        la Fase 2 va fallar en aquest dataset (failures.csv)
+--   not_run       no hi ha l'estat (p.e. l'execució es va aturar abans)
+-- Les proporcions es calculen només sobre les unitats `compared`.
 
 with versions as (
     select
@@ -37,26 +36,19 @@ units as (
     where previous_sha is not null and previous_sha <> commit_sha
 ),
 
-tables as (
+comparisons as (
     select
         dataset_id,
         version_from,
         version_to,
-        count(*) as n_tables,
-        count(*) filter (where status in ('ok', 'identical_content')) as n_tables_compared,
-        count(*) filter (where status in ('too_large', 'download_failed', 'parse_failed')) as n_tables_not_compared,
-        count(*) filter (where status in ('absent_old', 'absent_new')) as n_tables_added_or_removed,
-        count(*) filter (where status = 'excluded') as n_tables_excluded,
-        count(*) filter (where status = 'ok') as n_tables_ok,
-        count(*) filter (where status = 'identical_content') as n_tables_identical_content,
-        count(*) filter (where status = 'absent_old') as n_tables_absent_old,
-        count(*) filter (where status = 'absent_new') as n_tables_absent_new,
-        count(*) filter (where status = 'download_failed') as n_tables_download_failed,
-        count(*) filter (where status = 'parse_failed') as n_tables_parse_failed,
-        count(*) filter (where status = 'too_large') as n_tables_too_large,
-        sum(n_codes) as n_codes
+        status,
+        n_codes,
+        format_from,
+        format_to,
+        n_files_from,
+        n_files_to,
+        size_bytes
     from {{ ref('stg_comparison_status') }}
-    group by dataset_id, version_from, version_to
 ),
 
 codes as (
@@ -64,7 +56,6 @@ codes as (
         dataset_id,
         version_from,
         version_to,
-        count(distinct code) as n_distinct_codes,
         count(*) filter (where is_breaking) as n_breaking_codes
     from {{ ref('stg_change_classification') }}
     group by dataset_id, version_from, version_to
@@ -84,33 +75,39 @@ joined as (
         units.label_from,
         units.label_to,
         units.date_to,
-        coalesce(tables.n_tables, 0) as n_tables,
-        coalesce(tables.n_tables_compared, 0) as n_tables_compared,
-        coalesce(tables.n_tables_not_compared, 0) as n_tables_not_compared,
-        coalesce(tables.n_tables_added_or_removed, 0) as n_tables_added_or_removed,
-        coalesce(tables.n_tables_excluded, 0) as n_tables_excluded,
-        coalesce(tables.n_tables_ok, 0) as n_tables_ok,
-        coalesce(tables.n_tables_identical_content, 0) as n_tables_identical_content,
-        coalesce(tables.n_tables_absent_old, 0) as n_tables_absent_old,
-        coalesce(tables.n_tables_absent_new, 0) as n_tables_absent_new,
-        coalesce(tables.n_tables_download_failed, 0) as n_tables_download_failed,
-        coalesce(tables.n_tables_parse_failed, 0) as n_tables_parse_failed,
-        coalesce(tables.n_tables_too_large, 0) as n_tables_too_large,
-        coalesce(tables.n_codes, 0) as n_codes,
-        coalesce(codes.n_distinct_codes, 0) as n_distinct_codes,
+        comparisons.status as comparison_status,
+        comparisons.format_from,
+        comparisons.format_to,
+        coalesce(comparisons.n_files_from, 0) as n_files_from,
+        coalesce(comparisons.n_files_to, 0) as n_files_to,
+        coalesce(comparisons.size_bytes, 0) as size_bytes,
+        coalesce(comparisons.n_codes, 0) as n_codes,
         coalesce(codes.n_breaking_codes, 0) as n_breaking_codes,
         failed_datasets.dataset_id is not null as dataset_failed
     from units
-    left join tables
-        on tables.dataset_id = units.dataset_id
-        and tables.version_from = units.version_from
-        and tables.version_to = units.version_to
+    left join comparisons
+        on comparisons.dataset_id = units.dataset_id
+        and comparisons.version_from = units.version_from
+        and comparisons.version_to = units.version_to
     left join codes
         on codes.dataset_id = units.dataset_id
         and codes.version_from = units.version_from
         and codes.version_to = units.version_to
     left join failed_datasets
         on failed_datasets.dataset_id = units.dataset_id
+),
+
+grouped as (
+    select
+        *,
+        case
+            when comparison_status in ('ok', 'identical_content') then 'compared'
+            when comparison_status in ('too_large', 'download_failed', 'parse_failed') then 'not_compared'
+            when comparison_status in ('absent_old', 'absent_new', 'no_data') then 'no_data'
+            when dataset_failed then 'failed'
+            else 'not_run'
+        end as unit_status
+    from joined
 )
 
 select
@@ -120,29 +117,16 @@ select
     label_from,
     label_to,
     date_to,
-    n_tables,
-    n_tables_compared,
-    n_tables_not_compared,
-    n_tables_added_or_removed,
-    n_tables_excluded,
-    n_tables_ok,
-    n_tables_identical_content,
-    n_tables_absent_old,
-    n_tables_absent_new,
-    n_tables_download_failed,
-    n_tables_parse_failed,
-    n_tables_too_large,
+    comparison_status,
+    unit_status,
+    format_from,
+    format_to,
+    n_files_from,
+    n_files_to,
+    size_bytes,
     n_codes,
-    n_distinct_codes,
     n_breaking_codes,
-    case
-        when n_tables_compared > 0 then 'compared'
-        when n_tables_not_compared > 0 then 'not_compared'
-        when n_tables > 0 then 'no_common_table'
-        when dataset_failed then 'failed'
-        else 'no_tables'
-    end as unit_status,
-    n_tables_compared > 0 as is_compared,
+    unit_status = 'compared' as is_compared,
     n_codes > 0 as has_change,
     n_breaking_codes > 0 as has_breaking_change
-from joined
+from grouped

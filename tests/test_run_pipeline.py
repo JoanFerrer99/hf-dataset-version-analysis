@@ -253,15 +253,15 @@ class TestRunFullPipeline:
         rp.run_full_pipeline(
             sample_size=1, max_scanned=None, num_threads=1, tags_only=False,
             input_csv=None, skip_version_extraction=False, skip_classification=False, skip_size=False,
-            max_table_mb=2,
+            max_dataset_mb=2,
         )
 
         config = next(c[2] for c in calls if c[0] == "run_classification")
-        assert config.max_unit_bytes == 2 * 1024**2
+        assert config.max_dataset_bytes == 2 * 1024**2
 
     def test_cli_max_table_size_defaults_to_the_engine_limit(self, monkeypatch):
         monkeypatch.setattr(sys, "argv", ["run_pipeline.py", "--sample-size", "5"])
-        assert rp.parse_args().max_table_mb == es.DEFAULT_MAX_TABLE_MB == 500
+        assert rp.parse_args().max_dataset_mb == es.DEFAULT_MAX_DATASET_MB == 500
 
 
 # ---------------------------------------------------------------------------

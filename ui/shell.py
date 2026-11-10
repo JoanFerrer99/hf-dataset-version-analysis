@@ -30,13 +30,13 @@ PAGES = [
     {"path": "app_pages/versions.py", "title": "Versions", "eyebrow": "Fase 1",
      "subtitle": "Les versions de cada dataset elegible al llarg del temps: tags o sessions de commits."},
     {"path": "app_pages/coverage.py", "title": "Cobertura", "eyebrow": "Fase 2 · Cobertura",
-     "subtitle": "Quines comparacions s'han pogut fer, i per què no les altres: taules massa grans, que no es "
-                 "poden llegir o sense cap taula en comú."},
+     "subtitle": "Quines comparacions s'han pogut fer, i per què no les altres: datasets massa grans, fitxers que "
+                 "no es poden llegir o versions sense dades."},
     {"path": "app_pages/changes.py", "title": "Canvis", "eyebrow": "Fase 2",
      "subtitle": "Quins canvis surten i en quins datasets, quants trenquen un pipeline i com evolucionen al "
                  "llarg del temps."},
     {"path": "app_pages/explorer.py", "title": "Explorador", "eyebrow": "Fase 2 · Detall",
-     "subtitle": "Un dataset, les seves comparacions, i a quines taules hi ha canvis i de quin tipus."},
+     "subtitle": "Un dataset, les seves comparacions i quins canvis hi ha a cada una."},
 ]
 
 
@@ -135,7 +135,7 @@ def highlight_cards_data(found: dict, num, pct) -> list[dict]:
          "target": "Canvis", "action": "Veure els canvis"},
         {"label": "Comparacions que no s'han pogut fer",
          "value": f"{num(coverage['n_not_compared'])} de {num(coverage['n_units'])}",
-         "hint": "Taules massa grans, il·legibles o sense cap taula en comú",
+         "hint": "Massa grans, il·legibles o sense dades",
          "target": "Cobertura", "action": "Veure per què"},
         {"label": "Dataset amb més canvis", "value": num(busiest["n_changes"]),
          "hint": f"{busiest['dataset_id']}: {pct(busiest['n_changes'] / busiest['total_changes'], 1)} "

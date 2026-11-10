@@ -1,5 +1,4 @@
--- Fase 2: una fila per taula, parell de versions i codi. La columna `table`
--- passa a `table_name` (`table` és una paraula reservada de SQL).
+-- Fase 2: una fila per parell de versions d'un dataset i codi.
 
 with classification as (
     select * from {{ source('bronze', 'change_classification') }}
@@ -10,8 +9,6 @@ typed as (
         dataset_id,
         version_from,
         version_to,
-        "table" as table_name,
-        file_path,
         code,
         description,
         cast(is_breaking as boolean) as is_breaking

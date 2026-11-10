@@ -11,26 +11,19 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class EngineConfig:
-    # --- Pas 1: quines taules es comparen -----------------------------------
+    # --- Pas 1: quins fitxers formen el dataset ------------------------------
     formats: tuple[str, ...] = ("csv", "tsv", "parquet", "jsonl", "json")
-    """Formats tabulars, en ordre de preferència. Només aquests compten com a
-    taules. Si una revisió en té de més d'un, només es compara el primer de la
-    llista que hi surt: els fitxers dels altres queden exclosos (`excluded`). El
-    pipeline els llegeix de `config/formats.toml` (decisió T-36)."""
-    concat_shards: bool = True
-    """Una taula partida en diversos fitxers (shards del Hub com
-    `train-00000-of-00003.parquet`, o episodis numerats de LeRobot) es llegeix
-    com una sola taula: els fitxers s'uneixen en ordre, només si tots tenen les
-    mateixes columnes. Amb `False`, cada fitxer es compara pel seu compte, i
-    un canvi en com està partida la taula sortiria com a fitxers sencers
-    afegits i eliminats."""
-    max_unit_bytes: int = 500 * 1024**2
-    """Mida màxima d'una taula, sumant la versió antiga i la nova. Per sobre,
-    no es descarrega ni es compara: la parella queda amb l'estat `too_large` i
-    sense cap codi. A la Fase 2 és un paràmetre de l'execució (`--max-table-mb`,
-    en MB; decisió T-35)."""
+    """Formats tabulars, en ordre de preferència. Només els fitxers d'aquests
+    formats són dades. Si una revisió en té de més d'un, només es compara el
+    primer de la llista que hi surt. El pipeline els llegeix de
+    `config/formats.toml` (decisió T-36)."""
+    max_dataset_bytes: int = 500 * 1024**2
+    """Mida màxima del dataset, sumant tots els seus fitxers de la versió
+    antiga i de la nova. Per sobre, no es descarrega ni es compara: la
+    comparació queda amb l'estat `too_large` i sense cap codi. A la Fase 2 és
+    un paràmetre de l'execució (`--max-dataset-mb`, en MB; decisió T-35)."""
 
-    # --- Pas 2: llegir cada taula -------------------------------------------
+    # --- Pas 2: llegir el dataset ---------------------------------------------
     missing_tokens: tuple[str, ...] = ("", "?", "NA", "N/A", "n/a", "NaN", "nan", "null", "NULL", "None", "none", "-")
     """Valors que es llegeixen com a absents (comparats després de treure espais)."""
     text_min_distinct_share: float = 0.5

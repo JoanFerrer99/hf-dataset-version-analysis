@@ -72,7 +72,7 @@ from tqdm import tqdm
 from huggingface_hub import HfApi, dataset_info, list_repo_commits, list_repo_refs
 
 import errors
-from diffengine import pairs, units
+from diffengine import datafiles, pairs
 from diffengine.config import DEFAULT_CONFIG, EngineConfig
 from diffengine.output import classification_frame, status_frame
 from errors import ErrorCategory
@@ -100,7 +100,8 @@ NON_SUBSTANTIVE_FILES = {
     "changelog.json",
 }
 
-NON_SUBSTANTIVE_PATH_PREFIXES = ("meta/", "meta_data/", ".github/")
+# Les mateixes carpetes de metadades que fa servir el motor per triar els fitxers del dataset.
+NON_SUBSTANTIVE_PATH_PREFIXES = datafiles.METADATA_PREFIXES
 
 NON_SUBSTANTIVE_EXTENSIONS = (".md", ".yml", ".yaml", ".toml", ".cfg", ".ini", ".lock")
 
@@ -118,7 +119,7 @@ MAX_COMMITS = 50  # commits revisats per dataset, del més nou al més vell
 INTERNAL_FIELDS = ("tabular_commits",)
 COMPARISON_STATUS_FILE = "comparison_status.csv"
 MB = 1024**2
-DEFAULT_MAX_TABLE_MB = DEFAULT_CONFIG.max_unit_bytes // MB
+DEFAULT_MAX_DATASET_MB = DEFAULT_CONFIG.max_dataset_bytes // MB
 
 # Motiu que queda al report: el criteri que es compleix, o el filtre on s'atura el dataset.
 ELIGIBILITY_REASONS = {
@@ -155,10 +156,10 @@ def load_formats(path: str = FORMATS_FILE) -> tuple[str, ...]:
     if not isinstance(order, list) or not order or not all(isinstance(x, str) for x in order):
         raise ValueError(f"{path}: `order` ha de ser una llista de formats, no buida")
     formats = tuple(x.strip().lower().lstrip(".") for x in order)
-    unknown = [x for x in formats if x not in units.READABLE_FORMATS]
+    unknown = [x for x in formats if x not in datafiles.READABLE_FORMATS]
     if unknown:
         raise ValueError(f"{path}: el motor no sap llegir {', '.join(unknown)} "
-                         f"(sap llegir {', '.join(units.READABLE_FORMATS)})")
+                         f"(sap llegir {', '.join(datafiles.READABLE_FORMATS)})")
     if len(set(formats)) < len(formats):
         raise ValueError(f"{path}: hi ha formats repetits")
     return formats
@@ -376,9 +377,10 @@ def is_tabular_data_path(path: str) -> bool:
     Fitxer de dades tabular: el que fa elegible un dataset i el que compara el
     motor. Ha de ser dades (`is_substantive_path`, que exclou p.e. `meta/`) i
     d'un dels formats de `config/formats.toml` (`TABULAR_FORMATS`), sense els
-    JSON de metadades (`diffengine.units.is_tabular_path`).
+    JSON de metadades (`diffengine.datafiles.is_tabular_path`, la regla amb què
+    el motor tria els fitxers del dataset).
     """
-    return is_substantive_path(path) and units.is_tabular_path(path, TABULAR_FORMATS)
+    return is_substantive_path(path) and datafiles.is_tabular_path(path, TABULAR_FORMATS)
 
 
 def read_current_version(dataset_id: str) -> tuple[list[str], dict]:
@@ -426,7 +428,7 @@ def tabular_file_share(paths: list[str]) -> tuple[int, float | None]:
     data = [p for p in paths if is_substantive_path(p)]
     if not data:
         return 0, None
-    return len(data), round(sum(units.is_tabular_path(p, TABULAR_FORMATS) for p in data) / len(data), 4)
+    return len(data), round(sum(datafiles.is_tabular_path(p, TABULAR_FORMATS) for p in data) / len(data), 4)
 
 
 @contextmanager
@@ -593,25 +595,25 @@ def compare_change_units(
     config: EngineConfig = DEFAULT_CONFIG,
 ) -> tuple[list[dict], list[dict]]:
     """
-    Compara amb el motor (`diffengine.pairs.compare_revisions`) cada parella
-    de revisions, taula a taula (subset, split).
+    Compara amb el motor (`diffengine.pairs.compare_revisions`) el dataset de
+    cada parella de revisions.
 
     :param dataset_id: dataset (`owner/name`).
     :param units_to_compare: parelles `(SHA antic, SHA nou)` de `version_pairs`.
     :param hf_token: token de Hugging Face.
     :param retry_config: configuració de reintent (també per a les descàrregues).
-    :param config: llindars del motor (p.e. la mida màxima d'una taula).
+    :param config: llindars del motor (p.e. la mida màxima del dataset).
     :return: `(canvis, estats)`: una fila per canvi (`pairs.revision_rows`) i
-        una per parell de taules, també sense codis (`pairs.status_rows`).
+        una per parella de revisions, també sense codis (`pairs.status_row`).
     """
     retry = functools.partial(errors.with_retry, **retry_config)
     labels: list[dict] = []
     statuses: list[dict] = []
     for i, (old_rev, new_rev) in enumerate(units_to_compare, start=1):
         log.info(f"    parella {i}/{len(units_to_compare)}: {old_rev[:7]} -> {new_rev[:7]}")
-        compared = pairs.compare_revisions(dataset_id, old_rev, new_rev, hf_token, call=retry, config=config)
-        labels += pairs.revision_rows(dataset_id, old_rev, new_rev, compared)
-        statuses += pairs.status_rows(dataset_id, old_rev, new_rev, compared)
+        comparison = pairs.compare_revisions(dataset_id, old_rev, new_rev, hf_token, call=retry, config=config)
+        labels += pairs.revision_rows(dataset_id, old_rev, new_rev, comparison)
+        statuses.append(pairs.status_row(dataset_id, old_rev, new_rev, comparison))
     return labels, statuses
 
 
@@ -847,16 +849,16 @@ def run_sampling(
     return csv_path, json_path, summary, tabular_commits
 
 
-def engine_config(max_table_mb: float = DEFAULT_MAX_TABLE_MB) -> EngineConfig:
+def engine_config(max_dataset_mb: float = DEFAULT_MAX_DATASET_MB) -> EngineConfig:
     """
     Els llindars del motor per a una execució: els de `DEFAULT_CONFIG`, amb la
-    mida màxima d'una taula que es dona i els formats de `config/formats.toml`.
+    mida màxima del dataset que es dona i els formats de `config/formats.toml`.
 
-    :param max_table_mb: mida màxima d'una taula, en MB (1 MB = 1024² bytes),
-        sumant la versió antiga i la nova. Per sobre, no es compara (`too_large`).
+    :param max_dataset_mb: mida màxima del dataset, en MB (1 MB = 1024² bytes),
+        sumant els fitxers de la versió antiga i de la nova. Per sobre, no es compara (`too_large`).
     :return: la configuració del motor.
     """
-    return replace(DEFAULT_CONFIG, max_unit_bytes=int(max_table_mb * MB), formats=TABULAR_FORMATS)
+    return replace(DEFAULT_CONFIG, max_dataset_bytes=int(max_dataset_mb * MB), formats=TABULAR_FORMATS)
 
 
 def run_classification(versions_csv: str, config: EngineConfig = DEFAULT_CONFIG) -> str:
@@ -864,12 +866,11 @@ def run_classification(versions_csv: str, config: EngineConfig = DEFAULT_CONFIG)
     Fase 2: compara cada versió de `versions.csv` (Fase 1) amb la següent del
     mateix dataset i escriu a `OUTPUT_DIR`:
 
-    - `change_classification.csv`: una fila per taula, parell de versions i
-      codi (`dataset_id, version_from, version_to, table, file_path, code,
-      description, is_breaking`);
-    - `comparison_status.csv`: una fila per taula i parell de versions, també
-      sense cap codi (`dataset_id, version_from, version_to, table,
-      file_path, status, n_codes`).
+    - `change_classification.csv`: una fila per parell de versions i codi
+      (`dataset_id, version_from, version_to, code, description, is_breaking`);
+    - `comparison_status.csv`: una fila per parell de versions, també sense
+      cap codi (`dataset_id, version_from, version_to, status, n_codes,
+      format_from, format_to, n_files_from, n_files_to, size_bytes`).
 
     Per a cada dataset, `version_pairs` en forma les parelles de revisions i
     `compare_change_units` les compara amb el motor. Una fallada d'un dataset
@@ -886,8 +887,8 @@ def run_classification(versions_csv: str, config: EngineConfig = DEFAULT_CONFIG)
     except pd.errors.EmptyDataError:  # la Fase 1 no va extreure cap versió
         versions = pd.DataFrame(columns=["dataset_id", "version_order", "commit_sha"])
     by_dataset = versions.groupby("dataset_id", sort=False)
-    log.info(f"Classificant canvis de {by_dataset.ngroups} datasets de {versions_csv} (taules de fins a "
-             f"{config.max_unit_bytes / MB:g} MB; formats, per ordre: {', '.join(config.formats)})...")
+    log.info(f"Classificant canvis de {by_dataset.ngroups} datasets de {versions_csv} (datasets de fins a "
+             f"{config.max_dataset_bytes / MB:g} MB; formats, per ordre: {', '.join(config.formats)})...")
 
     output_csv = os.path.join(OUTPUT_DIR, "change_classification.csv")
     status_csv = os.path.join(OUTPUT_DIR, COMPARISON_STATUS_FILE)
@@ -954,10 +955,11 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--max-table-mb", type=positive_float, default=DEFAULT_MAX_TABLE_MB, metavar="MB",
+        "--max-dataset-mb", type=positive_float, default=DEFAULT_MAX_DATASET_MB, metavar="MB",
         help=(
-            "Amb --classify-versions: mida màxima d'una taula (1 MB = 1024² bytes), sumant la versió antiga i "
-            "la nova. Les més grans no es descarreguen ni es comparen: queden amb l'estat too_large."
+            "Amb --classify-versions: mida màxima del dataset (1 MB = 1024² bytes), sumant els fitxers de la "
+            "versió antiga i de la nova. Els més grans no es descarreguen ni es comparen: queden amb l'estat "
+            "too_large."
         ),
     )
     parser.add_argument(
@@ -1040,7 +1042,7 @@ if __name__ == "__main__":
 
     new_run_dir()
     if args.classify_versions:
-        run_classification(args.classify_versions, engine_config(args.max_table_mb))
+        run_classification(args.classify_versions, engine_config(args.max_dataset_mb))
     else:
         run_sampling(
             sample_size=args.sample_size,

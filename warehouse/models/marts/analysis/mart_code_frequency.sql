@@ -1,6 +1,7 @@
 -- Freqüència de cada codi de la taxonomia: en nombre de canvis (files de
--- fact_change, un per taula) i de comparacions afectades (unitats de canvi),
--- sobre les comparacions fetes. Una fila per codi, també els que no surten mai.
+-- fact_change) i de comparacions afectades (unitats de canvi), sobre les
+-- comparacions fetes. Com que cada comparació és d'un dataset sencer (T-37),
+-- un codi surt com a molt un cop per comparació: les dues xifres coincideixen. Una fila per codi, també els que no surten mai.
 
 with changes as (
     select kind_key, dataset_key, version_to_key, change_count

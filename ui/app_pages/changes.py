@@ -9,7 +9,7 @@ import palette
 from fmt import num, pct
 
 st.markdown(
-    "Cada canvi és un codi de la taxonomia detectat en una taula, entre una versió i la següent. Una "
+    "Cada canvi és un codi de la taxonomia detectat entre una versió d'un dataset i la següent. Una "
     "**comparació** és un parell de versions consecutives; només compten les que s'han pogut fer. "
     "S'apliquen tots els filtres de la barra lateral (a la proporció de trencadors, només el de criteri)."
 )
@@ -19,11 +19,10 @@ colors = palette.current()
 
 st.subheader("Freqüència de cada codi")
 frequency = data.code_frequency(selected)
-# Per defecte, comparacions afectades: comptant taules, un dataset amb centenars de fitxers per versió
-# (pulsia/fr-bench-pdf2md a run_9) tapa tots els altres.
+# Un codi surt com a molt un cop per comparació (es compara el dataset sencer, T-37): comptar canvis o
+# comparacions afectades dona el mateix.
 MEASURES = {"Comparacions afectades": ("n_units", "Comparacions amb el codi"),
-            "Datasets afectats": ("n_datasets", "Datasets amb el codi"),
-            "Canvis (un per taula)": ("n_changes", "Canvis (taules amb el codi)")}
+            "Datasets afectats": ("n_datasets", "Datasets amb el codi")}
 measure = st.segmented_control("Mesura", list(MEASURES), default="Comparacions afectades", key="changes_measure")
 column, title = MEASURES[measure or "Comparacions afectades"]
 if frequency.empty:
@@ -31,15 +30,13 @@ if frequency.empty:
 else:
     st.altair_chart(charts.code_bars(frequency, column, title, colors), width="stretch")
     st.caption("Una barra per codi, en l'ordre de la taxonomia i del color de la seva perspectiva. Comparacions: "
-               "quantes versions contra la següent tenen el codi en alguna taula. Canvis: un per taula, de manera "
-               "que una comparació amb moltes taules en pot sumar molts del mateix codi.")
+               "quantes versions contra la següent tenen el codi. Datasets: quants el tenen en alguna comparació.")
     st.dataframe(
-        frequency[["code", "name", "level_1", "is_breaking", "n_changes", "n_units", "n_datasets",
-                   "share_of_compared_units"]],
+        frequency[["code", "name", "level_1", "is_breaking", "n_units", "n_datasets", "share_of_compared_units"]],
         hide_index=True,
         column_config={
             "code": "Codi", "name": "Canvi", "level_1": "Perspectiva", "is_breaking": "Trencador",
-            "n_changes": "Canvis", "n_units": "Comparacions", "n_datasets": "Datasets",
+            "n_units": "Comparacions", "n_datasets": "Datasets",
             "share_of_compared_units": st.column_config.NumberColumn("De les comparacions fetes", format="percent"),
         },
     )
@@ -55,10 +52,10 @@ else:
                "tenen el codi. Com més fosca, més comparacions. Els datasets sense cap canvi no hi surten "
                "(vegeu la pàgina de cobertura).")
     st.dataframe(
-        by_dataset[["dataset_id", "code", "name", "level_1", "n_units", "n_changes"]],
+        by_dataset[["dataset_id", "code", "name", "level_1", "n_units"]],
         hide_index=True,
         column_config={"dataset_id": "Dataset", "code": "Codi", "name": "Canvi", "level_1": "Perspectiva",
-                       "n_units": "Comparacions", "n_changes": "Canvis (taules)"},
+                       "n_units": "Comparacions"},
     )
 
 st.subheader("Comparacions amb algun canvi trencador")

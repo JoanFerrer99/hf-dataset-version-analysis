@@ -1,39 +1,35 @@
 """
-Pas 1 (segona part): aparellar les taules de dues revisions i comparar-les.
+Pas 1 (segona part): comparar el dataset de dues revisions.
 
-Aquí comença una comparació de revisions: `compare_revisions` fa el pas 1 i
-crida `engine.diff_tables` (passos 3 i 4) per a cada parell; `revision_rows`
-converteix els canvis en files de sortida (pas 5), i `status_rows`, l'estat
-de cada parell.
+Aquí comença una comparació de revisions (una unitat de canvi):
+`compare_revisions` fa el pas 1 i crida `engine.diff_tables` (passos 3 i 4);
+`revision_rows` converteix els canvis en files de sortida (pas 5), i
+`status_row`, l'estat de la comparació.
 
-- Cada revisió es llista amb l'API (`list_revision`) i se'n resolen les
-  taules (`units.resolve_units`).
-- `pair_units` aparella les taules per nom de partició. Una taula d'un sol
-  fitxer sense parella prova pel camí, pel contingut (fitxer reanomenat) i
-  pel nom amb una altra extensió (canvi de format).
-- `compare_pair` descarrega i compara cada parell, i li posa un estat:
-  `ok`, `identical_content` (mateix hash: no es descarrega), `absent_old`,
-  `absent_new`, `download_failed`, `parse_failed`, `too_large` o
-  `excluded`. Només les `ok` tenen canvis: una fallada mai es converteix en
-  codis.
+- Cada revisió es llista amb l'API (`list_revision`) i se'n troben els
+  fitxers del dataset (`datafiles.dataset_files`).
+- `compare_datasets` descarrega i compara el dataset de les dues revisions, i
+  li posa un estat: `ok`, `identical_content` (els mateixos fitxers, amb el
+  mateix contingut: no es descarrega), `absent_old` o `absent_new` (una de
+  les revisions no té cap fitxer de dades), `no_data` (no en té cap de les
+  dues), `download_failed`, `parse_failed` o `too_large`. Només les `ok` tenen
+  canvis: una fallada mai es converteix en codis.
 
 Les crides al Hub passen per `call(fn, *args, **kwargs)`: qui fa servir el
 motor hi posa la seva política de reintents. Així el motor no depèn del
 pipeline.
 """
 
-import os
 from collections.abc import Callable
 from dataclasses import dataclass
 
-import pandas as pd
 from huggingface_hub import hf_hub_download, list_repo_tree
 
 from diffengine.config import DEFAULT_CONFIG, EngineConfig
+from diffengine.datafiles import DatasetFiles, dataset_files
 from diffengine.engine import diff_tables
-from diffengine.load import ParseError, Table, load_table
+from diffengine.load import ParseError, Table, load_files
 from diffengine.output import DiffResult
-from diffengine.units import RepoLayout, resolve_units
 
 Call = Callable[..., object]
 
@@ -53,21 +49,25 @@ class Revision:
     revision: str
     sizes: dict[str, int]
     content_ids: dict[str, str]
-    layout: RepoLayout
+    data: DatasetFiles
 
 
 @dataclass
-class UnitPair:
+class Comparison:
     """
-    :ivar key: `subset/split` per a taules, o la ruta per a fitxers sols.
-    :ivar status: `pending` fins que es compara; després `ok`, `identical_content`,
-        `absent_old`, `absent_new`, `download_failed`, `parse_failed`,
-        `too_large` o `excluded` (fitxer tabular canviat que no és cap taula).
+    La comparació del dataset entre dues revisions.
+
+    :ivar old: els fitxers del dataset a la revisió antiga.
+    :ivar new: els fitxers del dataset a la revisió nova.
+    :ivar size_bytes: la mida dels fitxers de les dues revisions, sumades (la que es compara amb el límit).
+    :ivar status: `pending` fins que es compara; després `ok`, `identical_content`, `absent_old`,
+        `absent_new`, `no_data`, `download_failed`, `parse_failed` o `too_large`.
+    :ivar result: els canvis, si l'estat és `ok`.
     """
 
-    key: str
-    old_files: tuple[str, ...]
-    new_files: tuple[str, ...]
+    old: DatasetFiles
+    new: DatasetFiles
+    size_bytes: int = 0
     status: str = "pending"
     result: DiffResult | None = None
 
@@ -76,252 +76,149 @@ def list_revision(repo_id: str, revision: str, token: str | None, call: Call = d
                   config: EngineConfig = DEFAULT_CONFIG) -> Revision:
     """
     Llista els fitxers d'una revisió (amb mida i identificador de contingut) i
-    en troba les taules.
+    en troba els del dataset.
 
     :param repo_id: repositori de Hugging Face (`propietari/nom`).
     :param revision: commit a llistar.
     :param token: token d'accés a Hugging Face, o `None`.
     :param call: funció per fer les crides a l'API (permet afegir-hi reintents).
     :param config: llindars del motor (els formats tabulars).
-    :return: la revisió: mides, identificadors de contingut i taules.
+    :return: la revisió: mides, identificadors de contingut i fitxers del dataset.
     """
     entries = call(
         lambda: list(list_repo_tree(repo_id, repo_type="dataset", revision=revision, recursive=True, token=token)))
     files = [e for e in entries if getattr(e, "size", None) is not None]
     sizes = {e.path: e.size for e in files}
     content_ids = {e.path: (e.lfs.sha256 if getattr(e, "lfs", None) else e.blob_id) for e in files}
-    readme = None
-    if "README.md" in sizes:
-        try:
-            local = call(hf_hub_download, repo_id=repo_id, repo_type="dataset", filename="README.md",
-                         revision=revision, token=token)
-            with open(local, encoding="utf-8", errors="replace") as f:
-                readme = f.read()
-        except Exception:
-            readme = None
-    return Revision(revision, sizes, content_ids, resolve_units(list(sizes), readme, config.formats))
+    return Revision(revision, sizes, content_ids, dataset_files(list(sizes), config.formats))
 
 
-def _units(rev: Revision, config: EngineConfig) -> tuple[dict[str, tuple[str, ...]], dict[str, str]]:
+def pair_datasets(old: Revision, new: Revision) -> Comparison:
     """
-    Separa les taules d'una revisió en dos grups: les que s'aparellen pel nom de
-    la partició i els fitxers que s'aparellen per la ruta.
-
-    :param rev: revisió ja llistada.
-    :param config: llindars del motor (si es concatenen els fitxers partits).
-    :return: `(taules per nom de partició, fitxers sols per ruta)`.
-    """
-    tables, singles = {}, {}
-    for u in rev.layout.units:
-        # Una taula d'un sol fitxer, o partida en shards o episodis numerats (si
-        # `concat_shards`), es compara sencera i s'aparella pel nom de la partició.
-        # Els fitxers d'una partició amb noms sense relació van cadascun pel seu compte.
-        if u.naming == "single" or (u.naming in ("hf_shards", "numbered") and config.concat_shards):
-            tables[f"{u.subset}/{u.split}"] = u.files
-        else:
-            for f in u.files:
-                singles[f] = f
-    return tables, singles
-
-
-def pair_units(old: Revision, new: Revision, config: EngineConfig = DEFAULT_CONFIG) -> list[UnitPair]:
-    """
-    Aparella les taules de dues revisions. Per nom de partició; si una taula
-    d'un sol fitxer no troba parella, per la ruta, després pel contingut
-    (fitxer reanomenat) i després pel nom amb una altra extensió. A cada parella
-    li posa l'estat inicial (`pending`, `identical_content`, `absent_old`,
-    `absent_new` o `excluded`).
+    Prepara la comparació de dues revisions i li posa l'estat inicial:
+    `no_data`, `absent_old`, `absent_new`, `identical_content` (els mateixos
+    fitxers, en el mateix ordre i amb el mateix contingut) o `pending`.
 
     :param old: revisió antiga.
     :param new: revisió nova.
-    :param config: llindars del motor.
-    :return: una parella per taula, inclosos els fitxers exclosos que han canviat.
+    :return: la comparació, encara sense descarregar res.
     """
-    old_tables, old_singles = _units(old, config)
-    new_tables, new_singles = _units(new, config)
-    pairs: list[UnitPair] = []
-
-    for key in sorted(set(old_tables) | set(new_tables)):
-        a, b = old_tables.get(key, ()), new_tables.get(key, ())
-        if a and b:
-            pairs.append(UnitPair(key, a, b))
-        elif len(a) == 1:
-            old_singles[a[0]] = a[0]  # una taula d'un sol fitxer sense parella: s'aparella com a fitxer
-        elif len(b) == 1:
-            new_singles[b[0]] = b[0]
-        else:
-            pairs.append(UnitPair(key, a, b))
-
-    unmatched_old = [p for p in old_singles if p not in new_singles]
-    unmatched_new = [p for p in new_singles if p not in old_singles]
-    for path in sorted(set(old_singles) & set(new_singles)):
-        pairs.append(UnitPair(path, (path,), (path,)))
-    by_content = {new.content_ids[p]: p for p in unmatched_new}
-    for path in list(unmatched_old):
-        target = by_content.get(old.content_ids[path])
-        if target in unmatched_new:
-            pairs.append(UnitPair(target, (path,), (target,)))
-            unmatched_old.remove(path)
-            unmatched_new.remove(target)
-    by_stem = {os.path.splitext(p)[0]: p for p in unmatched_new}
-    for path in list(unmatched_old):
-        target = by_stem.get(os.path.splitext(path)[0])
-        if target in unmatched_new:
-            pairs.append(UnitPair(target, (path,), (target,)))
-            unmatched_old.remove(path)
-            unmatched_new.remove(target)
-    pairs += [UnitPair(p, (p,), ()) for p in unmatched_old]
-    pairs += [UnitPair(p, (), (p,)) for p in unmatched_new]
-
-    for p in pairs:
-        if not p.old_files:
-            p.status = "absent_old"
-        elif not p.new_files:
-            p.status = "absent_new"
-        elif [old.content_ids[f] for f in p.old_files] == [new.content_ids[f] for f in p.new_files]:
-            p.status = "identical_content"
-
-    # Fitxers tabulars que no formen part de cap taula (fora de cap partició, metadades
-    # d'un repositori de media o un altre format): no es comparen, però si han canviat
-    # queden a la llista amb l'estat `excluded`, perquè no es perdin en silenci.
-    in_pairs = {f for p in pairs for f in p.old_files + p.new_files}
-    excluded = {**old.layout.excluded, **new.layout.excluded}
-    for path in sorted(set(excluded) - in_pairs):
-        if old.content_ids.get(path) != new.content_ids.get(path):
-            pairs.append(UnitPair(path, (path,) if path in old.sizes else (), (path,) if path in new.sizes else (),
-                                  status="excluded"))
-    return pairs
-
-
-def _concat(tables: list[Table]) -> Table:
-    """
-    Uneix en una sola taula els shards d'un split (o els episodis numerats),
-    posant les files de cada shard a continuació de les de l'anterior, en
-    ordre. Una columna només es considera d'enters si ho és a tots els shards.
-
-    :param tables: els shards ja llegits, en ordre.
-    :return: la taula sencera.
-    :raises ParseError: si les parts no tenen les mateixes columnes.
-    """
-    first = tables[0]
-    if any(list(t.values.columns) != list(first.values.columns) for t in tables[1:]):
-        raise ParseError("els shards no comparteixen esquema")
-    values = pd.concat([t.values for t in tables], ignore_index=True)
-    raw = pd.concat([t.raw for t in tables], ignore_index=True) if all(t.raw is not None for t in tables) else None
-    columns = dict(first.columns)
-    for name, col in columns.items():
-        col.integer = all(t.columns[name].integer for t in tables if name in t.columns)
-    return Table(first.fmt, values, columns, raw=raw, dialect=first.dialect)
+    size = sum(old.sizes[f] for f in old.data.files) + sum(new.sizes[f] for f in new.data.files)
+    comparison = Comparison(old.data, new.data, size)
+    if not old.data.files and not new.data.files:
+        comparison.status = "no_data"
+    elif not old.data.files:
+        comparison.status = "absent_old"
+    elif not new.data.files:
+        comparison.status = "absent_new"
+    elif old.data.files == new.data.files and all(old.content_ids[f] == new.content_ids[f] for f in old.data.files):
+        comparison.status = "identical_content"
+    return comparison
 
 
 def _load_files(repo_id: str, revision: str, files: tuple[str, ...], token: str | None, call: Call,
                 config: EngineConfig) -> Table:
     """
-    Descarrega i llegeix els fitxers d'una taula en una revisió.
+    Descarrega i llegeix els fitxers del dataset en una revisió.
 
     :param repo_id: repositori de Hugging Face.
     :param revision: commit.
-    :param files: fitxers de la taula.
+    :param files: fitxers del dataset.
     :param token: token d'accés, o `None`.
     :param call: funció per fer les crides a l'API.
     :param config: llindars del motor.
-    :return: la taula llegida (concatenada si n'hi ha més d'un).
+    :return: el dataset llegit (tots els fitxers, units en ordre).
     """
-    tables = []
-    for path in files:
-        local = call(hf_hub_download, repo_id=repo_id, repo_type="dataset", filename=path,
-                     revision=revision, token=token)
-        with open(local, "rb") as f:
-            tables.append(load_table(f.read(), os.path.splitext(path)[1], config))
-    return tables[0] if len(tables) == 1 else _concat(tables)
+    local = [call(hf_hub_download, repo_id=repo_id, repo_type="dataset", filename=path, revision=revision,
+                  token=token) for path in files]
+    return load_files(local, config)
 
 
 class DownloadFailed(Exception):
     pass
 
 
-def compare_pair(repo_id: str, pair: UnitPair, old: Revision, new: Revision, token: str | None,
-                 call: Call = direct_call, config: EngineConfig = DEFAULT_CONFIG) -> UnitPair:
+def compare_datasets(repo_id: str, comparison: Comparison, old: Revision, new: Revision, token: str | None,
+                     call: Call = direct_call, config: EngineConfig = DEFAULT_CONFIG) -> Comparison:
     """
-    Descarrega i compara una parella de taules pendent, i n'actualitza l'estat
-    i el resultat. Una fallada de descàrrega o de lectura queda com a estat, mai
-    com a canvis.
+    Descarrega i compara el dataset de les dues revisions, si la comparació és
+    pendent, i n'actualitza l'estat i el resultat. Una fallada de descàrrega o
+    de lectura queda com a estat, mai com a canvis.
 
     :param repo_id: repositori de Hugging Face.
-    :param pair: parella a comparar (es modifica).
+    :param comparison: comparació de `pair_datasets` (es modifica).
     :param old: revisió antiga.
     :param new: revisió nova.
     :param token: token d'accés, o `None`.
     :param call: funció per fer les crides a l'API.
     :param config: llindars del motor.
-    :return: la mateixa parella, amb l'estat i el resultat omplerts.
+    :return: la mateixa comparació, amb l'estat i el resultat omplerts.
     """
-    if pair.status != "pending":
-        return pair
-    total = sum(old.sizes[f] for f in pair.old_files) + sum(new.sizes[f] for f in pair.new_files)
-    if total > config.max_unit_bytes:
-        pair.status = "too_large"
-        return pair
+    if comparison.status != "pending":
+        return comparison
+    if comparison.size_bytes > config.max_dataset_bytes:
+        comparison.status = "too_large"
+        return comparison
     try:
         try:
-            old_table = _load_files(repo_id, old.revision, pair.old_files, token, call, config)
-            new_table = _load_files(repo_id, new.revision, pair.new_files, token, call, config)
+            old_table = _load_files(repo_id, old.revision, comparison.old.files, token, call, config)
+            new_table = _load_files(repo_id, new.revision, comparison.new.files, token, call, config)
         except ParseError:
             raise
         except Exception as exc:
             raise DownloadFailed(str(exc)) from exc
     except DownloadFailed:
-        pair.status = "download_failed"
-        return pair
+        comparison.status = "download_failed"
+        return comparison
     except ParseError:
-        pair.status = "parse_failed"
-        return pair
-    pair.result = diff_tables(old_table, new_table, config)
-    pair.status = "ok"
-    return pair
+        comparison.status = "parse_failed"
+        return comparison
+    comparison.result = diff_tables(old_table, new_table, config)
+    comparison.status = "ok"
+    return comparison
 
 
-def revision_rows(repo_id: str, old_rev: str, new_rev: str, pairs: list[UnitPair]) -> list[dict]:
+def revision_rows(repo_id: str, old_rev: str, new_rev: str, comparison: Comparison) -> list[dict]:
     """
-    Converteix els canvis de les parelles comparades en files de sortida.
+    Converteix els canvis d'una comparació en files de sortida.
 
     :param repo_id: repositori de Hugging Face.
     :param old_rev: commit antic.
     :param new_rev: commit nou.
-    :param pairs: parelles ja comparades.
-    :return: una fila per canvi, amb `dataset_id`, `version_from`,
-        `version_to`, `table` (la clau de la parella), `file_path` i `code`.
+    :param comparison: la comparació ja feta.
+    :return: una fila per canvi, amb `dataset_id`, `version_from`, `version_to` i `code`.
     """
-    return [{"dataset_id": repo_id, "version_from": old_rev, "version_to": new_rev, "table": p.key,
-             "file_path": ",".join(p.new_files), "code": c.code}
-            for p in pairs if p.result is not None for c in p.result.changes]
+    changes = comparison.result.changes if comparison.result is not None else []
+    return [{"dataset_id": repo_id, "version_from": old_rev, "version_to": new_rev, "code": c.code} for c in changes]
 
 
-def status_rows(repo_id: str, old_rev: str, new_rev: str, pairs: list[UnitPair]) -> list[dict]:
+def status_row(repo_id: str, old_rev: str, new_rev: str, comparison: Comparison) -> dict:
     """
-    L'estat de cada parella comparada, també de les que no tenen cap codi:
-    així es distingeix "sense canvis" (`ok` sense codis, `identical_content`)
-    de "no s'ha pogut comparar" (`too_large`, `parse_failed`...).
+    L'estat de la comparació, també si no té cap codi: així es distingeix
+    "sense canvis" (`ok` sense codis, `identical_content`) de "no s'ha pogut
+    comparar" (`too_large`, `parse_failed`...).
 
     :param repo_id: repositori de Hugging Face.
     :param old_rev: commit antic.
     :param new_rev: commit nou.
-    :param pairs: parelles ja comparades.
-    :return: una fila per parella, amb `dataset_id`, `version_from`,
-        `version_to`, `table`, `file_path` (els fitxers nous, o els antics si
-        la taula ha desaparegut), `status` i `n_codes` (codis diferents).
+    :param comparison: la comparació ja feta.
+    :return: `dataset_id`, `version_from`, `version_to`, `status`, `n_codes`
+        (codis diferents), `format_from`/`format_to` i `n_files_from`/`n_files_to`
+        (el format i el nombre de fitxers del dataset a cada versió) i
+        `size_bytes` (la mida de les dues versions, sumades).
     """
-    return [{"dataset_id": repo_id, "version_from": old_rev, "version_to": new_rev, "table": p.key,
-             "file_path": ",".join(p.new_files or p.old_files), "status": p.status,
-             "n_codes": len(p.result.codes) if p.result is not None else 0}
-            for p in pairs]
+    return {"dataset_id": repo_id, "version_from": old_rev, "version_to": new_rev, "status": comparison.status,
+            "n_codes": len(comparison.result.codes) if comparison.result is not None else 0,
+            "format_from": comparison.old.fmt, "format_to": comparison.new.fmt,
+            "n_files_from": len(comparison.old.files), "n_files_to": len(comparison.new.files),
+            "size_bytes": comparison.size_bytes}
 
 
 def compare_revisions(repo_id: str, old_rev: str, new_rev: str, token: str | None, call: Call = direct_call,
-                      config: EngineConfig = DEFAULT_CONFIG) -> list[UnitPair]:
+                      config: EngineConfig = DEFAULT_CONFIG) -> Comparison:
     """
-    Compara totes les taules de dues revisions d'un repositori. És la funció que
-    fa servir el pipeline. Les taules amb el mateix contingut no es descarreguen.
+    Compara el dataset de dues revisions d'un repositori. És la funció que fa
+    servir el pipeline. Si els fitxers no han canviat, no es descarreguen.
 
     :param repo_id: repositori de Hugging Face.
     :param old_rev: commit antic.
@@ -329,11 +226,8 @@ def compare_revisions(repo_id: str, old_rev: str, new_rev: str, token: str | Non
     :param token: token d'accés, o `None`.
     :param call: funció per fer les crides a l'API (p.e. amb reintents).
     :param config: llindars del motor.
-    :return: una parella per taula, cadascuna amb el seu estat i, si s'ha comparat, el resultat.
+    :return: la comparació, amb el seu estat i, si s'ha fet, el resultat.
     """
     old = list_revision(repo_id, old_rev, token, call, config)
     new = list_revision(repo_id, new_rev, token, call, config)
-    pairs = pair_units(old, new, config)
-    for pair in pairs:
-        compare_pair(repo_id, pair, old, new, token, call, config)
-    return pairs
+    return compare_datasets(repo_id, pair_datasets(old, new), old, new, token, call, config)

@@ -1,14 +1,14 @@
-"""Pàgina 5: un dataset, les seves comparacions, les taules i els codis de cada una, amb enllaços a Hugging Face."""
+"""Pàgina 5: un dataset, les seves comparacions i els codis de cada una, amb enllaços a Hugging Face."""
 
 import streamlit as st
 
 import data
 import filters
-from fmt import num
+from fmt import num, size
 
 st.markdown(
-    "Tria un dataset i una de les seves comparacions (una versió contra la següent) per veure a quines taules "
-    "hi ha canvis i de quin tipus. S'apliquen els filtres de dataset, criteri, perspectiva i trencador."
+    "Tria un dataset i una de les seves comparacions (una versió contra la següent) per veure quins canvis hi "
+    "ha. S'apliquen els filtres de dataset, criteri, perspectiva i trencador."
 )
 
 selected = filters.current()
@@ -32,8 +32,8 @@ cols[2].metric("Amb canvis", num((units["n_codes"] > 0).sum()))
 
 st.subheader("Comparacions")
 st.dataframe(
-    units[["label_from", "url_from", "label_to", "url_to", "date_to", "status_label", "n_tables", "n_codes",
-           "n_breaking_codes"]],
+    units[["label_from", "url_from", "label_to", "url_to", "date_to", "status_label", "format_to", "n_files_to",
+           "n_codes", "n_breaking_codes"]],
     hide_index=True,
     column_config={
         "label_from": "Versió antiga",
@@ -42,7 +42,8 @@ st.dataframe(
         "url_to": st.column_config.LinkColumn("Commit nou", display_text=r"commit/([0-9a-f]{7})"),
         "date_to": st.column_config.DatetimeColumn("Data (UTC)", format="DD/MM/YYYY"),
         "status_label": "Estat",
-        "n_tables": "Taules",
+        "format_to": "Format",
+        "n_files_to": "Fitxers",
         "n_codes": "Canvis",
         "n_breaking_codes": "Trencadors",
     },
@@ -55,10 +56,10 @@ choice = st.selectbox(
 )
 unit = units.loc[choice]
 st.markdown(f"De [{unit['label_from']}]({unit['url_from']}) a [{unit['label_to']}]({unit['url_to']}): "
-            f"{unit['status_label'].lower()}. {num(unit['n_tables_compared'])} de {num(unit['n_tables'])} "
-            f"taules comparades.")
+            f"{unit['status_label'].lower()}. El dataset passa de {num(unit['n_files_from'])} a "
+            f"{num(unit['n_files_to'])} fitxers ({size(unit['size_bytes'])} entre les dues versions).")
 
-st.subheader("Taules i codis")
+st.subheader("Codis")
 changes = data.explorer_changes(dataset_id, unit["version_from"], unit["version_to"], selected)
 if changes.empty:
     if unit["unit_status"] != "compared":
@@ -66,12 +67,11 @@ if changes.empty:
     elif unit["n_codes"] > 0:
         st.info("Aquesta comparació té canvis, però cap amb els filtres de perspectiva o trencador triats.")
     else:
-        st.info("Les taules comparades no tenen cap canvi.")
+        st.info("El dataset no ha canviat entre aquestes dues versions.")
 else:
-    st.caption(f"{num(changes['table_path'].nunique())} taules amb canvis, {num(len(changes))} codis en total.")
+    st.caption(f"{num(len(changes))} codis.")
     st.dataframe(
         changes,
         hide_index=True,
-        column_config={"table_path": "Taula", "format": "Format", "code": "Codi", "name": "Canvi",
-                       "level_1": "Perspectiva", "is_breaking": "Trencador"},
+        column_config={"code": "Codi", "name": "Canvi", "level_1": "Perspectiva", "is_breaking": "Trencador"},
     )

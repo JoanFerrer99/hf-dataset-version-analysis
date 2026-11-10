@@ -61,9 +61,9 @@ SOURCE_LABELS = {"tag": "Tag", "commit_session": "Sessió de commits", "commit":
 UNIT_STATUS_LABELS = {
     "compared": "Comparada",
     "not_compared": "No comparada: massa gran, o no s'ha pogut baixar o llegir",
-    "no_common_table": "Cap taula en comú: només taules afegides, eliminades o excloses",
-    "no_tables": "Sense cap taula",
+    "no_data": "Sense dades: una de les versions no té cap fitxer de dades",
     "failed": "La Fase 2 va fallar en aquest dataset",
+    "not_run": "Sense estat: la Fase 2 no hi va arribar",
 }
 
 
@@ -226,7 +226,7 @@ def dataset_profiles(filters=None) -> pd.DataFrame:
             n_units,
             n_compared_units,
             n_units_with_change,
-            n_tables,
+            n_units_not_compared,
             n_changes,
             n_breaking_changes,
             codes
@@ -362,9 +362,11 @@ def explorer_units(dataset_id: str) -> pd.DataFrame:
             label_to,
             date_to,
             unit_status,
-            n_tables,
-            n_tables_compared,
-            n_tables_not_compared,
+            comparison_status,
+            format_to,
+            n_files_from,
+            n_files_to,
+            size_bytes,
             n_codes,
             n_breaking_codes,
             '{HF}' || dataset_id || '/commit/' || version_from as url_from,
@@ -383,13 +385,11 @@ def explorer_changes(dataset_id: str, version_from: str, version_to: str, filter
     :param version_from: SHA de la versió antiga.
     :param version_to: SHA de la versió nova.
     :param filters: filtres de perspectiva i trencador.
-    :return: una fila per taula i codi detectat entre les dues versions, amb la descripció del codi.
+    :return: una fila per codi detectat entre les dues versions, amb la descripció del codi.
     """
     where, params = _conditions(filters, perspective="k.perspective", breaking="k.is_breaking")
     return _query(f"""
         select
-            t.table_path,
-            t.format,
             k.code,
             k.name,
             k.level_1,
@@ -401,48 +401,45 @@ def explorer_changes(dataset_id: str, version_from: str, version_to: str, filter
             on vf.version_key = f.version_from_key
         inner join dim_version as vt
             on vt.version_key = f.version_to_key
-        inner join dim_table as t
-            on t.table_key = f.table_key
         inner join dim_kind_of_change as k
             on k.kind_key = f.kind_key
         where d.dataset_id = ? and vf.commit_sha = ? and vt.commit_sha = ? and {where}
-        order by t.table_path, k.code
+        order by k.code
     """, [dataset_id, version_from, version_to] + params)
 
 
-UNIT_STATUSES = ["compared", "not_compared", "no_common_table", "no_tables", "failed"]
-SHORT_UNIT_STATUS = {"compared": "Feta", "not_compared": "No feta", "no_common_table": "Cap taula en comú",
-                     "no_tables": "Sense taules", "failed": "Fallada"}
-TABLE_STATUSES = {
-    "ok": "Comparada",
-    "identical_content": "Mateix contingut (no cal descarregar-la)",
-    "absent_old": "Afegida sencera (no hi era a la versió antiga)",
-    "absent_new": "Eliminada sencera (no hi és a la versió nova)",
-    "too_large": "Massa gran (més de 500 MB entre les dues versions)",
-    "parse_failed": "No s'ha pogut llegir com a taula",
-    "download_failed": "No s'ha pogut descarregar",
-    "excluded": "Fitxer tabular que no forma cap taula",
+UNIT_STATUSES = ["compared", "not_compared", "no_data", "failed", "not_run"]
+SHORT_UNIT_STATUS = {"compared": "Feta", "not_compared": "No feta", "no_data": "Sense dades", "failed": "Fallada",
+                     "not_run": "Sense estat"}
+COMPARISON_STATUSES = {
+    "ok": "Comparat",
+    "identical_content": "Mateix contingut (no cal descarregar-lo)",
+    "absent_old": "La versió antiga no té cap fitxer de dades",
+    "absent_new": "La versió nova no té cap fitxer de dades",
+    "no_data": "Cap de les dues versions té fitxers de dades",
+    "too_large": "Massa gran (per sobre del límit, --max-dataset-mb)",
+    "parse_failed": "No s'ha pogut llegir algun fitxer",
+    "download_failed": "No s'ha pogut descarregar algun fitxer",
 }
 
 
 def coverage_by_dataset(filters=None) -> pd.DataFrame:
     """
     :param filters: filtres de dataset i criteri.
-    :return: per dataset, les comparacions de cada estat i les taules de cada estat.
+    :return: per dataset, les comparacions de cada grup (`units_<grup>`) i de cada estat (`status_<estat>`).
     """
     where, params = _conditions(filters, dataset="u.dataset_id", criterion="d.eligibility_criterion")
     unit_counts = ",\n            ".join(
         f"count(*) filter (where u.unit_status = '{status}') as units_{status}" for status in UNIT_STATUSES)
-    table_counts = ",\n            ".join(f"cast(sum(u.n_tables_{status}) as bigint) as tables_{status}"
-                                         for status in TABLE_STATUSES)
+    status_counts = ",\n            ".join(
+        f"count(*) filter (where u.comparison_status = '{status}') as status_{status}" for status in COMPARISON_STATUSES)
     return _query(f"""
         select
             u.dataset_id,
             d.eligibility_criterion,
             count(*) as n_units,
             {unit_counts},
-            cast(sum(u.n_tables) as bigint) as n_tables,
-            {table_counts}
+            {status_counts}
         from mart_change_units as u
         inner join dim_dataset as d
             on d.dataset_id = u.dataset_id
@@ -455,7 +452,7 @@ def coverage_by_dataset(filters=None) -> pd.DataFrame:
 def incomplete_units(filters=None) -> pd.DataFrame:
     """
     :param filters: filtres de dataset i criteri.
-    :return: les comparacions que no s'han pogut fer, o que tenen alguna taula sense comparar, amb el motiu.
+    :return: les comparacions que no s'han pogut fer, amb el motiu (`reason`), la mida i els fitxers.
     """
     where, params = _conditions(filters, dataset="u.dataset_id", criterion="d.eligibility_criterion")
     df = _query(f"""
@@ -465,43 +462,27 @@ def incomplete_units(filters=None) -> pd.DataFrame:
             u.label_to,
             u.date_to,
             u.unit_status,
-            u.n_tables,
-            u.n_tables_compared,
-            u.n_tables_too_large,
-            u.n_tables_parse_failed,
-            u.n_tables_download_failed,
-            u.n_tables_absent_old,
-            u.n_tables_absent_new,
-            u.n_tables_excluded,
+            u.comparison_status,
+            u.n_files_from,
+            u.n_files_to,
+            u.size_bytes,
             '{HF}' || u.dataset_id || '/commit/' || u.version_to as url_to
         from mart_change_units as u
         inner join dim_dataset as d
             on d.dataset_id = u.dataset_id
-        where (u.unit_status <> 'compared' or u.n_tables_not_compared > 0) and {where}
+        where u.unit_status <> 'compared' and {where}
         order by u.dataset_id, u.date_to
     """, params)
     df["status_label"] = df["unit_status"].map(SHORT_UNIT_STATUS)
-    df["reason"] = df.apply(_reason, axis=1)
+    df["reason"] = [COMPARISON_STATUSES.get(status) or UNIT_STATUS_LABELS[unit]
+                    for status, unit in zip(df["comparison_status"], df["unit_status"])]
     return df
-
-
-def _reason(unit: pd.Series) -> str:
-    """El motiu d'una comparació incompleta, a partir de les seves taules de cada estat."""
-    parts = [(unit["n_tables_too_large"], "massa gran", "massa grans"),
-             (unit["n_tables_parse_failed"], "que no s'ha pogut llegir", "que no s'han pogut llegir"),
-             (unit["n_tables_download_failed"], "que no s'ha pogut descarregar", "que no s'han pogut descarregar"),
-             (unit["n_tables_absent_old"], "afegida sencera", "afegides senceres"),
-             (unit["n_tables_absent_new"], "eliminada sencera", "eliminades senceres"),
-             (unit["n_tables_excluded"], "exclosa", "excloses")]
-    text = "; ".join(f"{n} {'taula' if n == 1 else 'taules'} {one if n == 1 else many}"
-                     for n, one, many in parts if n)
-    return f"{text} (de {unit['n_tables']})"
 
 
 def changes_by_dataset(filters=None) -> pd.DataFrame:
     """
     :param filters: filtres de dataset, criteri, perspectiva i trencador.
-    :return: per dataset i codi, les comparacions afectades i els canvis (taules).
+    :return: per dataset i codi, les comparacions afectades.
     """
     where, params = _conditions(filters, dataset="d.dataset_id", criterion="d.eligibility_criterion",
                                 perspective="k.perspective", breaking="k.is_breaking")
@@ -511,8 +492,7 @@ def changes_by_dataset(filters=None) -> pd.DataFrame:
             k.code,
             k.name,
             k.level_1,
-            count(distinct f.version_to_key) as n_units,
-            cast(sum(f.change_count) as bigint) as n_changes
+            count(distinct f.version_to_key) as n_units
         from fact_change as f
         inner join dim_dataset as d
             on d.dataset_key = f.dataset_key

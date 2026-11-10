@@ -390,7 +390,7 @@ class TestFormatsFile:
 
     def test_the_file_of_the_repository_is_valid(self):
         formats = es.load_formats()
-        assert set(formats) <= set(es.units.READABLE_FORMATS)
+        assert set(formats) <= set(es.datafiles.READABLE_FORMATS)
         assert es.TABULAR_FORMATS == formats
 
     def test_reads_the_order(self, tmp_path):
@@ -826,59 +826,56 @@ class TestClassifyDatasetResultShape:
 # ---------------------------------------------------------------------------
 
 class TestCompareChangeUnits:
-    """Fase 2 amb el motor: es compara taula a taula amb `diffengine.pairs`."""
+    """Fase 2 amb el motor: una comparació del dataset per parella de revisions (`diffengine.pairs`)."""
 
     @staticmethod
-    def _fake_pair(status="ok", result=None):
-        from diffengine.pairs import UnitPair
+    def _comparison(status="ok", result=None, old=("data/train.csv",), new=("data/train.csv",), size=300):
+        from diffengine.datafiles import DatasetFiles, file_format
+        from diffengine.pairs import Comparison
 
-        return UnitPair("default/train", ("data/train.csv",), ("data/train.csv",), status=status, result=result)
+        def files(paths):
+            return DatasetFiles(paths, file_format(paths[0]) if paths else None)
+        return Comparison(files(old), files(new), size, status, result)
 
     def test_returns_one_row_per_change(self, monkeypatch):
         from diffengine.output import Change, DiffResult
 
         result = DiffResult("ok", [Change("C221", column="b", subtype="unexplained")])
-        monkeypatch.setattr(es.pairs, "compare_revisions", lambda *a, **kw: [self._fake_pair(result=result)])
+        monkeypatch.setattr(es.pairs, "compare_revisions", lambda *a, **kw: self._comparison(result=result))
 
         changes, _ = es.compare_change_units("org/ds", [("sha1", "sha2")], "tok", es.RETRY_CONFIG)
 
-        assert changes == [{"dataset_id": "org/ds", "version_from": "sha1", "version_to": "sha2",
-                            "table": "default/train", "file_path": "data/train.csv", "code": "C221"}]
+        assert changes == [{"dataset_id": "org/ds", "version_from": "sha1", "version_to": "sha2", "code": "C221"}]
 
     def test_download_failure_gives_no_changes(self, monkeypatch):
-        monkeypatch.setattr(es.pairs, "compare_revisions", lambda *a, **kw: [self._fake_pair("download_failed")])
+        monkeypatch.setattr(es.pairs, "compare_revisions", lambda *a, **kw: self._comparison("download_failed"))
 
         changes, _ = es.compare_change_units("org/ds", [("sha1", "sha2")], "tok", es.RETRY_CONFIG)
 
         assert changes == []
 
-    def test_every_table_pair_has_a_status_even_without_codes(self, monkeypatch):
+    def test_every_pair_of_versions_has_a_status_even_without_codes(self, monkeypatch):
         from diffengine.output import Change, DiffResult
-        from diffengine.pairs import UnitPair
 
-        compared = [
+        compared = {
             # El mateix codi en dues columnes compta un sol cop, com a change_classification.csv.
-            UnitPair("default/train", ("train.csv",), ("train.csv",), status="ok",
-                     result=DiffResult("ok", [Change("C221", column="a"), Change("C221", column="b"),
-                                              Change("C223", column="c")])),
-            UnitPair("default/test", ("test.csv",), ("test.csv",), status="ok", result=DiffResult("ok", [])),
-            UnitPair("big/train", ("big.parquet",), ("big.parquet",), status="too_large"),
-            UnitPair("labels.json", ("labels.json",), ("labels.json",), status="parse_failed"),
-            # Una taula que desapareix no té fitxers nous: es diuen els antics.
-            UnitPair("old/train", ("old-0.parquet", "old-1.parquet"), (), status="absent_new"),
-        ]
-        monkeypatch.setattr(es.pairs, "compare_revisions", lambda *a, **kw: compared)
+            "sha2": self._comparison(result=DiffResult("ok", [Change("C221", column="a"), Change("C221", column="b"),
+                                                              Change("C223", column="c")])),
+            "sha3": self._comparison("too_large", size=900),
+            # Un dataset que desapareix no té fitxers a la versió nova.
+            "sha4": self._comparison("absent_new", old=("a-0.parquet", "a-1.parquet"), new=(), size=200),
+        }
+        monkeypatch.setattr(es.pairs, "compare_revisions", lambda dataset_id, old, new, *a, **kw: compared[new])
 
-        _, statuses = es.compare_change_units("org/ds", [("sha1", "sha2")], "tok", es.RETRY_CONFIG)
+        _, statuses = es.compare_change_units("org/ds", [("sha1", "sha2"), ("sha2", "sha3"), ("sha3", "sha4")],
+                                              "tok", es.RETRY_CONFIG)
 
-        assert [(r["table"], r["file_path"], r["status"], r["n_codes"]) for r in statuses] == [
-            ("default/train", "train.csv", "ok", 2),
-            ("default/test", "test.csv", "ok", 0),
-            ("big/train", "big.parquet", "too_large", 0),
-            ("labels.json", "labels.json", "parse_failed", 0),
-            ("old/train", "old-0.parquet,old-1.parquet", "absent_new", 0),
+        assert [(r["version_to"], r["status"], r["n_codes"], r["format_from"], r["format_to"], r["n_files_from"],
+                 r["n_files_to"], r["size_bytes"]) for r in statuses] == [
+            ("sha2", "ok", 2, "csv", "csv", 1, 1, 300),
+            ("sha3", "too_large", 0, "csv", "csv", 1, 1, 900),
+            ("sha4", "absent_new", 0, "parquet", None, 2, 0, 200),
         ]
-        assert {(r["dataset_id"], r["version_from"], r["version_to"]) for r in statuses} == {("org/ds", "sha1", "sha2")}
 
     def test_no_units_means_no_hub_calls(self, monkeypatch):
         def must_not_be_called(*a, **kw):
@@ -889,7 +886,8 @@ class TestCompareChangeUnits:
 
     def test_passes_the_engine_config_to_the_engine(self, monkeypatch):
         seen = []
-        monkeypatch.setattr(es.pairs, "compare_revisions", lambda *a, **kw: seen.append(kw["config"]) or [])
+        monkeypatch.setattr(es.pairs, "compare_revisions",
+                            lambda *a, **kw: seen.append(kw["config"]) or TestCompareChangeUnits._comparison("ok"))
         config = es.engine_config(1)
 
         es.compare_change_units("org/ds", [("sha1", "sha2")], "tok", es.RETRY_CONFIG, config)
@@ -898,29 +896,29 @@ class TestCompareChangeUnits:
 
 
 class TestMaxTableSize:
-    """La mida màxima d'una taula és un paràmetre de l'execució (`--max-table-mb`)."""
+    """La mida màxima d'una taula és un paràmetre de l'execució (`--max-dataset-mb`)."""
 
     def test_the_default_is_the_engine_default(self):
-        assert es.DEFAULT_MAX_TABLE_MB == 500
-        assert es.engine_config().max_unit_bytes == es.DEFAULT_CONFIG.max_unit_bytes
+        assert es.DEFAULT_MAX_DATASET_MB == 500
+        assert es.engine_config().max_dataset_bytes == es.DEFAULT_CONFIG.max_dataset_bytes
 
     def test_megabytes_become_bytes_and_nothing_else_changes(self):
         from dataclasses import replace
 
         config = es.engine_config(1.5)
 
-        assert config.max_unit_bytes == int(1.5 * 1024**2)
-        assert replace(config, max_unit_bytes=es.DEFAULT_CONFIG.max_unit_bytes,
+        assert config.max_dataset_bytes == int(1.5 * 1024**2)
+        assert replace(config, max_dataset_bytes=es.DEFAULT_CONFIG.max_dataset_bytes,
                        formats=es.DEFAULT_CONFIG.formats) == es.DEFAULT_CONFIG
 
     def test_cli_reads_the_limit(self, monkeypatch):
-        monkeypatch.setattr(sys, "argv", ["eligibility_scan.py", "--classify-versions", "v.csv", "--max-table-mb",
+        monkeypatch.setattr(sys, "argv", ["eligibility_scan.py", "--classify-versions", "v.csv", "--max-dataset-mb",
                                           "1000"])
-        assert es.parse_args().max_table_mb == 1000
+        assert es.parse_args().max_dataset_mb == 1000
 
     @pytest.mark.parametrize("value", ["0", "-5", "molt"])
     def test_cli_rejects_a_limit_that_is_not_a_positive_number(self, monkeypatch, value):
-        monkeypatch.setattr(sys, "argv", ["eligibility_scan.py", "--classify-versions", "v.csv", "--max-table-mb",
+        monkeypatch.setattr(sys, "argv", ["eligibility_scan.py", "--classify-versions", "v.csv", "--max-dataset-mb",
                                           value])
         with pytest.raises(SystemExit):
             es.parse_args()
@@ -933,7 +931,7 @@ class TestMaxTableSize:
 
         es.run_classification(versions, es.engine_config(3))
 
-        assert [c.max_unit_bytes for c in seen] == [3 * 1024**2]
+        assert [c.max_dataset_bytes for c in seen] == [3 * 1024**2]
 
 
 # ---------------------------------------------------------------------------
@@ -946,8 +944,8 @@ def _record_units(monkeypatch):
 
     def fake(dataset_id, units_to_compare, hf_token, retry_config, config=None):
         calls.extend(units_to_compare)
-        return [{"dataset_id": dataset_id, "version_from": o, "version_to": n, "file_path": "train.csv",
-                 "code": "C421"} for o, n in units_to_compare], []
+        return [{"dataset_id": dataset_id, "version_from": o, "version_to": n, "code": "C421"}
+                for o, n in units_to_compare], []
 
     monkeypatch.setattr(es, "compare_change_units", fake)
     return calls
@@ -1064,8 +1062,7 @@ class TestRunClassification:
         def compare(dataset_id, units_to_compare, hf_token, retry_config, config=None):
             if dataset_id == "org/bad":
                 raise ValueError("boom")
-            return [{"dataset_id": dataset_id, "version_from": "c1", "version_to": "c2", "file_path": "t.csv",
-                     "code": "C421"}], []
+            return [{"dataset_id": dataset_id, "version_from": "c1", "version_to": "c2", "code": "C421"}], []
 
         monkeypatch.setattr(es, "compare_change_units", compare)
 
@@ -1085,10 +1082,9 @@ class TestRunClassification:
         def compare(dataset_id, units_to_compare, hf_token, retry_config, config=None):
             if dataset_id == "org/killed":
                 raise KeyboardInterrupt
-            return ([{"dataset_id": dataset_id, "version_from": "c1", "version_to": "c2", "file_path": "t.csv",
-                      "code": "C421"}],
-                    [{"dataset_id": dataset_id, "version_from": "c1", "version_to": "c2", "table": "t.csv",
-                      "file_path": "t.csv", "status": "ok", "n_codes": 1}])
+            return ([{"dataset_id": dataset_id, "version_from": "c1", "version_to": "c2", "code": "C421"}],
+                    [{"dataset_id": dataset_id, "version_from": "c1", "version_to": "c2", "status": "ok",
+                      "n_codes": 1}])
 
         monkeypatch.setattr(es, "compare_change_units", compare)
 
@@ -1100,27 +1096,23 @@ class TestRunClassification:
         status = pd.read_csv(tmp_path / "comparison_status.csv")
         assert status["dataset_id"].tolist() == ["org/done"]
 
-    def test_writes_one_row_per_table_versions_and_code(self, monkeypatch, tmp_path):
+    def test_writes_one_row_per_pair_of_versions_and_code(self, monkeypatch, tmp_path):
         import pandas as pd
 
         versions = _write_versions(tmp_path, {"org/ds": [("sha1", 1), ("sha2", 2)]})
 
-        def row(code, column):
-            return {"dataset_id": "org/ds", "version_from": "sha1", "version_to": "sha2", "table": "default/train",
-                    "file_path": "train.csv", "code": code, "column": column}
+        def row(code):
+            return {"dataset_id": "org/ds", "version_from": "sha1", "version_to": "sha2", "code": code}
 
         monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
-        # El mateix codi en dues columnes de la mateixa taula surt un sol cop.
-        monkeypatch.setattr(es, "compare_change_units", lambda *a: ([row("C421", None), row("C223", "a"),
-                                                                      row("C223", "b")], []))
+        # El mateix codi en dues columnes surt un sol cop.
+        monkeypatch.setattr(es, "compare_change_units", lambda *a: ([row("C421"), row("C223"), row("C223")], []))
 
         output_csv = es.run_classification(versions)
 
         out = pd.read_csv(output_csv)
         assert output_csv == str(tmp_path / "change_classification.csv")
-        assert list(out.columns) == [
-            "dataset_id", "version_from", "version_to", "table", "file_path", "code", "description", "is_breaking",
-        ]
+        assert list(out.columns) == ["dataset_id", "version_from", "version_to", "code", "description", "is_breaking"]
         assert out["code"].tolist() == ["C421", "C223"]
         assert out.iloc[0]["description"] == "Afegir fila"
         assert bool(out.iloc[1]["is_breaking"]) is True
@@ -1129,31 +1121,26 @@ class TestRunClassification:
         import pandas as pd
 
         from diffengine.output import Change, DiffResult
-        from diffengine.pairs import UnitPair
 
         versions = _write_versions(tmp_path, {"org/ds": [("sha1", 1), ("sha2", 2), ("sha3", 3)]})
         monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
 
         def compare_revisions(dataset_id, old_rev, new_rev, token, call, config=None):
             changes = [Change("C421"), Change("C510", column="a")] if new_rev == "sha2" else []
-            return [UnitPair("default/train", ("train.csv",), ("train.csv",), status="ok",
-                             result=DiffResult("ok", changes)),
-                    UnitPair("big/train", ("big.parquet",), ("big.parquet",), status="too_large")]
+            return TestCompareChangeUnits._comparison(result=DiffResult("ok", changes))
 
         monkeypatch.setattr(es.pairs, "compare_revisions", compare_revisions)
 
         es.run_classification(versions)
 
         status = pd.read_csv(tmp_path / "comparison_status.csv")
-        assert list(status.columns) == ["dataset_id", "version_from", "version_to", "table", "file_path", "status",
-                                        "n_codes"]
-        assert status[["version_to", "table", "status", "n_codes"]].values.tolist() == [
-            ["sha2", "default/train", "ok", 2], ["sha2", "big/train", "too_large", 0],
-            ["sha3", "default/train", "ok", 0], ["sha3", "big/train", "too_large", 0]]
-        # n_codes és el nombre de files de la taula a change_classification.csv.
+        assert list(status.columns) == ["dataset_id", "version_from", "version_to", "status", "n_codes", "format_from",
+                                        "format_to", "n_files_from", "n_files_to", "size_bytes"]
+        assert status[["version_to", "status", "n_codes"]].values.tolist() == [["sha2", "ok", 2], ["sha3", "ok", 0]]
+        # n_codes és el nombre de files de la parella de versions a change_classification.csv.
         changes = pd.read_csv(tmp_path / "change_classification.csv")
-        per_table = changes.groupby(["version_to", "table"]).size()
-        assert all(per_table.get((r.version_to, r.table), 0) == r.n_codes for r in status.itertuples())
+        per_pair = changes.groupby("version_to").size()
+        assert all(per_pair.get(r.version_to, 0) == r.n_codes for r in status.itertuples())
 
     def test_never_produces_c100(self, monkeypatch, tmp_path):
         # Un canvi de format (CSV -> parquet) seria C100, que és fora d'abast.
@@ -1162,14 +1149,13 @@ class TestRunClassification:
         import pandas as pd
 
         from diffengine.engine import diff_bytes
-        from diffengine.pairs import UnitPair
 
         df = pd.DataFrame({"a": range(30), "b": ["x", "y", "z"] * 10})
         buf = io.BytesIO()
         df.to_parquet(buf, index=False)
         result = diff_bytes(df.to_csv(index=False).encode(), ".csv", buf.getvalue(), ".parquet")
-        pair = UnitPair("default/train", ("data.csv",), ("data.parquet",), status="ok", result=result)
-        monkeypatch.setattr(es.pairs, "compare_revisions", lambda *a, **kw: [pair])
+        comparison = TestCompareChangeUnits._comparison(result=result, old=("data.csv",), new=("data.parquet",))
+        monkeypatch.setattr(es.pairs, "compare_revisions", lambda *a, **kw: comparison)
 
         labels, _ = es.compare_change_units("org/ds", [("c1", "c2")], "tok", es.RETRY_CONFIG)
 

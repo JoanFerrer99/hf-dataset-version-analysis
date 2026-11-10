@@ -58,18 +58,17 @@ class DiffResult:
         return {c.code for c in self.changes}
 
 
-CLASSIFICATION_COLUMNS = ["dataset_id", "version_from", "version_to", "table", "file_path", "code",
-                          "description", "is_breaking"]
+CLASSIFICATION_COLUMNS = ["dataset_id", "version_from", "version_to", "code", "description", "is_breaking"]
 
 
 def classification_frame(rows: list[dict]) -> pd.DataFrame:
     """
-    La taula de sortida de la Fase 2: un codi per taula i parell de versions,
-    amb la descripció i si trenca. Si una taula té el mateix codi en diverses
+    La taula de sortida de la Fase 2: un codi per parell de versions d'un
+    dataset, amb la descripció i si trenca. Si el mateix codi surt en diverses
     columnes, surt un sol cop.
 
     :param rows: una fila per canvi, amb `dataset_id`, `version_from`,
-        `version_to`, `table`, `file_path` i `code`.
+        `version_to` i `code` (`pairs.revision_rows`).
     :return: la taula, sense files repetides.
     """
     out = pd.DataFrame(rows, columns=CLASSIFICATION_COLUMNS[:-2])
@@ -78,15 +77,16 @@ def classification_frame(rows: list[dict]) -> pd.DataFrame:
     return out.drop_duplicates().reset_index(drop=True)
 
 
-STATUS_COLUMNS = ["dataset_id", "version_from", "version_to", "table", "file_path", "status", "n_codes"]
+STATUS_COLUMNS = ["dataset_id", "version_from", "version_to", "status", "n_codes", "format_from", "format_to",
+                  "n_files_from", "n_files_to", "size_bytes"]
 
 
 def status_frame(rows: list[dict]) -> pd.DataFrame:
     """
     La taula de l'estat de cada comparació de la Fase 2: una fila per parell
-    de taules i parell de versions, també les que no tenen cap codi.
+    de versions d'un dataset, també les que no tenen cap codi.
 
-    :param rows: una fila per parell de taules (`pairs.status_rows`).
+    :param rows: una fila per parell de versions (`pairs.status_row`).
     :return: la taula, amb les columnes de `STATUS_COLUMNS`.
     """
     return pd.DataFrame(rows, columns=STATUS_COLUMNS)
