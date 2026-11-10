@@ -30,14 +30,25 @@ class TestResolveUnits:
         assert _tables(layout) == {("default", "train"): ["adult.csv", "census_2020.csv"]}
         assert layout.units[0].naming == "distinct"
 
-    def test_most_common_format_wins(self):
-        layout = resolve_units(["a.csv", "b.csv", "c.json"])
-        assert _tables(layout) == {("default", "train"): ["a.csv", "b.csv"]}
-        assert layout.excluded == {"c.json": "other_format"}
+    def test_the_first_format_of_the_list_wins_not_the_most_common(self):
+        layout = resolve_units(["a.parquet", "b.parquet", "c.csv"])  # per defecte, CSV primer
+        assert _tables(layout) == {("default", "train"): ["c.csv"]}
+        assert layout.excluded == {"a.parquet": "other_format", "b.parquet": "other_format"}
 
-    def test_parquet_wins_a_tie(self):
-        layout = resolve_units(["data.csv", "data.parquet"])
+    def test_the_order_is_the_one_given(self):
+        layout = resolve_units(["data.csv", "data.parquet"], formats=("parquet", "csv"))
         assert _tables(layout) == {("default", "train"): ["data.parquet"]}
+        assert layout.excluded == {"data.csv": "other_format"}
+
+    def test_a_format_left_out_of_the_list_is_not_a_table(self):
+        layout = resolve_units(["a.json", "b.parquet"], formats=("parquet",))
+        assert _tables(layout) == {("default", "train"): ["b.parquet"]}
+        assert layout.excluded == {}  # no és tabular: ni es compara ni es registra
+
+    def test_without_the_preferred_format_the_next_one_is_used(self):
+        layout = resolve_units(["a.jsonl", "b.json"], formats=("csv", "jsonl", "json"))
+        assert _tables(layout) == {("default", "train"): ["a.jsonl"]}
+        assert layout.excluded == {"b.json": "other_format"}
 
     def test_media_metadata_is_not_a_table(self):
         layout = resolve_units(["train/metadata.csv", "train/a.png", "train/b.png"])
@@ -93,9 +104,24 @@ class TestResolveUnits:
             raise ValueError("no es pot resoldre")
 
         monkeypatch.setattr(datasets.load.LocalDatasetModuleFactory, "get_module", fail)
-        layout = units.resolve_units(["a.parquet", "b/c.csv", "README.md"])
+        layout = units.resolve_units(["a.csv", "b/c.csv", "d.parquet", "README.md"])
         assert layout.error.startswith("ValueError")
-        assert _tables(layout) == {("default", "a.parquet"): ["a.parquet"], ("default", "b/c.csv"): ["b/c.csv"]}
+        assert _tables(layout) == {("default", "a.csv"): ["a.csv"], ("default", "b/c.csv"): ["b/c.csv"]}
+        assert layout.excluded == {"d.parquet": "other_format"}  # també aquí, només el primer format
+
+
+class TestFormats:
+    def test_preferred_format_is_the_first_present(self):
+        paths = ["a.json", "b.parquet", "README.md", "dataset_infos.json"]
+        assert units.preferred_format(paths, ("csv", "parquet", "json")) == "parquet"
+        assert units.preferred_format(paths, ("json", "parquet")) == "json"
+        assert units.preferred_format(["README.md", "dataset_infos.json"], ("json",)) is None
+
+    def test_a_file_is_tabular_only_in_a_listed_format(self):
+        assert units.is_tabular_path("data/train.CSV")
+        assert units.is_tabular_path("data/train.csv", ("csv",))
+        assert not units.is_tabular_path("data/train.parquet", ("csv",))
+        assert not units.is_tabular_path("meta/info.json", ("json",))
 
 
 class TestClassifyNaming:

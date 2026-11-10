@@ -28,6 +28,11 @@ particions hi veu. S'hi afegeixen dos casos que `datasets` no cobreix:
   resolen com a taules pròpies, en lloc de quedar fora;
 - els repositoris que `datasets` no sap llegir: cada fitxer tabular passa a
   ser una taula.
+
+Abans, es tria el format: si una revisió té fitxers tabulars de més d'un
+format, només es compara el primer de la llista de formats (`EngineConfig.formats`,
+que el pipeline llegeix de `config/formats.toml`). Els fitxers dels altres
+formats queden exclosos (`other_format`).
 """
 
 import os
@@ -35,7 +40,10 @@ import re
 import tempfile
 from dataclasses import dataclass, field
 
-TABULAR_EXTENSIONS = (".parquet", ".csv", ".tsv", ".json", ".jsonl")
+from diffengine.config import DEFAULT_CONFIG
+
+READABLE_FORMATS = ("csv", "tsv", "parquet", "jsonl", "json")
+"""Els formats que sap llegir el motor (`load.load_table`)."""
 
 # Constructors de `datasets` que llegeixen taules. La resta (imagefolder,
 # audiofolder...) són repositoris de media: el seu metadata.csv no és un dataset.
@@ -90,15 +98,35 @@ class RepoLayout:
     error: str | None = None
 
 
-def is_tabular_path(path: str) -> bool:
+def file_format(path: str) -> str:
     """
-    Diu si un fitxer és una taula que el motor sap llegir, només pel nom.
+    :param path: ruta d'un fitxer.
+    :return: l'extensió, en minúscules i sense el punt (p.e. `csv`).
+    """
+    return os.path.splitext(path)[1].lower().lstrip(".")
+
+
+def is_tabular_path(path: str, formats: tuple[str, ...] = READABLE_FORMATS) -> bool:
+    """
+    Diu si un fitxer és una taula, només pel nom.
 
     :param path: ruta del fitxer dins del repositori.
-    :return: `True` si l'extensió és `.parquet`, `.csv`, `.tsv`, `.json` o
-        `.jsonl` i no és un fitxer de metadades conegut.
+    :param formats: formats que compten com a taules (per defecte, tots els que sap llegir el motor).
+    :return: `True` si el format és a `formats` i no és un fitxer de metadades conegut.
     """
-    return path.lower().endswith(TABULAR_EXTENSIONS) and os.path.basename(path) not in METADATA_FILES
+    return file_format(path) in formats and os.path.basename(path) not in METADATA_FILES
+
+
+def preferred_format(paths: list[str], formats: tuple[str, ...]) -> str | None:
+    """
+    El format que es compara en una revisió.
+
+    :param paths: fitxers de la revisió.
+    :param formats: formats tabulars, en ordre de preferència.
+    :return: el primer de `formats` que té algun fitxer tabular a `paths`, o `None` si no n'hi ha cap.
+    """
+    present = {file_format(p) for p in paths if is_tabular_path(p, formats)}
+    return next((f for f in formats if f in present), None)
 
 
 def classify_naming(files: list[str]) -> str:
@@ -141,25 +169,34 @@ def _configs_only_readme(readme_text: str) -> str | None:
     return "---\n" + yaml.safe_dump({"configs": meta["configs"]}) + "---\n"
 
 
-def resolve_units(paths: list[str], readme_text: str | None = None) -> RepoLayout:
+def resolve_units(paths: list[str], readme_text: str | None = None,
+                  formats: tuple[str, ...] = DEFAULT_CONFIG.formats) -> RepoLayout:
     """
     Troba les taules d'una revisió d'un repositori, sense descarregar dades.
 
-    Recrea l'arbre de fitxers com a fitxers buits en un directori temporal i li
-    pregunta a la llibreria `datasets` quines particions hi veu. Els fitxers
-    partits d'una mateixa partició formen una sola taula.
+    Tria el format que es compara (`preferred_format`), recrea l'arbre de
+    fitxers com a fitxers buits en un directori temporal, sense els fitxers
+    tabulars dels altres formats, i li pregunta a la llibreria `datasets` quines
+    particions hi veu. Els fitxers partits d'una mateixa partició formen una
+    sola taula.
 
     :param paths: tots els fitxers del repositori en aquella revisió.
     :param readme_text: contingut del README (pot descriure les particions), o `None`.
+    :param formats: formats tabulars, en ordre de preferència (`EngineConfig.formats`).
     :return: les taules trobades i els fitxers tabulars que no formen part de cap taula, amb el motiu.
     """
     from datasets.load import LocalDatasetModuleFactory
 
+    chosen = preferred_format(paths, formats)
     layout = RepoLayout()
+    layout.excluded = {p: "other_format" for p in paths if is_tabular_path(p, formats) and file_format(p) != chosen}
     with tempfile.TemporaryDirectory(prefix="hf_layout_") as root:
         for path in paths:
             # El README es reescriu a sota; les metadades buides farien fallar `datasets` en llegir-les.
             if path == "README.md" or os.path.basename(path) in METADATA_FILES:
+                continue
+            # Els altres formats tabulars, també els que no són a `formats`: `datasets` no els ha de veure.
+            if file_format(path) in READABLE_FORMATS and file_format(path) != chosen:
                 continue
             full = os.path.join(root, path)
             os.makedirs(os.path.dirname(full), exist_ok=True)
@@ -173,8 +210,8 @@ def resolve_units(paths: list[str], readme_text: str | None = None) -> RepoLayou
             module = LocalDatasetModuleFactory(root).get_module()
         except Exception as exc:
             layout.error = f"{type(exc).__name__}: {exc}"[:200]
-            layout.units = [Unit("default", path, (path,), os.path.splitext(path)[1].lstrip("."), "single")
-                            for path in sorted(paths) if is_tabular_path(path)]
+            layout.units = [Unit("default", path, (path,), file_format(path), "single")
+                            for path in sorted(paths) if is_tabular_path(path, (chosen,))]
             return layout
 
         builder = module.module_path.rsplit(".", 1)[-1]
@@ -202,17 +239,17 @@ def resolve_units(paths: list[str], readme_text: str | None = None) -> RepoLayou
         # Repositori de media (p.e. LeRobot: més vídeos que parquet). El metadata.csv
         # del constructor de media no és un dataset, però les taules que no fa servir
         # sí: es resolen soles, amb les mateixes regles i sense el README (que descriu la media).
-        tabular = [p for p in paths if is_tabular_path(p)]
-        layout.excluded = {p: "media_metadata" for p in tabular if p in used}
+        tabular = [p for p in paths if is_tabular_path(p, (chosen,))]
+        layout.excluded.update({p: "media_metadata" for p in tabular if p in used})
         loose = [p for p in tabular if p not in used]
         if loose:
-            inner = resolve_units(loose)
+            inner = resolve_units(loose, formats=(chosen,))
             layout.units, layout.error = inner.units, inner.error
             layout.excluded.update(inner.excluded)
         return layout
 
     for path in paths:
-        if is_tabular_path(path) and path not in used:
+        if is_tabular_path(path, (chosen,)) and path not in used:
             same_format = path.lower().endswith(_BUILDER_EXTENSIONS[builder])
             layout.excluded[path] = "outside_any_split" if same_format else "other_format"
     return layout

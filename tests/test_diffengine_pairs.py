@@ -127,6 +127,18 @@ class TestComparePair:
         assert result["abl/train"].result.codes == {"C222"}
 
 
+def test_list_revision_resolves_the_tables_with_the_formats_of_the_config(monkeypatch):
+    from types import SimpleNamespace
+
+    entries = [SimpleNamespace(path=p, size=10, lfs=None, blob_id=p) for p in ("data.csv", "data.parquet")]
+    monkeypatch.setattr(pairs, "list_repo_tree", lambda *a, **kw: entries)
+
+    rev = pairs.list_revision("org/ds", "sha", None, config=replace(DEFAULT_CONFIG, formats=("parquet", "csv")))
+
+    assert [u.files for u in rev.layout.units] == [("data.parquet",)]
+    assert rev.layout.excluded == {"data.csv": "other_format"}
+
+
 def test_concat_rejects_shards_with_different_schemas():
     from diffengine.load import ParseError, load_table
 

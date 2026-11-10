@@ -12,6 +12,11 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class EngineConfig:
     # --- Pas 1: quines taules es comparen -----------------------------------
+    formats: tuple[str, ...] = ("csv", "tsv", "parquet", "jsonl", "json")
+    """Formats tabulars, en ordre de preferència. Només aquests compten com a
+    taules. Si una revisió en té de més d'un, només es compara el primer de la
+    llista que hi surt: els fitxers dels altres queden exclosos (`excluded`). El
+    pipeline els llegeix de `config/formats.toml` (decisió T-36)."""
     concat_shards: bool = True
     """Una taula partida en diversos fitxers (shards del Hub com
     `train-00000-of-00003.parquet`, o episodis numerats de LeRobot) es llegeix

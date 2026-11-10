@@ -1595,6 +1595,40 @@ Estat: Fet
     `pairs.compare_revisions`. El valor surt al log de la Fase 2.
 
 
+DECISIÓ T-36: els formats tabulars i el seu ordre es configuren en un fitxer
+Data: novembre 2026
+Responsable: Joan (acordat amb el director a la reunió de seguiment)
+Estat: Fet
+
+  MOTIU: quan una versió tenia fitxers tabulars de més d'un format, el motor
+  comparava el més freqüent (la regla de la llibreria `datasets`; en cas
+  d'empat, parquet). Es vol poder triar quin format té preferència (p.e. el
+  CSV, el format original de molts datasets) i quins formats entren a
+  l'estudi, sense tocar el codi.
+
+  DECISIÓ:
+  - `config/formats.toml`, amb la llista `order`. Per defecte: csv, tsv,
+    parquet, jsonl, json. Es llegeix en començar (`load_formats`) i es
+    comprova: no buida, sense repeticions i només formats que el motor sap
+    llegir (`units.READABLE_FORMATS`). És un fitxer i no un paràmetre de la
+    línia d'ordres: és part del disseny de l'estudi, no de cada execució.
+  - Només els formats de la llista compten com a tabulars, a la Fase 0
+    (elegibilitat) i a la Fase 2: la definició continua sent la mateixa a
+    les dues fases.
+  - Una revisió es compara en un sol format: el primer de la llista que hi
+    surt (`units.preferred_format`). Els fitxers dels altres formats no
+    arriben a `datasets` i queden com a exclosos (`other_format`); si han
+    canviat, surten a `comparison_status.csv` amb l'estat `excluded`, com
+    abans.
+  - Dues versions poden quedar en formats diferents (p.e. la nova afegeix un
+    CSV): s'aparellen igual, pel nom de la partició, i el motor compara
+    taules de formats diferents.
+  - Efecte a run_9 (cap dataset té CSV): `pulsia/fr-bench-pdf2md` té
+    `.jsonl` i `.json`, i els seus `metadata.json` deixen de comparar-se. Cap
+    dels seus 1.861 canvis venia d'aquests fitxers.
+  - A Docker, `docker-compose.yml` munta `config/` a sobre del de la imatge.
+
+
 ================================================================================
 BLOC 4 — DECISIONS D'ABAST
 ================================================================================

@@ -176,7 +176,7 @@ Termes que defineix aquest codi:
 | Terme | Què vol dir | On es defineix |
 |---|---|---|
 | **Fitxer substantiu** | Fitxer amb dades reals, no metadades ni documentació. Es decideix per la ruta i l'extensió (secció 7.3). | funció `is_substantive_path` |
-| **Fitxer de dades tabular** | Fitxer substantiu i tabular (`.parquet`, `.csv`, `.tsv`, `.json`, `.jsonl`). És el que fa elegible un dataset i el que compara el motor. | funció `is_tabular_data_path` |
+| **Fitxer de dades tabular** | Fitxer substantiu i tabular (d'un dels formats de `config/formats.toml`). És el que fa elegible un dataset i el que compara el motor. | funció `is_tabular_data_path` |
 | **Commit tabular** | Commit que modifica almenys un fitxer de dades tabular. Cal el clon per saber-ho: sense clon, no compta. | funció `is_tabular_commit` |
 | **Candidat** | Dataset de la mostra amb ≥2 tags o ≥2 branques: l'únic al qual es mira la llista de fitxers i, si té dades tabulars, els commits (secció 7.2). | funció `classify_dataset` |
 | **Sessió de treball** | Grup de commits tabulars propers en el temps: ordenats per data, en comença una de nova quan dos consecutius estan separats per **més de 6 hores**. Evita comptar com a versions diferents els 5 commits que una eina de pujada fa en 10 minuts. Hi ha una sola implementació, compartida per totes les fases. | agrupat en la funció `cluster_commit_times` |
@@ -185,7 +185,7 @@ Termes que defineix aquest codi:
 | **Criteri B** | ≥2 branques i commits tabulars repartits en ≥2 sessions. | funció `eligibility_criterion` (sessions: `has_time_dispersed_substantive_commits`) |
 | **Versió** | Criteri A: cada tag. Criteri B: cada sessió (representada pel seu commit més recent). | extracció a `version_extractor.extract_versions_for_dataset` |
 | **Unitat de canvi** | Què es compara a la Fase 2: cada versió contra la següent. Criteri A: cada tag contra el tag següent. Criteri B: el final de cada sessió contra el final de la sessió següent. | funció `version_pairs` |
-| **Fitxer tabular** | `.parquet`, `.csv`, `.tsv`, `.json` o `.jsonl`. L'únic tipus que es descarrega i es compara. | es defineix a la funció `diffengine.units.is_tabular_path` |
+| **Fitxer tabular** | D'un dels formats de `config/formats.toml` (per defecte, `.csv`, `.tsv`, `.parquet`, `.jsonl` i `.json`). L'únic tipus que es descarrega i es compara. Si una versió en té de més d'un format, només es compara el primer de la llista (decisió T-36). | es defineix a la funció `diffengine.units.is_tabular_path` |
 | **Shard** | Fitxer amb només una part de les files d'un split.
 | **Taula** | Els shards del split s'uneixen en ordre en una sola taula.
 
@@ -230,6 +230,7 @@ python src/build_warehouse.py --run-dir data/run_9                              
 
 ```
 src/                Codi del pipeline: un script per fase i el motor de detecció de canvis
+config/             formats.toml: els formats tabulars i el seu ordre de preferència (T-36)
   diffengine/       El motor, com a paquet de Python (s'explica a docs/validacio_census_income.md, secció 1)
 warehouse/          Magatzem de la Fase 3: projecte dbt sobre DuckDB (docs/warehouse.md)
 ui/                 Interfície de consulta (Streamlit): un visualitzador de l'execució, de només lectura sobre el magatzem (T-33, T-34)
@@ -273,6 +274,7 @@ xarxa ni token. `conftest.py` afegeix `src/` al camí d'importació.
 |---|---|
 | `requirements.txt` | Dependències amb versió fixada |
 | `ruff.toml` | Regles de lint |
+| `config/formats.toml` | Els formats tabulars, en ordre de preferència (decisió T-36). `docker-compose.yml` el munta a sobre del de la imatge, de manera que es pot canviar sense reconstruir-la |
 | `Dockerfile`, `docker-compose.yml` | Imatge per executar el pipeline sense instal·lar res; `docker-compose` hi defineix un servei per script (`run-pipeline`, `eligibility-scan`, `version-extractor`, `warehouse`) |
 | `.github/workflows/ci.yml` | A cada push: lint, tests i construcció de la imatge |
 | `.github/workflows/docker-publish.yml` | Publica la imatge |
@@ -402,10 +404,12 @@ Un commit compta si toca un **fitxer de dades tabular**. Això són dues
 condicions:
 
 - **És dades, no metadades** (`is_substantive_path`, a sota).
-- **És tabular** (`diffengine.units.is_tabular_path`): `.parquet`, `.csv`,
-  `.tsv`, `.json` o `.jsonl`, excepte els JSON de metadades del Hub i de
-  LeRobot. És la mateixa definició que fa servir el motor de la Fase 2, de
-  manera que tot dataset elegible té alguna cosa que el motor pot comparar.
+- **És tabular** (`diffengine.units.is_tabular_path`): d'un dels formats de
+  `config/formats.toml` (per defecte, `.csv`, `.tsv`, `.parquet`, `.jsonl` i
+  `.json`), excepte els JSON de metadades del Hub i de LeRobot. És la mateixa
+  definició que fa servir el motor de la Fase 2, de manera que tot dataset
+  elegible té alguna cosa que el motor pot comparar. Per deixar un format
+  fora de l'estudi, es treu de la llista (decisió T-36).
 
 `is_substantive_path` decideix si un fitxer és dades, en aquest ordre:
 
@@ -522,6 +526,9 @@ mostra baixaria centenars de GB).
    amb el mateix commit (dos tags al mateix commit).
 2. `compare_change_units` crida el motor amb les dues revisions de cada
    unitat (`pairs.compare_revisions`). El motor:
+   - si una revisió té fitxers tabulars de més d'un format, només es
+     compara el primer de `config/formats.toml` que hi surt; els fitxers
+     dels altres formats queden amb l'estat `excluded` (decisió T-36);
    - cada revisió es resol en **taules (subset, split)** amb les regles
      de la llibreria `datasets`. Els shards d'un split (secció 2.2) es
      descarreguen tots i s'uneixen en ordre en una sola taula, de manera

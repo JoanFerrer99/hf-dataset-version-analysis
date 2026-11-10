@@ -59,6 +59,7 @@ import argparse
 import logging
 import subprocess
 import tempfile
+import tomllib
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
@@ -133,11 +134,37 @@ GIT_SHOW_TIMEOUT_S = 10
 _git_missing_warned = False
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
+FORMATS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config", "formats.toml")
 # Carpeta de l'execució en curs: `new_run_dir` la canvia per `data/run_<id>`.
 OUTPUT_DIR = DATA_DIR
 FAILURES_LOG_PATH = os.path.join(OUTPUT_DIR, "failures.csv")
 
 RETRY_CONFIG: dict = dict(errors.DEFAULT_RETRY_CONFIG)
+
+
+def load_formats(path: str = FORMATS_FILE) -> tuple[str, ...]:
+    """
+    Els formats tabulars de l'execució, en ordre de preferència (decisió T-36).
+
+    :param path: el fitxer de configuració (`config/formats.toml`).
+    :return: els formats, p.e. `("csv", "tsv", "parquet", "jsonl", "json")`.
+    :raises ValueError: si la llista és buida, té formats repetits o algun que el motor no sap llegir.
+    """
+    with open(path, "rb") as f:
+        order = tomllib.load(f).get("order")
+    if not isinstance(order, list) or not order or not all(isinstance(x, str) for x in order):
+        raise ValueError(f"{path}: `order` ha de ser una llista de formats, no buida")
+    formats = tuple(x.strip().lower().lstrip(".") for x in order)
+    unknown = [x for x in formats if x not in units.READABLE_FORMATS]
+    if unknown:
+        raise ValueError(f"{path}: el motor no sap llegir {', '.join(unknown)} "
+                         f"(sap llegir {', '.join(units.READABLE_FORMATS)})")
+    if len(set(formats)) < len(formats):
+        raise ValueError(f"{path}: hi ha formats repetits")
+    return formats
+
+
+TABULAR_FORMATS = load_formats()
 
 load_dotenv()
 HF_TOKEN = os.getenv("HF_TOKEN")
@@ -348,10 +375,10 @@ def is_tabular_data_path(path: str) -> bool:
     """
     Fitxer de dades tabular: el que fa elegible un dataset i el que compara el
     motor. Ha de ser dades (`is_substantive_path`, que exclou p.e. `meta/`) i
-    tabular segons el motor (`diffengine.units.is_tabular_path`: `.parquet`,
-    `.csv`, `.tsv`, `.json`, `.jsonl`, sense els JSON de metadades).
+    d'un dels formats de `config/formats.toml` (`TABULAR_FORMATS`), sense els
+    JSON de metadades (`diffengine.units.is_tabular_path`).
     """
-    return is_substantive_path(path) and units.is_tabular_path(path)
+    return is_substantive_path(path) and units.is_tabular_path(path, TABULAR_FORMATS)
 
 
 def read_current_version(dataset_id: str) -> tuple[list[str], dict]:
@@ -399,7 +426,7 @@ def tabular_file_share(paths: list[str]) -> tuple[int, float | None]:
     data = [p for p in paths if is_substantive_path(p)]
     if not data:
         return 0, None
-    return len(data), round(sum(units.is_tabular_path(p) for p in data) / len(data), 4)
+    return len(data), round(sum(units.is_tabular_path(p, TABULAR_FORMATS) for p in data) / len(data), 4)
 
 
 @contextmanager
@@ -823,13 +850,13 @@ def run_sampling(
 def engine_config(max_table_mb: float = DEFAULT_MAX_TABLE_MB) -> EngineConfig:
     """
     Els llindars del motor per a una execució: els de `DEFAULT_CONFIG`, amb la
-    mida màxima d'una taula que es dona.
+    mida màxima d'una taula que es dona i els formats de `config/formats.toml`.
 
     :param max_table_mb: mida màxima d'una taula, en MB (1 MB = 1024² bytes),
         sumant la versió antiga i la nova. Per sobre, no es compara (`too_large`).
     :return: la configuració del motor.
     """
-    return replace(DEFAULT_CONFIG, max_unit_bytes=int(max_table_mb * MB))
+    return replace(DEFAULT_CONFIG, max_unit_bytes=int(max_table_mb * MB), formats=TABULAR_FORMATS)
 
 
 def run_classification(versions_csv: str, config: EngineConfig = DEFAULT_CONFIG) -> str:
@@ -860,7 +887,7 @@ def run_classification(versions_csv: str, config: EngineConfig = DEFAULT_CONFIG)
         versions = pd.DataFrame(columns=["dataset_id", "version_order", "commit_sha"])
     by_dataset = versions.groupby("dataset_id", sort=False)
     log.info(f"Classificant canvis de {by_dataset.ngroups} datasets de {versions_csv} (taules de fins a "
-             f"{config.max_unit_bytes / MB:g} MB)...")
+             f"{config.max_unit_bytes / MB:g} MB; formats, per ordre: {', '.join(config.formats)})...")
 
     output_csv = os.path.join(OUTPUT_DIR, "change_classification.csv")
     status_csv = os.path.join(OUTPUT_DIR, COMPARISON_STATUS_FILE)

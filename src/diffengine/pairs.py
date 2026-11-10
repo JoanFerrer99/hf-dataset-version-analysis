@@ -72,7 +72,8 @@ class UnitPair:
     result: DiffResult | None = None
 
 
-def list_revision(repo_id: str, revision: str, token: str | None, call: Call = direct_call) -> Revision:
+def list_revision(repo_id: str, revision: str, token: str | None, call: Call = direct_call,
+                  config: EngineConfig = DEFAULT_CONFIG) -> Revision:
     """
     Llista els fitxers d'una revisió (amb mida i identificador de contingut) i
     en troba les taules.
@@ -81,6 +82,7 @@ def list_revision(repo_id: str, revision: str, token: str | None, call: Call = d
     :param revision: commit a llistar.
     :param token: token d'accés a Hugging Face, o `None`.
     :param call: funció per fer les crides a l'API (permet afegir-hi reintents).
+    :param config: llindars del motor (els formats tabulars).
     :return: la revisió: mides, identificadors de contingut i taules.
     """
     entries = call(
@@ -97,7 +99,7 @@ def list_revision(repo_id: str, revision: str, token: str | None, call: Call = d
                 readme = f.read()
         except Exception:
             readme = None
-    return Revision(revision, sizes, content_ids, resolve_units(list(sizes), readme))
+    return Revision(revision, sizes, content_ids, resolve_units(list(sizes), readme, config.formats))
 
 
 def _units(rev: Revision, config: EngineConfig) -> tuple[dict[str, tuple[str, ...]], dict[str, str]]:
@@ -329,8 +331,8 @@ def compare_revisions(repo_id: str, old_rev: str, new_rev: str, token: str | Non
     :param config: llindars del motor.
     :return: una parella per taula, cadascuna amb el seu estat i, si s'ha comparat, el resultat.
     """
-    old = list_revision(repo_id, old_rev, token, call)
-    new = list_revision(repo_id, new_rev, token, call)
+    old = list_revision(repo_id, old_rev, token, call, config)
+    new = list_revision(repo_id, new_rev, token, call, config)
     pairs = pair_units(old, new, config)
     for pair in pairs:
         compare_pair(repo_id, pair, old, new, token, call, config)

@@ -379,6 +379,40 @@ class TestEligibilityCriterion:
         assert es.eligibility_criterion(0, 2, two_sessions, tags_only=True) is None
 
 
+class TestFormatsFile:
+    """`config/formats.toml`: quins formats són tabulars, i en quin ordre (decisió T-36)."""
+
+    @staticmethod
+    def _write(tmp_path, text):
+        path = tmp_path / "formats.toml"
+        path.write_text(text + "\n", encoding="utf-8")
+        return str(path)
+
+    def test_the_file_of_the_repository_is_valid(self):
+        formats = es.load_formats()
+        assert set(formats) <= set(es.units.READABLE_FORMATS)
+        assert es.TABULAR_FORMATS == formats
+
+    def test_reads_the_order(self, tmp_path):
+        assert es.load_formats(self._write(tmp_path, 'order = ["Parquet", ".csv"]')) == ("parquet", "csv")
+
+    @pytest.mark.parametrize("text", ['order = []', 'order = "csv"', 'formats = ["csv"]', 'order = ["csv", "xlsx"]',
+                                      'order = ["csv", "CSV"]'])
+    def test_rejects_a_wrong_list(self, tmp_path, text):
+        with pytest.raises(ValueError):
+            es.load_formats(self._write(tmp_path, text))
+
+    def test_phase_0_counts_only_the_listed_formats(self, monkeypatch):
+        monkeypatch.setattr(es, "TABULAR_FORMATS", ("csv",))
+        assert es.is_tabular_data_path("data/train.csv")
+        assert not es.is_tabular_data_path("data/train.parquet")
+        assert es.tabular_file_share(["data/a.csv", "data/b.parquet"]) == (2, 0.5)
+
+    def test_phase_2_gets_the_formats(self, monkeypatch):
+        monkeypatch.setattr(es, "TABULAR_FORMATS", ("parquet", "csv"))
+        assert es.engine_config().formats == ("parquet", "csv")
+
+
 class TestTabularFileShare:
     def test_share_of_data_files_that_are_tabular(self):
         paths = ["README.md", "data/train.parquet", "videos/a.mp4", "videos/b.mp4", "meta/info.json"]
@@ -868,7 +902,7 @@ class TestMaxTableSize:
 
     def test_the_default_is_the_engine_default(self):
         assert es.DEFAULT_MAX_TABLE_MB == 500
-        assert es.engine_config() == es.DEFAULT_CONFIG
+        assert es.engine_config().max_unit_bytes == es.DEFAULT_CONFIG.max_unit_bytes
 
     def test_megabytes_become_bytes_and_nothing_else_changes(self):
         from dataclasses import replace
@@ -876,7 +910,8 @@ class TestMaxTableSize:
         config = es.engine_config(1.5)
 
         assert config.max_unit_bytes == int(1.5 * 1024**2)
-        assert replace(config, max_unit_bytes=es.DEFAULT_CONFIG.max_unit_bytes) == es.DEFAULT_CONFIG
+        assert replace(config, max_unit_bytes=es.DEFAULT_CONFIG.max_unit_bytes,
+                       formats=es.DEFAULT_CONFIG.formats) == es.DEFAULT_CONFIG
 
     def test_cli_reads_the_limit(self, monkeypatch):
         monkeypatch.setattr(sys, "argv", ["eligibility_scan.py", "--classify-versions", "v.csv", "--max-table-mb",
