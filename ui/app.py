@@ -8,6 +8,7 @@ Interfície de consulta del magatzem (Fase 3): sis pàgines, una per tema.
 import streamlit as st
 
 import data
+import filters
 
 st.set_page_config(page_title="Canvis en datasets de Hugging Face", page_icon="📊", layout="wide")
 
@@ -17,6 +18,8 @@ if not data.warehouse_exists():
         "`python src/build_warehouse.py --run-dir data/run_<id>` i indica'n el fitxer amb `WAREHOUSE_PATH`."
     )
     st.stop()
+
+filters.sidebar()
 
 pages = [
     st.Page("pages/home.py", title="Inici", icon="🏠", default=True),

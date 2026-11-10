@@ -232,6 +232,7 @@ python src/build_warehouse.py --run-dir data/run_9                              
 src/                Codi del pipeline: un script per fase i el motor de detecció de canvis
   diffengine/       El motor, com a paquet de Python (s'explica a docs/validacio_census_income.md, secció 1)
 warehouse/          Magatzem de la Fase 3: projecte dbt sobre DuckDB (docs/warehouse.md)
+ui/                 Interfície de consulta (Streamlit), de només lectura sobre el magatzem
 tests/              Tests automàtics (pytest), sense xarxa; fixtures/run_sample/ és una execució sintètica
 data/               Resultats de les execucions (secció 10)
 docs/               Documentació (ordre de lectura: docs/README.md)
@@ -247,6 +248,7 @@ docs/               Documentació (ordre de lectura: docs/README.md)
 | `errors.py` | Reintents davant els límits de l'API, classificació dels errors i registre de fallades a `failures.csv`. És una llibreria que es fa servir totes les fases. |
 | `validate_census_income.py` | Valida el motor amb la Taula 1 del paper (Census Income). |
 | `build_warehouse.py` | Fase 3: `dbt build` sobre una carpeta d'execució; el magatzem va a `data/warehouse/run_<id>.duckdb`. |
+| `figures/` | Figures de la memòria: un mòdul per figura, que llegeix un mart; `make_all.py` les fa totes a `docs/figures/` (`docs/figures/README.md`). |
 | carpeta /diffengine |Compara dues versions d'un dataset en 5 passos. `engine.py` n'és l'índex. |
 
 
