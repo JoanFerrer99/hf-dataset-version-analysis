@@ -74,3 +74,15 @@ models:
     columns:
       - name: phase
         description: "La fase on va fallar: `sampling`, `version_extraction` o `classification`."
+
+  - name: stg_census_validation
+    description: Census Income, encerts i errors del motor per codi contra la Taula 1 del paper (paper_comparison_by_code.csv).
+    columns:
+      - name: code
+        description: Codi de la taxonomia (només els que surten al paper o al motor).
+      - name: true_positives
+        description: Versions on el paper i el motor marquen el codi.
+      - name: false_negatives
+        description: Versions on el paper el marca i el motor no.
+      - name: false_positives
+        description: Versions on el motor el marca i el paper no.

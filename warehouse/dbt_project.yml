@@ -22,6 +22,8 @@ vars:
   # Carpeta de l'execució que es llegeix, relativa a l'arrel del repositori.
   # Per defecte, la fixture sintètica de la CI.
   run_dir: tests/fixtures/run_sample
+  # Validació de Census Income (validate_census_income.py), també relativa a l'arrel.
+  census_dir: data/census_income/run_2
 
 models:
   hf_changes:
