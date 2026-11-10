@@ -11,18 +11,24 @@ import pandas as pd
 import palette as palettes
 
 BAR = 18  # gruix de les barres (px)
+# L'alçada dels gràfics amb una fila per categoria es dona per fila (alt.Step), no total:
+# Streamlit respecta el pas, i el gràfic creix amb el nombre de files.
 # Números a la catalana a tots els gràfics (1.868; 0,42%).
 LOCALE = alt.Locale(number=alt.NumberLocale(decimal=",", thousands=".", grouping=[3], currency=["", " €"]))
 
 
 def _axes(chart: alt.Chart, palette: dict) -> alt.Chart:
     """Eixos i quadrícula discrets, del color del text secundari."""
+    # L'amplada s'ajusta al contenidor; l'alçada surt de les files (alt.Step) més la llegenda i els eixos.
+    # Ha d'anar al nivell de dalt de l'especificació: si no hi és, Streamlit hi posa "fit", que encabeix
+    # tot el gràfic (llegenda i eixos inclosos) dins l'alçada i aixafa les files.
     return (chart
+            .properties(autosize=alt.AutoSizeParams(type="fit-x", contains="padding"))
             .configure(locale=LOCALE)
             .configure_axis(gridColor=palette["grid"], gridWidth=1, domainColor=palette["axis"],
                             tickColor=palette["axis"], labelColor=palette["muted"], titleColor=palette["muted"],
                             labelFontSize=12, titleFontSize=12)
-            .configure_legend(labelColor=palette["text"], titleColor=palette["muted"], orient="top")
+            .configure_legend(labelColor=palette["text"], titleColor=palette["muted"], orient="top", labelLimit=0)
             .configure_view(stroke=None))
 
 
@@ -50,7 +56,7 @@ def funnel(df: pd.DataFrame, palette: dict) -> alt.Chart:
     )
     labels = base.mark_text(align="left", dx=6, color=palette["text"]).encode(
         text=alt.Text("n_datasets:Q", format=",d"))
-    return _axes((bars + labels).properties(height=5 * 44), palette)
+    return _axes((bars + labels).properties(height=alt.Step(44)), palette)
 
 
 def share_with_interval(df: pd.DataFrame, category: str, share: str, low: str, high: str, palette: dict,
@@ -79,7 +85,7 @@ def share_with_interval(df: pd.DataFrame, category: str, share: str, low: str, h
     )
     labels = base.mark_text(align="left", dx=10, dy=-10, color=palette["text"]).encode(
         x=f"{share}:Q", text=alt.Text(f"{share}:Q", format=".2%" if not full_scale else ".1%"))
-    return _axes((interval + points + labels).properties(height=max(len(df), 1) * 48), palette)
+    return _axes((interval + points + labels).properties(height=alt.Step(48)), palette)
 
 
 def timeline(df: pd.DataFrame, palette: dict) -> alt.Chart:
@@ -108,7 +114,7 @@ def timeline(df: pd.DataFrame, palette: dict) -> alt.Chart:
                  alt.Tooltip("source_label:N", title="Tipus"), alt.Tooltip("commit_date:T", title="Data"),
                  alt.Tooltip("commit_sha:N", title="Commit")],
     )
-    return _axes((span + points).properties(height=max(df["dataset_id"].nunique(), 1) * 40 + 30), palette)
+    return _axes((span + points).properties(height=alt.Step(40)), palette)
 
 
 def _perspective_color(palette: dict, present: set[str]) -> alt.Color:
@@ -136,7 +142,7 @@ def code_bars(df: pd.DataFrame, measure: str, measure_title: str, palette: dict)
                  alt.Tooltip("level_1:N", title="Perspectiva"), alt.Tooltip("n_changes:Q", title="Canvis", format=",d"),
                  alt.Tooltip("n_units:Q", title="Comparacions"),
                  alt.Tooltip("share_of_compared_units:Q", title="De les comparacions fetes", format=".1%")],
-    ).properties(height=len(df) * 30 + 20), palette)
+    ).properties(height=alt.Step(30)), palette)
 
 
 def stacked_by_quarter(df: pd.DataFrame, palette: dict) -> alt.Chart:
