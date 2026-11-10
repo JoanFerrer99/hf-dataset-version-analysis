@@ -1574,22 +1574,23 @@ Estat: Fet
     A contra B) esperen les preguntes acordades amb el director.
 
 
-DECISIÓ T-35: la mida màxima d'una taula és un paràmetre de l'execució
+DECISIÓ T-35: la mida màxima del dataset és un paràmetre de l'execució
 Data: novembre 2026
 Responsable: Joan (acordat amb el director a la reunió de seguiment)
 Estat: Fet
 
   MOTIU: una comparació del director no acabava. Era la memòria: el motor
-  carrega les dues versions d'una taula senceres, i el límit (500 MB,
-  `max_unit_bytes`) era fix al codi. Amb un paràmetre, cada execució pot
-  triar-lo segons la màquina, sense tocar el codi.
+  carrega les dues versions senceres, i el límit (500 MB, `max_unit_bytes`)
+  era fix al codi. Amb un paràmetre, cada execució pot triar-lo segons la
+  màquina, sense tocar el codi.
 
   DECISIÓ:
-  - `--max-table-mb` a `run_pipeline.py` i a `eligibility_scan.py
+  - `--max-dataset-mb` a `run_pipeline.py` i a `eligibility_scan.py
     --classify-versions`. Per defecte, 500 (el valor de `DEFAULT_CONFIG`; 1 MB
     = 1024² bytes). Ha de ser més gran que 0.
-  - Es compara amb la suma de les dues versions de la taula, com abans: per
-    sobre, no es descarrega i queda amb l'estat `too_large`.
+  - Es compara amb la suma de tots els fitxers del dataset a les dues
+    versions (T-37): per sobre, no es descarrega i queda amb l'estat
+    `too_large`. La mida queda a `comparison_status.csv` (`size_bytes`).
   - El motor no canvia: `eligibility_scan.engine_config` fa una còpia de
     `DEFAULT_CONFIG` amb el límit nou i la passa fins a
     `pairs.compare_revisions`. El valor surt al log de la Fase 2.
@@ -1610,23 +1611,81 @@ Estat: Fet
   - `config/formats.toml`, amb la llista `order`. Per defecte: csv, tsv,
     parquet, jsonl, json. Es llegeix en començar (`load_formats`) i es
     comprova: no buida, sense repeticions i només formats que el motor sap
-    llegir (`units.READABLE_FORMATS`). És un fitxer i no un paràmetre de la
+    llegir (`datafiles.READABLE_FORMATS`). És un fitxer i no un paràmetre de la
     línia d'ordres: és part del disseny de l'estudi, no de cada execució.
   - Només els formats de la llista compten com a tabulars, a la Fase 0
     (elegibilitat) i a la Fase 2: la definició continua sent la mateixa a
     les dues fases.
   - Una revisió es compara en un sol format: el primer de la llista que hi
-    surt (`units.preferred_format`). Els fitxers dels altres formats no
-    arriben a `datasets` i queden com a exclosos (`other_format`); si han
-    canviat, surten a `comparison_status.csv` amb l'estat `excluded`, com
-    abans.
+    surt (`datafiles.preferred_format`). Els fitxers dels altres formats no
+    formen part del dataset. El format comparat queda a
+    `comparison_status.csv` (`format_from`, `format_to`).
   - Dues versions poden quedar en formats diferents (p.e. la nova afegeix un
-    CSV): s'aparellen igual, pel nom de la partició, i el motor compara
-    taules de formats diferents.
+    CSV): es comparen igual, perquè el motor llegeix cada format pel seu
+    compte.
   - Efecte a run_9 (cap dataset té CSV): `pulsia/fr-bench-pdf2md` té
     `.jsonl` i `.json`, i els seus `metadata.json` deixen de comparar-se. Cap
     dels seus 1.861 canvis venia d'aquests fitxers.
   - A Docker, `docker-compose.yml` munta `config/` a sobre del de la imatge.
+
+
+DECISIÓ T-37: un repositori és un dataset
+Data: novembre 2026
+Responsable: Joan
+Estat: Fet (la Fase 2 de run_9 s'ha de tornar a fer)
+
+  MOTIU: la Fase 2 comparava "taules": cada (subset, split) que trobava la
+  llibreria `datasets`, i fitxer per fitxer els que no hi encaixaven. Per a
+  l'estudi, una taula no vol dir res: el que canvia és el dataset, i les
+  seves dades poden estar repartides en molts fitxers (shards, un fitxer per
+  split, un CSV per any, una carpeta per document). Comptar taules distorsionava
+  els resultats: a run_9, `pulsia/fr-bench-pdf2md` (`pdfs/<categoria>/<document>/
+  tests.jsonl`) es va comparar en 15.066 parells de fitxers i tenia 1.861 dels
+  1.868 canvis de l'execució; `Gowshigan/pick-and-place-so101-150` va passar
+  d'1 fitxer de dades a 7 i sortia com una taula eliminada i una d'afegida.
+  A la reunió es va proposar unir els fitxers amb el mateix patró de nom; la
+  decisió final és més simple: un repositori, un dataset.
+
+  DECISIÓ:
+  - Els fitxers del dataset (`datafiles.dataset_files`) són els fitxers
+    tabulars de la revisió, amb la mateixa regla que l'elegibilitat de la
+    Fase 0: d'un format de `config/formats.toml` (només el primer que hi surt,
+    T-36) i fora de les metadades (`meta/`, `meta_data/`, `.github/` i els
+    JSON de metadades del Hub). Les carpetes de metadades ara les defineix el
+    motor i la Fase 0 les hi agafa: la definició és una sola. Ja no cal la
+    llibreria `datasets` (fora de `requirements.txt`) ni el README de cada
+    revisió.
+  - Es compara una vegada per parell de versions: tots els fitxers s'uneixen
+    en ordre natural (`file_2` abans de `file_10`) en un sol dataset per
+    versió (`load.load_files`). Les columnes són les de tots els fitxers: on
+    un fitxer no en té una, les seves files hi queden buides (els 446
+    `tests.jsonl` de pulsia, a la caché local, tenen 15 conjunts de columnes
+    diferents: són JSON amb camps opcionals). El tipus de cada columna es
+    decideix amb tots els valors.
+  - Si els fitxers són els mateixos i amb el mateix contingut, no es
+    descarrega res (`identical_content`). Si no, es descarreguen tots, també
+    els que no han canviat (queden a la caché de Hugging Face).
+  - Estats: `ok`, `identical_content`, `absent_old`/`absent_new` (una versió
+    sense fitxers de dades), `no_data` (cap de les dues), `download_failed`,
+    `parse_failed`, `too_large`. Desapareix `excluded`.
+  - Sortides de la Fase 2:
+    - `change_classification.csv`: un codi per parell de versions
+      (`dataset_id, version_from, version_to, code, description,
+      is_breaking`); sense `table` ni `file_path`.
+    - `comparison_status.csv`: una fila per parell de versions (`status`,
+      `n_codes`, `format_from`/`format_to`, `n_files_from`/`n_files_to`,
+      `size_bytes`).
+  - Magatzem: fora `dim_table`; el gra de `fact_change` és un codi per parell
+    de versions d'un dataset. A `mart_change_units`, l'estat de la comparació
+    (`comparison_status`) i el grup (`unit_status`: `compared`,
+    `not_compared`, `no_data`, `failed`, `not_run`). Comptar canvis o
+    comparacions afectades ara dona el mateix.
+  - El paràmetre de la mida (T-35) és ara de tot el dataset:
+    `--max-dataset-mb`. L'opció `concat_shards` del motor desapareix: els
+    fitxers d'un dataset sempre s'uneixen.
+  - run_9 va fer la Fase 2 en el format d'abans, i el magatzem ja no el
+    llegeix. La referència passa a ser una Fase 2 nova sobre les mateixes
+    versions (run_10): Fases 0 i 1 de run_9, sense tocar, i Fase 2 nova.
 
 
 ================================================================================

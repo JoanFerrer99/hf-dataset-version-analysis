@@ -70,9 +70,10 @@ els canvis és directe: el que no té parella s'ha afegit o eliminat, i el que
 en té es compara cel·la a cel·la. Ho fa en 5 passos, sempre en aquest ordre
 (`engine.py` n'és l'índex):
 
-1. **Trobar les taules que es comparen.** Un dataset de Hugging Face pot
-   estar partit en molts fitxers (shards: trossos d'un mateix split amb les
-   mateixes columnes). El motor els uneix en una sola taula, i compara taules, no fitxers.
+1. **Trobar els fitxers del dataset.** Un dataset de Hugging Face pot estar
+   repartit en molts fitxers (shards d'un split, un fitxer per split, un CSV
+   per any...). El motor els uneix tots en ordre i compara el dataset
+   sencer, no fitxer a fitxer (un repositori és un dataset, decisió T-37).
 2. **Llegir cada taula i deduir el tipus de cada columna pels valors**, no
    pel que diu pandas. Una columna d'enters amb un buit continua sent
    d'enters, i `?` vol dir "valor absent", com a Census Income.

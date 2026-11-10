@@ -1,5 +1,10 @@
 # Conciliació del magatzem amb l'execució de referència
 
+> **Pendent de refer.** Aquests resultats són de run_9, que la Fase 2 va
+> comparar taula a taula. Des de la decisió T-37 es compara el dataset
+> sencer i el magatzem ja no llegeix aquell format: cal tornar a fer la
+> conciliació amb la Fase 2 nova.
+
 Comprovació que el magatzem (`docs/warehouse.md`) diu el mateix que els
 fitxers que va escriure el pipeline, amb l'execució de referència, run_9
 (decisió T-30).

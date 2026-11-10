@@ -51,8 +51,8 @@ tipus de cada columna es posa aquí; les dates amb zona passen a UTC.
 | `stg_eligibility_report` | `eligibility_report.csv` | Un dataset de la mostra. Afegeix `eligibility_outcome`: el motiu com a codi (`A`, `B`, `no_version_marks`, `no_tabular_files`, `no_tabular_commits`). |
 | `stg_funnel_summary` | `funnel_summary.json` | Una sola fila. |
 | `stg_versions` | `versions.csv` | Una versió d'un dataset. |
-| `stg_change_classification` | `change_classification.csv` | Un codi en una taula entre dues versions. `table` passa a `table_name`. |
-| `stg_comparison_status` | `comparison_status.csv` | Un parell de taules entre dues versions, també sense codis. |
+| `stg_change_classification` | `change_classification.csv` | Un codi entre dues versions d'un dataset. |
+| `stg_comparison_status` | `comparison_status.csv` | La comparació de dues versions d'un dataset, també sense codis: estat, formats, fitxers i mida. |
 | `stg_failures` | `failures.csv` | Una fallada. Buit si l'execució no en va tenir (el fitxer no existeix). |
 | `stg_census_validation` | `data/census_income/run_<id>/paper_comparison_by_code.csv` | Un codi: encerts, falsos negatius i falsos positius contra el paper. |
 
@@ -62,9 +62,11 @@ Les execucions d'abans de T-25 (com run_9) no tenen `num_data_files`,
 
 ## Esquema en estrella (gold)
 
-**Gra de `fact_change`:** un codi de la taxonomia detectat en una taula,
-entre dues versions consecutives d'un dataset. És una fila de
-`change_classification.csv`.
+**Gra de `fact_change`:** un codi de la taxonomia detectat entre dues
+versions consecutives d'un dataset. És una fila de
+`change_classification.csv`. Un repositori és un dataset, encara que les
+dades siguin en diversos fitxers (decisió T-37): un codi surt com a molt un
+cop per comparació.
 
 Les claus subrogades són l'md5 de la clau natural (macro `surrogate_key`).
 El fet les calcula de les mateixes columnes que les dimensions, de manera
@@ -72,10 +74,9 @@ que s'uneixen sense cap taula intermèdia.
 
 | Model | Clau natural | Columnes |
 |---|---|---|
-| `fact_change` | dataset, versió antiga, versió nova, taula, codi | `change_key`; claus `dataset_key`, `kind_key`, `table_key`, `version_from_key`, `version_to_key`, `date_key` (dia de la versió nova); degenerades `run_id`, `description`; mesures `change_count` (= 1), `age_days` (dies des de la creació del dataset; buit si no se sap) |
+| `fact_change` | dataset, versió antiga, versió nova, codi | `change_key`; claus `dataset_key`, `kind_key`, `version_from_key`, `version_to_key`, `date_key` (dia de la versió nova); degenerades `run_id`, `description`; mesures `change_count` (= 1), `age_days` (dies des de la creació del dataset; buit si no se sap) |
 | `dim_dataset` | `dataset_id` | `dataset_key`, `owner`, `eligibility_criterion` (A/B), `num_tags`, `num_branches`, `num_tabular_commits`, `num_data_files`, `tabular_file_share`, `created_at`, `license`, `downloads`, `snapshot_date` (dia de l'execució). Només els elegibles. |
 | `dim_version` | `dataset_id`, `commit_sha` | `version_key`, `version_label`, `version_order`, `version_source` (`tag`, `commit_session`, o `commit` si només surt a les comparacions), `commit_date`. Fa dos rols al fet: *from* i *to*. Dos tags al mateix commit són una sola versió. |
-| `dim_table` | `dataset_id`, `table_path` | `table_key`, `format` (extensió de la taula o del seu primer fitxer) |
 | `dim_date` | `date` | `date_key` (AAAAMMDD), `year`, `quarter`, `year_quarter` (p.e. 2025-T1), `month`, `weekday` (1 = dilluns). Només els dies amb alguna versió. |
 | `dim_kind_of_change` | `code` | `kind_key`, `name`, `perspective` (categoria del paper), `level_1` a `level_3` (les xifres del codi), `is_breaking` |
 
@@ -96,7 +97,4 @@ que s'uneixen sense cap taula intermèdia.
 
 ## Limitacions
 
-- `file_path` uneix els fitxers d'una taula amb comes, i alguns noms de
-  fitxer en tenen (p.e. `pulsia/fr-bench-pdf2md`). Per això el format de
-  `dim_table` surt primer del nom de la taula.
 - run_9 no té la data de creació dels datasets: `age_days` és buit (T-30).
