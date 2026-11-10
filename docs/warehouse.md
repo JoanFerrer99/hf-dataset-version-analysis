@@ -88,6 +88,8 @@ que s'uneixen sense cap taula intermèdia.
 - Estrella: `unique` i `not_null` a cada clau primària, `relationships` de
   cada clau forana de `fact_change` (també els dos rols de `dim_version`), i
   `accepted_values` a `is_breaking`.
+- Conciliació amb el que va escriure el pipeline (`warehouse/tests/reconcile_*.sql`)
+  i coherència dels marts (`assert_*.sql`): resultat a `docs/validacio_magatzem.md`.
 - `tests/test_warehouse_seed.py` comprova que la seed diu el mateix que el
   motor, i `tests/test_run_sample_fixture.py`, que la fixture és el que
   escriu el pipeline.
