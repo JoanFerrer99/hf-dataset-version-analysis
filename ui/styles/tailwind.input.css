@@ -1,0 +1,26 @@
+/*
+  Tailwind de la interfície. Només per als components HTML (ui/components/*.js), que
+  viuen dins d'un shadow root: el CSS no toca els elements natius de Streamlit.
+  Els colors i la font surten del tema actiu de Streamlit (variables --st-*), de
+  manera que segueixen el mode clar i el fosc.
+
+  Es compila (cal Node 20+) des d'aquesta carpeta, amb les versions de package-lock.json:
+    npm ci && npm run build
+  i el resultat (ui/static/tailwind.css) es desa al repositori: en execució no cal Node.
+  Si npm es queda penjat descarregant (xarxa sense IPv6), NODE_OPTIONS=--dns-result-order=ipv4first.
+*/
+@import "tailwindcss" source(none);
+@source "../components";
+
+@theme inline {
+  --font-sans: var(--st-font);
+  --color-page: var(--st-background-color);
+  --color-panel: var(--st-secondary-background-color);
+  --color-ink: var(--st-text-color);
+  --color-heading: var(--st-heading-color);
+  --color-accent: var(--st-primary-color);
+  --color-line: var(--st-border-color-light);
+  --color-muted: color-mix(in srgb, var(--st-text-color) 62%, transparent);
+  --color-accent-soft: color-mix(in srgb, var(--st-primary-color) 12%, transparent);
+  --radius-card: calc(var(--st-base-radius) * 1.5);
+}

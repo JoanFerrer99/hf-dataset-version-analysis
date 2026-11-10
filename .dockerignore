@@ -13,6 +13,7 @@ __pycache__/
 data/
 warehouse/target/
 warehouse/logs/
+ui/styles/node_modules/
 *.duckdb
 
 docs/
