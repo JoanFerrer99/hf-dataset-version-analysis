@@ -5,6 +5,8 @@ Pas 5: com es representa un canvi i la taula de sortida.
 - `DiffResult`: els canvis d'un parell de taules més el seu estat.
 - `classification_frame`: la taula que escriu la Fase 2
   (`change_classification.csv`).
+- `status_frame`: l'estat de cada parell de taules que compara la Fase 2
+  (`comparison_status.csv`).
 - `TABULAR_CODES`, `CODE_DESCRIPTIONS`, `BREAKING_CODES`: la taxonomia.
 """
 
@@ -74,3 +76,17 @@ def classification_frame(rows: list[dict]) -> pd.DataFrame:
     out["description"] = out["code"].map(CODE_DESCRIPTIONS)
     out["is_breaking"] = out["code"].isin(BREAKING_CODES)
     return out.drop_duplicates().reset_index(drop=True)
+
+
+STATUS_COLUMNS = ["dataset_id", "version_from", "version_to", "table", "file_path", "status", "n_codes"]
+
+
+def status_frame(rows: list[dict]) -> pd.DataFrame:
+    """
+    La taula de l'estat de cada comparació de la Fase 2: una fila per parell
+    de taules i parell de versions, també les que no tenen cap codi.
+
+    :param rows: una fila per parell de taules (`pairs.status_rows`).
+    :return: la taula, amb les columnes de `STATUS_COLUMNS`.
+    """
+    return pd.DataFrame(rows, columns=STATUS_COLUMNS)

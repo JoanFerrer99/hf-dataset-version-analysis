@@ -298,7 +298,7 @@ xarxa ni token. `conftest.py` afegeix `src/` al camí d'importació.
  FASE 2  Classificació de canvis          eligibility_scan.run_classification
         │  per a cada elegible: compara cada versió de versions.csv amb
         │  la següent, taula a taula → codis de la taxonomia
-        │  sortida: change_classification.csv
+        │  sortida: change_classification.csv, comparison_status.csv
         ▼
  FASE 3  Esquema de dades               (pendent)
 ```
@@ -523,11 +523,14 @@ mostra baixaria centenars de GB).
    `identical_content`, `absent_old`/`absent_new`, `download_failed`,
    `parse_failed`, `too_large`, i `excluded` per als fitxers
    tabulars canviats que no són cap taula). Una fallada de descàrrega
-   no es converteix mai en codis.
-4. Les files de cada dataset s'afegeixen a `change_classification.csv` en
-   acabar-lo, i el log diu per quina parella va (`parella i/n`): si
-   l'execució s'atura a mitges, es conserva el que ja s'havia classificat
-   (decisió T-24).
+   no es converteix mai en codis. L'estat de cada parell, amb quants codis
+   té, queda a `comparison_status.csv`, també el dels parells sense cap
+   codi: així es distingeix "sense canvis" de "no s'ha pogut comparar"
+   (decisió T-28).
+4. Les files de cada dataset s'afegeixen a `change_classification.csv` i a
+   `comparison_status.csv` en acabar-lo, i el log diu per quina parella va
+   (`parella i/n`): si l'execució s'atura a mitges, es conserva el que ja
+   s'havia classificat (decisió T-24).
 
 ### 9.2 El motor (`diffengine/`)
 
@@ -556,6 +559,7 @@ incremental, mai sobreescriu) i hi desa tot:
 | `funnel_summary.json` | 0 | Resum de l'embut (secció 7.4): població recorreguda, quants passen cada filtre, elegibles per criteri, inaccessibles, errors, proporcions. |
 | `versions.csv` | 1 | Una fila per versió: `dataset_id, version_label, version_order, version_source, commit_sha, commit_date, authors, approx_size_bytes, session_commit_count, status`. |
 | `change_classification.csv` | 2 | Una fila per taula, parell de versions i codi: `dataset_id, version_from, version_to, table, file_path, code, description, is_breaking`. `version_from`/`version_to` són SHA de commit (els `commit_sha` de `versions.csv`). `table` és la taula (`subset/split`, o la ruta d'un fitxer sol) i `file_path`, els fitxers de la versió nova, units per comes. |
+| `comparison_status.csv` | 2 | Una fila per taula i parell de versions, també sense cap codi: `dataset_id, version_from, version_to, table, file_path, status, n_codes`. `status` és l'estat del parell de taules (secció 9.1); `n_codes`, quants codis diferents té, que són les seves files a `change_classification.csv`. `file_path` són els fitxers de la versió nova, o els de l'antiga si la taula ha desaparegut. |
 | `failures.csv` | totes | Només si hi ha fallades: `timestamp, source, dataset_id, error_category, error_message, retries_attempted`. `source` indica la fase. |
 
 L'únic número és el de la carpeta: a dins, els noms són fixos. Els scripts

@@ -1310,10 +1310,10 @@ Estat: Fet
   `version_to` i `file_path`. És la clau de `dim_table` al magatzem.
 
 
-DECISIÓ T-27: run_10 = Fases 0 i 1 de run_9 + Fase 2 tornada a executar
+DECISIÓ T-27: la Fase 2 de run_9 es torna a executar
 Data: novembre 2026
 Responsable: Joan
-Estat: Fet
+Estat: Fet (revisada: el resultat s'ha posat a run_9, vegeu el final)
 
   MOTIU: run_9 (25/10/2026) no té `change_classification.csv` (T-24), i les
   carpetes `data/run_<id>/` no es toquen un cop escrites. El magatzem llegeix
@@ -1334,6 +1334,52 @@ Estat: Fet
   sense cap codi. Sense l'estat de cada parell de taules, no se sap si
   aquests 5 no tenen canvis o no s'han pogut comparar (p.e. `too_large`):
   és la pregunta del pas 2 del pla de la Fase 3.
+
+  REVISIÓ: al final, el `change_classification.csv` de run_10 s'ha mogut a
+  run_9, s'ha esborrat run_10 i s'ha tret `tabular_commits.csv` de run_9
+  (commit f729d5d). run_9 és, doncs, l'execució completa: Fases 0 i 1 del
+  25/10/2026 i Fase 2 del 9/11/2026.
+
+
+DECISIÓ T-28: la Fase 2 desa l'estat de cada comparació (`comparison_status.csv`)
+Data: novembre 2026
+Responsable: Joan
+Estat: Fet
+
+  MOTIU: `change_classification.csv` només té els canvis detectats. Un
+  parell de taules sense cap codi no hi surt, tant si s'ha comparat i no
+  té canvis com si no s'ha pogut comparar. A run_9, 5 dels 8 elegibles no
+  tenen cap fila, per motius ben diferents (comprovat tornant a fer les
+  seves comparacions):
+  - `tanner13511/Put_the_battery_green_6`: `ok` sense codis. És una
+    conversió de format de LeRobot (10 fitxers d'episodi passen a 1) amb
+    les mateixes dades.
+  - `hyzhang01/GCA_instruction`: `too_large`. Les dues versions de la taula
+    sumen 5,8 GB (límit de 500 MB, `max_unit_bytes`).
+  - `Gowshigan/pick-and-place-so101-150`: `absent_old` + `absent_new`. A la
+    versió antiga la taula és un fitxer sol, i a la nova, 7 fitxers
+    agrupats com a `default/train`: el motor no les aparella.
+  - `cambridgeltl/xcopa`: només fitxers de prova (`dummy/`), que es mouen o
+    s'eliminen sencers (`identical_content`, `absent_*`).
+  - `huggingface/label-files`: 11 `parse_failed`. Són JSON de tipus
+    `{"0": "cat", ...}`, que no es llegeixen com una taula.
+  Sense aquesta dada, el magatzem confondria "cap canvi" amb "no s'ha
+  pogut comparar" en calcular proporcions.
+
+  DECISIÓ: `run_classification` escriu també `comparison_status.csv`: una
+  fila per taula i parell de versions (`dataset_id, version_from,
+  version_to, table, file_path, status, n_codes`), també sense codis, i
+  per parts, com `change_classification.csv` (T-24). Respecte al pla de la
+  Fase 3 (pas 2), s'hi afegeix `table`, la clau que l'uneix amb
+  `change_classification.csv` (T-26). El format de `change_classification.csv`
+  no canvia.
+
+  EFECTE: run_9 no té aquest fitxer. El pla proposava, com a alternativa a
+  tornar a executar, calcular els denominadors amb `tabular_commits.csv`,
+  però ja no existeix (T-25): l'execució de referència s'ha de tornar a fer
+  (com a mínim la Fase 2) abans de congelar-la (pas 1). Els tres casos
+  d'aparellament, lectura i elegibilitat (Gowshigan, label-files, xcopa) i
+  el límit de mida queden pendents de comentar amb el director.
 
 
 ================================================================================
