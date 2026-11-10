@@ -1,8 +1,9 @@
 """
-Filtres de la barra lateral, comuns a totes les pàgines: dataset, criteri
-d'elegibilitat, perspectiva i si el canvi és trencador. Es dibuixen a
-`app.py` a cada execució, de manera que es conserven en canviar de pàgina
-(`st.session_state`). Cada pàgina aplica els que tenen sentit per a les seves dades.
+Filtres comuns a totes les pàgines (dataset, criteri d'elegibilitat,
+perspectiva i si el canvi és trencador), en una barra plegable sota la
+capçalera. Es dibuixen a `app.py` a cada execució, de manera que es conserven
+en canviar de pàgina (`st.session_state`). Cada pàgina aplica els que tenen
+sentit per a les seves dades.
 """
 
 from dataclasses import dataclass
@@ -30,17 +31,29 @@ class Filters:
     breaking: bool | None = None
 
 
-def sidebar() -> None:
-    """Dibuixa els filtres a la barra lateral."""
+def active_count() -> int:
+    """
+    :return: quants filtres estan triats ara (per dir-ho a l'etiqueta de la barra).
+    """
+    selected = current()
+    return sum([bool(selected.datasets), bool(selected.criteria), bool(selected.perspectives),
+                selected.breaking is not None])
+
+
+def bar() -> None:
+    """Dibuixa la barra de filtres, plegada; l'etiqueta diu quants n'hi ha d'actius."""
     perspectives = data.perspectives()
-    with st.sidebar:
-        st.header("Filtres")
-        st.multiselect("Dataset", data.dataset_ids(), key="filter_datasets", placeholder="Tots")
-        st.multiselect("Criteri d'elegibilitat", list(CRITERIA), format_func=CRITERIA.get,
-                       key="filter_criteria", placeholder="Tots")
-        st.multiselect("Perspectiva", list(perspectives), format_func=perspectives.get,
-                       key="filter_perspectives", placeholder="Totes")
-        st.radio("Canvis", list(BREAKING), key="filter_breaking")
+    count = active_count()
+    label = f"Filtres ({count} actius)" if count else "Filtres"
+    with st.expander(label, icon=":material/filter_list:"):
+        with st.container(horizontal=True, vertical_alignment="bottom", gap="medium"):
+            st.multiselect("Dataset", data.dataset_ids(), key="filter_datasets", placeholder="Tots", width=360)
+            st.pills("Criteri d'elegibilitat", list(CRITERIA), format_func=CRITERIA.get, selection_mode="multi",
+                     key="filter_criteria")
+            st.pills("Perspectiva", list(perspectives), format_func=perspectives.get, selection_mode="multi",
+                     key="filter_perspectives")
+            st.segmented_control("Canvis", list(BREAKING)[1:], key="filter_breaking",
+                                 help="Sense cap opció triada, tots els canvis.")
 
 
 def current() -> Filters:
@@ -52,5 +65,5 @@ def current() -> Filters:
         datasets=tuple(state.get("filter_datasets", [])),
         criteria=tuple(state.get("filter_criteria", [])),
         perspectives=tuple(state.get("filter_perspectives", [])),
-        breaking=BREAKING.get(state.get("filter_breaking", "Tots els canvis")),
+        breaking=BREAKING.get(state.get("filter_breaking") or "Tots els canvis"),
     )

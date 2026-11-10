@@ -3,13 +3,9 @@
 import streamlit as st
 
 import data
+import shell
 from fmt import num, pct
 
-st.title("Com canvien els datasets de Hugging Face")
-st.markdown(
-    "> **Com canvien els datasets publicats a Hugging Face d'una versió a la següent, "
-    "i amb quina freqüència apareix cada tipus de canvi?**"
-)
 st.markdown(
     "Molts sistemes d'aprenentatge automàtic s'entrenen amb datasets de tercers. Si el mantenidor "
     "reanomena una columna, afegeix files o reescala una variable, el pipeline de qui el consumeix pot "
@@ -17,18 +13,10 @@ st.markdown(
     "ha trobat el pipeline en una mostra aleatòria de datasets."
 )
 
-run = data.run_info()
-st.caption(f"Execució `{run['run_id']}`, del {run['run_date']:%d/%m/%Y}." if run["run_date"] is not None
-           else "Execució sense data.")
-
 figures = data.key_figures()
-cols = st.columns(4)
-cols[0].metric("Datasets de la mostra", num(figures["sample_size"]))
-cols[1].metric("Elegibles (≥2 versions amb dades tabulars)", figures["eligible"],
-               help=f"Criteri A (tags): {figures['eligible_a']}. Criteri B (sessions): {figures['eligible_b']}.")
-cols[2].metric("Comparacions fetes", f"{figures['n_compared_units']} de {figures['n_units']}",
-               help="Cada versió contra la següent. No es compten les que no s'han pogut fer.")
-cols[3].metric("Canvis detectats", num(figures["n_changes"]), help=f"{figures['n_codes']} codis diferents de la taxonomia.")
+opened = shell.figure_cards(shell.figure_cards_data(figures, num))
+if opened:
+    st.switch_page(shell.page(opened)["path"])
 st.markdown(
     f"Dels {num(figures['classified'])} datasets que s'han pogut classificar, el "
     f"**{pct(figures['eligible_share'])}** són elegibles (interval de confiança del 95%: "

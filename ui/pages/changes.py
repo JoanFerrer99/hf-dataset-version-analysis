@@ -8,7 +8,6 @@ import filters
 import palette
 from fmt import num, pct
 
-st.title("Canvis")
 st.markdown(
     "Cada canvi és un codi de la taxonomia detectat en una taula, entre una versió i la següent. Una "
     "**comparació** és un parell de versions consecutives; només compten les que s'han pogut fer. "

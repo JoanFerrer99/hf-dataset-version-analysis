@@ -7,7 +7,6 @@ import data
 import filters
 import palette
 
-st.title("Versions")
 st.markdown(
     "Què és una versió depèn del criteri que fa elegible el dataset: amb el **Criteri A**, cada tag; amb el "
     "**Criteri B**, cada sessió de commits que toquen dades tabulars, representada pel seu commit més recent. "

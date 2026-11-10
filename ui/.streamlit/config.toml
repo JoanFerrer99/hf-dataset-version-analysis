@@ -1,0 +1,14 @@
+# Configuració de la interfície (ui/app.py). Al costat de app.py, té prioritat sobre la
+# del directori des d'on s'executa, i va dins de la imatge Docker amb la resta de ui/.
+
+[client]
+# Sense el botó "Deploy" ni el menú de desenvolupament.
+toolbarMode = "minimal"
+
+# El color d'accent és el blau de la paleta dels gràfics (ui/palette.py), un to per mode:
+# contrast de 5,4:1 (clar) i 6,3:1 (fosc) amb el fons, en els dos sentits.
+[theme.light]
+primaryColor = "#256abf"
+
+[theme.dark]
+primaryColor = "#5598e7"

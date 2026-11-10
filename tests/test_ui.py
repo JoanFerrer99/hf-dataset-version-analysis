@@ -26,17 +26,36 @@ def app(warehouse, monkeypatch):
     st.cache_resource.clear()
 
 
+def _components(app) -> dict:
+    """Els components HTML (CCv2) dibuixats al cos de la pàgina: nom -> les dades que han rebut."""
+    import json
+
+    return {element.proto.component_name: json.loads(element.proto.json)
+            for element in app.main.children.values() if getattr(element, "type", None) == "bidi_component"}
+
+
 def test_home_shows_the_key_figures_of_the_run(app):
     app.run()
 
     assert not app.exception
-    metrics = {m.label: m.value for m in app.metric}
-    assert metrics["Datasets de la mostra"] == "12"
-    assert metrics["Elegibles (≥2 versions amb dades tabulars)"] == "3"
-    assert metrics["Comparacions fetes"] == "3 de 4"
-    assert metrics["Canvis detectats"] == "7"
-    assert "run_sample" in app.caption[0].value
+    cards = {card["label"]: card["value"] for card in _components(app)["hf_cards"]["cards"]}
+    assert cards == {"Datasets de la mostra": "12", "Elegibles": "3", "Comparacions fetes": "3 de 4",
+                     "Canvis detectats": "7"}
     assert app.dataframe[0].value.shape[0] == 14  # la taxonomia
+
+
+def test_the_shell_draws_the_navigation_and_the_page_header(app):
+    # Una execució normal (no `switch_page`) passa per app.py: navegació, capçalera i filtres.
+    app.run()
+
+    components = _components(app)
+    nav, header = components["hf_nav"], components["hf_header"]
+    assert [page["title"] for page in nav["pages"]] == ["Inici", "Mostreig i elegibilitat", "Versions", "Canvis",
+                                                        "Explorador", "Validació"]
+    assert nav["active"] == "Inici"
+    assert "run_sample" in nav["badge"]
+    assert header["title"] == "Inici"
+    assert not app.sidebar.children  # sense barra lateral: la navegació nativa està amagada
 
 
 @pytest.mark.parametrize("page", PAGES)
@@ -45,7 +64,7 @@ def test_every_page_renders_without_errors(app, page):
     app.switch_page(page).run()
 
     assert not app.exception
-    assert app.title
+    assert app.markdown
 
 
 def test_a_missing_warehouse_shows_how_to_build_it(monkeypatch, tmp_path):
@@ -165,3 +184,67 @@ def test_conditions_only_use_the_filters_that_apply(ui_data):
     assert ui_data._conditions(selected, criterion="c") == ("c in (?, ?)", ["A", "B"])
     assert ui_data._conditions(selected, dataset="d", perspective="p", breaking="b") == (
         "d in (?) and b = ?", ["org/a", False])
+
+
+def test_the_filter_bar_says_how_many_filters_are_active(app):
+    app.session_state["filter_criteria"] = ["B"]
+    app.session_state["filter_breaking"] = "Només trencadors"
+    app.run()
+
+    assert not app.exception
+    labels = [element.label for element in app.main.children.values() if getattr(element, "type", None) == "expander"]
+    assert labels == ["Filtres (2 actius)"]
+
+
+# ---------------------------------------------------------------------------
+# ui/shell.py: les dades dels components, sense navegador
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def shell(monkeypatch):
+    monkeypatch.syspath_prepend(os.path.join(bw.REPO_ROOT, "ui"))
+    import shell
+    return shell
+
+
+def test_every_page_of_the_navigation_exists_once(shell):
+    titles = [entry["title"] for entry in shell.PAGES]
+    assert len(titles) == len(set(titles))
+    for entry in shell.PAGES:
+        assert os.path.exists(os.path.join(bw.REPO_ROOT, "ui", entry["path"])), entry["path"]
+    with pytest.raises(KeyError):
+        shell.page("No existeix")
+
+
+def test_nav_data_marks_the_open_page(shell):
+    data = shell.nav_data(shell.PAGES, "Canvis", "Execució run_9")
+
+    assert data["active"] == "Canvis"
+    assert {page["id"] for page in data["pages"]} == {entry["title"] for entry in shell.PAGES}
+
+
+def test_every_card_opens_an_existing_page(shell):
+    figures = {"sample_size": 2000, "classified": 1903, "eligible": 8, "eligible_a": 4, "eligible_b": 4,
+               "n_units": 52, "n_compared_units": 49, "n_changes": 1868, "n_codes": 10}
+
+    cards = shell.figure_cards_data(figures, lambda n: f"{n:,}".replace(",", "."))
+
+    assert [card["value"] for card in cards] == ["2.000", "8", "49 de 52", "1.868"]
+    assert all(shell.page(card["target"]) for card in cards)
+
+
+def test_compiled_tailwind_has_every_class_the_components_use():
+    """Si es canvia una classe a ui/components/*.js sense tornar a compilar (ui/styles), aquest test falla."""
+    import glob
+    import re
+
+    css = open(os.path.join(bw.REPO_ROOT, "ui", "static", "tailwind.css"), encoding="utf-8").read()
+    missing = set()
+    for path in glob.glob(os.path.join(bw.REPO_ROOT, "ui", "components", "*.js")):
+        source = open(path, encoding="utf-8").read()
+        for classes in re.findall(r'className\s*=\s*(?:[^"]*\?\s*)?"([^"]+)"', source) + re.findall(r'^\s*: "([^"]+)"', source, re.M):
+            for name in classes.split():
+                selector = "." + re.sub(r"([:.\[\]/%])", r"\\\1", name)
+                if selector not in css:
+                    missing.add(name)
+    assert not missing, f"classes sense compilar (cal npm run build a ui/styles): {sorted(missing)}"

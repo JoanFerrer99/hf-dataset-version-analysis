@@ -7,7 +7,6 @@ import data
 import palette
 from fmt import num, pct
 
-st.title("Validació")
 st.markdown(
     "El paper etiqueta a mà els canvis de 7 versions del dataset Census Income publicades a Hugging Face "
     "(D1-D7) respecte a l'original de la UCI (D0). El motor fa el mateix, i aquí es compara el seu resultat "
