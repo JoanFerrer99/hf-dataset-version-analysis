@@ -213,10 +213,12 @@ echo "HF_TOKEN=hf_..." > .env          # token de HF amb rol "Read"
 
 python src/run_pipeline.py --sample-size 50 --threads 4 --seed 42 --max-scanned 5000  # prova ràpida
 python src/run_pipeline.py --sample-size 2000 --threads 4 --seed 42                    # execució real
-
+python src/build_warehouse.py --run-dir data/run_9                                      # només el magatzem (Fase 3)
 ```
 
 - Cal `git` al sistema (la imatge Docker ja l'inclou).
+- La Fase 3 fa servir el `dbt` del mateix entorn (`requirements.txt`) i
+  s'executa des de l'arrel del repositori (`docs/warehouse.md`).
 - Sense arguments, els scripts mostren l'ajuda i surten, perquè una
   crida accidental no engegui una execució de diverses hores.
 - Una execució real de 2000 datasets recorre tota la població de HF:
@@ -239,11 +241,12 @@ docs/               Documentació (ordre de lectura: docs/README.md)
 
 | Fitxer | Què fa |
 |---|---|---|
-| `run_pipeline.py` | **Orquestrador.** Crea una carpeta nova per a l'execució i encadena les Fases 0, 1 i 2. |
+| `run_pipeline.py` | **Orquestrador.** Crea una carpeta nova per a l'execució i encadena les Fases 0, 1, 2 i 3. |
 | `eligibility_scan.py` | Fase 0 (mostra aleatòria i elegibilitat) i Fase 2 (classificació de canvis dels elegibles). Conté també el clon de git i el criteri de quins fitxers compten. |
 | `version_extractor.py` | Fase 1: la llista ordenada de versions de cada elegible, amb data, autors i mida. |
 | `errors.py` | Reintents davant els límits de l'API, classificació dels errors i registre de fallades a `failures.csv`. És una llibreria que es fa servir totes les fases. |
 | `validate_census_income.py` | Valida el motor amb la Taula 1 del paper (Census Income). |
+| `build_warehouse.py` | Fase 3: `dbt build` sobre una carpeta d'execució; el magatzem va a `data/warehouse/run_<id>.duckdb`. |
 | carpeta /diffengine |Compara dues versions d'un dataset en 5 passos. `engine.py` n'és l'índex. |
 
 
@@ -268,7 +271,7 @@ xarxa ni token. `conftest.py` afegeix `src/` al camí d'importació.
 |---|---|
 | `requirements.txt` | Dependències amb versió fixada |
 | `ruff.toml` | Regles de lint |
-| `Dockerfile`, `docker-compose.yml` | Imatge per executar el pipeline sense instal·lar res; `docker-compose` hi defineix un servei per script (`run-pipeline`, `eligibility-scan`, `version-extractor`) |
+| `Dockerfile`, `docker-compose.yml` | Imatge per executar el pipeline sense instal·lar res; `docker-compose` hi defineix un servei per script (`run-pipeline`, `eligibility-scan`, `version-extractor`, `warehouse`) |
 | `.github/workflows/ci.yml` | A cada push: lint, tests i construcció de la imatge |
 | `.github/workflows/docker-publish.yml` | Publica la imatge |
 
@@ -301,7 +304,9 @@ xarxa ni token. `conftest.py` afegeix `src/` al camí d'importació.
         │  la següent, taula a taula → codis de la taxonomia
         │  sortida: change_classification.csv, comparison_status.csv
         ▼
- FASE 3  Esquema de dades               (pendent)
+ FASE 3  Magatzem de dades                build_warehouse.build_warehouse
+           dbt build sobre la carpeta: staging → esquema en estrella → marts
+           sortida: data/warehouse/run_<id>.duckdb (fora de la carpeta)
 ```
 
 Les Fases 1 i 2 només treballen amb els elegibles (una desena de 2.000), no
@@ -310,8 +315,11 @@ amb tota la mostra. És el que fa viable descarregar contingut.
 Opcions útils: `--input-csv <report>` salta la Fase 0 i fa servir un report
 existent; `--skip-version-extraction` omet la Fase 1 i, per tant, la 2 (que
 compara les versions de la Fase 1); `--skip-classification` omet la Fase 2;
-`--max-scanned` limita el recorregut (només per a proves, perquè esbiaixa la
-mostra).
+`--skip-warehouse` omet la Fase 3; `--max-scanned` limita el recorregut (només
+per a proves, perquè esbiaixa la mostra). La Fase 3 només es fa si la carpeta
+té tots els fitxers de les Fases 0-2: amb `--input-csv` o amb alguna fase
+saltada, no hi és. Si falla dbt, les Fases 0-2 ja són a la carpeta i
+l'execució acaba igualment.
 
 ---
 
@@ -562,6 +570,11 @@ incremental, mai sobreescriu) i hi desa tot:
 | `change_classification.csv` | 2 | Una fila per taula, parell de versions i codi: `dataset_id, version_from, version_to, table, file_path, code, description, is_breaking`. `version_from`/`version_to` són SHA de commit (els `commit_sha` de `versions.csv`). `table` és la taula (`subset/split`, o la ruta d'un fitxer sol) i `file_path`, els fitxers de la versió nova, units per comes. |
 | `comparison_status.csv` | 2 | Una fila per taula i parell de versions, també sense cap codi: `dataset_id, version_from, version_to, table, file_path, status, n_codes`. `status` és l'estat del parell de taules (secció 9.1); `n_codes`, quants codis diferents té, que són les seves files a `change_classification.csv`. `file_path` són els fitxers de la versió nova, o els de l'antiga si la taula ha desaparegut. |
 | `failures.csv` | totes | Només si hi ha fallades: `timestamp, source, dataset_id, error_category, error_message, retries_attempted`. `source` indica la fase. |
+
+**Magatzem (Fase 3).** No va dins de la carpeta, que és immutable, sinó a
+`data/warehouse/run_<id>.duckdb` (un fitxer DuckDB, fora de git). El
+construeix `build_warehouse.py` amb dbt: capes, models i tests a
+`docs/warehouse.md`.
 
 L'únic número és el de la carpeta: a dins, els noms són fixos. Els scripts
 executats sols (`eligibility_scan.py`, `version_extractor.py`) també creen

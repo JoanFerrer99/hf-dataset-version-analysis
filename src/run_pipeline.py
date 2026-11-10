@@ -1,16 +1,19 @@
 """
 Orquestrador del pipeline: Fase 0 (`eligibility_scan.run_sampling`),
-Fase 1 (`version_extractor.run_extraction`) i Fase 2
-(`eligibility_scan.run_classification`) en una sola execució. La Fase 1
-llegeix els elegibles del CSV d'elegibilitat, i la Fase 2 compara les
-versions consecutives que ha escrit la Fase 1 (`versions.csv`): sense
-Fase 1, no hi ha Fase 2.
+Fase 1 (`version_extractor.run_extraction`), Fase 2
+(`eligibility_scan.run_classification`) i Fase 3 (`build_warehouse`) en una
+sola execució. La Fase 1 llegeix els elegibles del CSV d'elegibilitat, la
+Fase 2 compara les versions consecutives que ha escrit la Fase 1
+(`versions.csv`), i la Fase 3 construeix el magatzem amb tots els fitxers
+de la carpeta: sense Fase 1, no hi ha Fase 2, i sense les Fases 0-2 a la
+carpeta, no hi ha Fase 3.
 
 Ús:
   python run_pipeline.py --sample-size 50 --threads 4 --seed 42 --max-scanned 5000  # prova ràpida
   python run_pipeline.py --sample-size 2000 --threads 4 --seed 42                    # execució principal
   python run_pipeline.py --input-csv ../data/run_8/eligibility_report.csv            # salta la Fase 0, reutilitza un CSV existent
   python run_pipeline.py --sample-size 2000 --skip-classification                    # només Fase 0-1/1b
+  python run_pipeline.py --sample-size 2000 --skip-warehouse                         # sense Fase 3
   python eligibility_scan.py --classify-versions ../data/run_8/versions.csv          # només Fase 2
 
 Output: tot dins d'una carpeta nova, `data/run_<id>/` (mai sobreescriu):
@@ -18,6 +21,7 @@ Output: tot dins d'una carpeta nova, `data/run_<id>/` (mai sobreescriu):
   versions.csv (Fase 1)
   change_classification.csv, comparison_status.csv (Fase 2)
   failures.csv (si hi ha fallades)
+I el magatzem, fora de la carpeta (que és immutable): data/warehouse/run_<id>.duckdb (Fase 3).
 Al final s'imprimeix la llista de fitxers generats per fase.
 """
 
@@ -25,10 +29,12 @@ import argparse
 import logging
 import os
 import random
+import subprocess
 import sys
 
 import pandas as pd
 
+import build_warehouse as bw
 import errors
 import eligibility_scan as es
 import version_extractor as ve
@@ -45,9 +51,10 @@ def run_full_pipeline(
     skip_version_extraction: bool,
     skip_classification: bool,
     skip_size: bool,
+    skip_warehouse: bool = False,
 ) -> dict:
     """
-    Executa Fase 0 -> 1 -> 2 dins d'una carpeta `run_<id>` nova
+    Executa Fase 0 -> 1 -> 2 -> 3 dins d'una carpeta `run_<id>` nova
     (`es.new_run_dir`).
 
     :param sample_size, max_scanned, num_threads, tags_only: per a la Fase 0.
@@ -55,19 +62,20 @@ def run_full_pipeline(
     :param skip_version_extraction: omet la Fase 1 i, per tant, la 2.
     :param skip_classification: omet la Fase 2.
     :param skip_size: no calcula la mida de cada versió a la Fase 1.
+    :param skip_warehouse: omet la Fase 3.
     :return: `run_dir`, `eligibility_csv`, `eligible`, `versions_csv`,
-        `change_classification_csv` (`None` si la fase no s'ha executat) i
-        `generated_files` (rutes agrupades per fase).
+        `change_classification_csv`, `warehouse_path` (`None` si la fase no
+        s'ha executat) i `generated_files` (rutes agrupades per fase).
     """
     run_dir = es.new_run_dir()
     ve.FAILURES_LOG_PATH = es.FAILURES_LOG_PATH
     log.info(f"Carpeta d'aquesta execució: {run_dir}")
 
     generated_files: dict[str, list[str]] = {"Fase 0-1 (mostreig+elegibilitat)": [], "Fase 1b (versions)": [],
-                                              "Fase 2 (classificació de canvis)": []}
+                                              "Fase 2 (classificació de canvis)": [], "Fase 3 (magatzem)": []}
     outputs = {
-        "run_dir": run_dir, "eligibility_csv": None, "eligible": 0,
-        "versions_csv": None, "change_classification_csv": None, "generated_files": generated_files,
+        "run_dir": run_dir, "eligibility_csv": None, "eligible": 0, "versions_csv": None,
+        "change_classification_csv": None, "warehouse_path": None, "generated_files": generated_files,
     }
 
     if input_csv:
@@ -112,6 +120,18 @@ def run_full_pipeline(
             os.path.join(os.path.dirname(change_classification_csv), es.COMPARISON_STATUS_FILE),
         ]
 
+    missing = bw.missing_files(run_dir)
+    if skip_warehouse:
+        log.info("FASE 3 saltada (--skip-warehouse).")
+    elif missing:
+        log.info(f"FASE 3 saltada: a la carpeta hi falten {', '.join(missing)} (fases saltades).")
+    else:
+        try:
+            outputs["warehouse_path"] = bw.build_warehouse(run_dir)
+            generated_files["Fase 3 (magatzem)"].append(outputs["warehouse_path"])
+        except subprocess.CalledProcessError:
+            log.error("FASE 3: ha fallat dbt build (vegeu-ne la sortida a dalt). Les Fases 0-2 ja són a la carpeta.")
+
     if os.path.exists(es.FAILURES_LOG_PATH):
         generated_files["Fallades (totes les fases)"] = [es.FAILURES_LOG_PATH]
 
@@ -146,6 +166,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--skip-size", action="store_true",
         help="Es passa a la Fase 1b: no calcular approx_size_bytes (estalvia una crida list_repo_tree per versió).",
+    )
+    parser.add_argument(
+        "--skip-warehouse", action="store_true",
+        help="Omet la Fase 3 (construir el magatzem amb dbt).",
     )
     parser.add_argument(
         "--tags-only", action="store_true",
@@ -210,6 +234,7 @@ if __name__ == "__main__":
         skip_version_extraction=args.skip_version_extraction,
         skip_classification=args.skip_classification,
         skip_size=args.skip_size,
+        skip_warehouse=args.skip_warehouse,
     )
 
     print(f"\n{'=' * 65}")

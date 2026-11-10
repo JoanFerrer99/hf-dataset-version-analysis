@@ -14,6 +14,7 @@ exercir.
 import os
 
 import pandas as pd
+import pytest
 
 import eligibility_scan as es
 import run_pipeline as rp
@@ -240,3 +241,129 @@ class TestRunFullPipeline:
 
         compute_size = next(c[3] for c in calls if c[0] == "run_extraction")
         assert compute_size is False
+
+
+# ---------------------------------------------------------------------------
+# Fase 3: el magatzem (dbt build se simula; no s'executa mai a aquests tests)
+# ---------------------------------------------------------------------------
+
+def _patch_build_warehouse(monkeypatch, calls, complete_folder=True, fail=False):
+    import subprocess
+
+    import build_warehouse as bw
+
+    def fake_build_warehouse(run_dir):
+        calls.append(("build_warehouse", run_dir))
+        if fail:
+            raise subprocess.CalledProcessError(1, ["dbt", "build"])
+        return os.path.join("data", "warehouse", f"{os.path.basename(run_dir)}.duckdb")
+
+    if complete_folder:
+        monkeypatch.setattr(bw, "missing_files", lambda run_dir: [])
+    monkeypatch.setattr(bw, "build_warehouse", fake_build_warehouse)
+
+
+class TestPhase3:
+    def _run(self, monkeypatch, tmp_path, calls, **flags):
+        _patch_base_output_dir(monkeypatch, tmp_path)
+        _patch_run_sampling(monkeypatch, calls, str(tmp_path / "run_1" / "eligibility_report.csv"), eligible_total=1)
+        _patch_run_extraction(monkeypatch, calls)
+        _patch_run_classification(monkeypatch, calls)
+        args = dict(sample_size=1, max_scanned=None, num_threads=1, tags_only=False, input_csv=None,
+                    skip_version_extraction=False, skip_classification=False, skip_size=False)
+        return rp.run_full_pipeline(**{**args, **flags})
+
+    def test_builds_the_warehouse_of_the_run_folder_after_classification(self, monkeypatch, tmp_path):
+        calls = []
+        _patch_build_warehouse(monkeypatch, calls)
+
+        result = self._run(monkeypatch, tmp_path, calls)
+
+        assert [c[0] for c in calls] == ["run_sampling", "run_extraction", "run_classification", "build_warehouse"]
+        assert calls[-1][1] == str(tmp_path / "run_1")
+        assert result["warehouse_path"] == os.path.join("data", "warehouse", "run_1.duckdb")
+        assert result["generated_files"]["Fase 3 (magatzem)"] == [result["warehouse_path"]]
+
+    def test_skip_warehouse_flag(self, monkeypatch, tmp_path):
+        calls = []
+        _patch_build_warehouse(monkeypatch, calls)
+
+        result = self._run(monkeypatch, tmp_path, calls, skip_warehouse=True)
+
+        assert "build_warehouse" not in [c[0] for c in calls]
+        assert result["warehouse_path"] is None
+
+    def test_a_folder_without_every_phase_has_no_warehouse(self, monkeypatch, tmp_path):
+        # Les fases simulades no escriuen res: a la carpeta hi falten tots els fitxers (com amb --input-csv).
+        calls = []
+        _patch_build_warehouse(monkeypatch, calls, complete_folder=False)
+
+        result = self._run(monkeypatch, tmp_path, calls)
+
+        assert "build_warehouse" not in [c[0] for c in calls]
+        assert result["warehouse_path"] is None
+
+    def test_a_dbt_failure_keeps_the_rest_of_the_run(self, monkeypatch, tmp_path):
+        calls = []
+        _patch_build_warehouse(monkeypatch, calls, fail=True)
+
+        result = self._run(monkeypatch, tmp_path, calls)
+
+        assert calls[-1][0] == "build_warehouse"
+        assert result["warehouse_path"] is None
+        assert result["change_classification_csv"] == "change_classification.csv"
+
+
+class TestBuildWarehouse:
+    @pytest.fixture
+    def run_dir(self, tmp_path):
+        import build_warehouse as bw
+
+        run = tmp_path / "data" / "run_7"
+        run.mkdir(parents=True)
+        for name in bw.REQUIRED_FILES:
+            (run / name).write_text("x\n", encoding="utf-8")
+        return run
+
+    def test_runs_dbt_build_on_the_run_folder_and_writes_outside_it(self, monkeypatch, tmp_path, run_dir):
+        import json
+
+        import build_warehouse as bw
+
+        monkeypatch.setattr(bw, "WAREHOUSE_DIR", str(tmp_path / "data" / "warehouse"))
+        seen = {}
+        monkeypatch.setattr(bw.subprocess, "run", lambda command, cwd, env, check: seen.update(
+            command=command, cwd=cwd, env=env, check=check))
+
+        path = bw.build_warehouse(str(run_dir))
+
+        assert path == str(tmp_path / "data" / "warehouse" / "run_7.duckdb")
+        assert not path.startswith(str(run_dir))
+        assert seen["command"][1:6] == ["build", "--project-dir", bw.PROJECT_DIR, "--profiles-dir", bw.PROJECT_DIR]
+        assert json.loads(seen["command"][-1]) == {"run_dir": str(run_dir)}
+        assert seen["env"]["WAREHOUSE_PATH"] == path
+        assert (seen["cwd"], seen["check"]) == (bw.REPO_ROOT, True)
+        assert os.path.isdir(tmp_path / "data" / "warehouse")
+
+    def test_refuses_a_folder_without_every_phase(self, monkeypatch, run_dir):
+        import build_warehouse as bw
+
+        (run_dir / "comparison_status.csv").unlink()
+        monkeypatch.setattr(bw.subprocess, "run", lambda *a, **kw: pytest.fail("no s'havia de cridar dbt"))
+
+        with pytest.raises(FileNotFoundError, match="comparison_status.csv"):
+            bw.build_warehouse(str(run_dir))
+        assert bw.main(["--run-dir", str(run_dir)]) == 1
+
+    def test_failures_csv_is_optional(self, run_dir):
+        import build_warehouse as bw
+
+        assert bw.missing_files(str(run_dir)) == []
+
+    def test_no_arguments_prints_help_and_exits(self, capsys):
+        import build_warehouse as bw
+
+        with pytest.raises(SystemExit) as exc:
+            bw.main([])
+        assert exc.value.code == 0
+        assert "--run-dir" in capsys.readouterr().out
