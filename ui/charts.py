@@ -163,3 +163,25 @@ def stacked_by_quarter(df: pd.DataFrame, palette: dict) -> alt.Chart:
     totals = alt.Chart(df).mark_text(dy=-8, color=palette["text"]).encode(
         x=x, y="sum(n_changes):Q", text=alt.Text("sum(n_changes):Q", format=",d"))
     return _axes((bars + totals).properties(height=320), palette)
+
+
+def grouped_measures(df: pd.DataFrame, measures: dict[str, str], palette: dict) -> alt.Chart:
+    """
+    Tres mesures entre 0 i 1 per codi (p.e. precisió, recall i F1), una columna
+    de cada al costat de l'altra. Les mesures buides (denominador 0) no es dibuixen.
+
+    :param df: una fila per codi, amb una columna per mesura.
+    :param measures: columna -> nom de la mesura, en l'ordre de la llegenda.
+    """
+    long = df.melt(id_vars=["code", "name"], value_vars=list(measures), var_name="measure", value_name="value")
+    long = long.assign(measure=long["measure"].map(measures)).dropna(subset=["value"])
+    names = list(measures.values())
+    return _axes(alt.Chart(long).mark_bar(size=10, cornerRadiusEnd=4).encode(
+        x=alt.X("code:N", title=None, axis=alt.Axis(labelAngle=0)),
+        xOffset=alt.XOffset("measure:N", sort=names),
+        y=alt.Y("value:Q", title=None, scale=alt.Scale(domain=[0, 1]), axis=alt.Axis(format="%")),
+        color=alt.Color("measure:N", title="Mesura", sort=names,
+                        scale=alt.Scale(domain=names, range=palette["series"][:len(names)])),
+        tooltip=[alt.Tooltip("code:N", title="Codi"), alt.Tooltip("name:N", title="Canvi"),
+                 alt.Tooltip("measure:N", title="Mesura"), alt.Tooltip("value:Q", title="Valor", format=".1%")],
+    ).properties(height=300), palette)
