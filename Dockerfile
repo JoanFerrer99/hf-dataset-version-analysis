@@ -38,6 +38,9 @@ WORKDIR /app
 COPY --chown=app:app src/ ./src/
 # El projecte dbt (Fase 3). dbt hi escriu target/ i logs/: l'usuari app n'és el propietari.
 COPY --chown=app:app warehouse/ ./warehouse/
+# La interfície (Streamlit), que només llegeix el magatzem.
+COPY --chown=app:app ui/ ./ui/
+EXPOSE 8501
 
 RUN mkdir -p /app/data && chown app:app /app/data
 
