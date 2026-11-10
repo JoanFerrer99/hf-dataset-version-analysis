@@ -49,3 +49,31 @@ models:
         description: Files de la unitat a change_classification.csv (un codi per taula).
       - name: has_breaking_change
         description: Algun canvi trencador a la unitat.
+
+  - name: mart_code_frequency
+    description: >
+      Pregunta: amb quina freqüència surt cada codi i cada perspectiva? Una fila
+      per codi (els 14, també els que no surten), amb els canvis (taules), les
+      comparacions afectades i la proporció sobre les comparacions fetes.
+    columns:
+      - name: code
+        description: Codi de la taxonomia.
+      - name: n_changes
+        description: Files de fact_change (un canvi per taula).
+      - name: n_units
+        description: Comparacions (unitats de canvi) amb el codi en alguna taula.
+      - name: share_of_compared_units
+        description: n_units / comparacions fetes.
+
+  - name: mart_breaking_share
+    description: >
+      Pregunta: quina proporció de les comparacions fetes té almenys un canvi
+      trencador? Per criteri (`A`, `B`) i en total (`all`), amb l'interval de
+      Wilson al 95%.
+    columns:
+      - name: criterion
+        description: "`A`, `B` o `all`."
+      - name: n_compared_units
+        description: Comparacions fetes (unitats `is_compared`).
+      - name: share_with_breaking_change
+        description: Proporció amb almenys un canvi trencador.
