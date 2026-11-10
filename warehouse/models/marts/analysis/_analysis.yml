@@ -77,3 +77,41 @@ models:
         description: Comparacions fetes (unitats `is_compared`).
       - name: share_with_breaking_change
         description: Proporció amb almenys un canvi trencador.
+
+  - name: mart_changes_by_quarter
+    description: >
+      Pregunta: com evolucionen els canvis al llarg del temps, per perspectiva?
+      Una fila per trimestre (de la versió nova) i perspectiva amb canvis.
+    columns:
+      - name: year_quarter
+        description: Any i trimestre (p.e. 2025-T1).
+      - name: n_changes
+        description: Canvis (files de fact_change).
+      - name: n_units
+        description: Comparacions amb algun canvi de la perspectiva aquell trimestre.
+
+  - name: mart_criterion_comparison
+    description: >
+      Pregunta: els datasets del Criteri A (tags) i del B (sessions) canvien de
+      manera diferent? Una fila per criteri i perspectiva (també sense canvis).
+    columns:
+      - name: criterion
+        description: "`A` o `B`."
+      - name: share_of_compared_units
+        description: Comparacions fetes del criteri amb algun canvi de la perspectiva.
+      - name: share_of_criterion_changes
+        description: Part dels canvis del criteri que són d'aquesta perspectiva.
+
+  - name: mart_dataset_profile
+    description: >
+      Pregunta: com és cada dataset elegible? Versions, comparacions fetes i no
+      fetes, taules, canvis, codis i canvis trencadors. Una fila per dataset.
+    columns:
+      - name: dataset_id
+        description: Dataset de Hugging Face.
+      - name: n_versions
+        description: Versions de versions.csv.
+      - name: n_compared_units
+        description: Comparacions fetes (alguna taula comparada).
+      - name: codes
+        description: Codis diferents detectats, separats per comes.
