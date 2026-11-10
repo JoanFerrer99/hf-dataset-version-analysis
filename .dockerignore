@@ -11,6 +11,9 @@ __pycache__/
 .env
 
 data/
+warehouse/target/
+warehouse/logs/
+*.duckdb
 
 docs/
 src/__pycache__/

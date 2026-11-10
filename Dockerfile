@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 #
 # Imatge per executar el pipeline (src/run_pipeline.py, que encadena
-# eligibility_scan.py + version_extractor.py) sense dependre de l'entorn
+# eligibility_scan.py + version_extractor.py, i el magatzem amb dbt,
+# src/build_warehouse.py + warehouse/) sense dependre de l'entorn
 # Python de la màquina host. Build en dues fases: "builder" instal·la les
 # dependències en un virtualenv aïllat; "runtime" copia només aquest venv +
 # el codi a una imatge slim, sense eines de build ni caché de pip.
@@ -35,6 +36,8 @@ ENV PATH="/opt/venv/bin:${PATH}" \
 
 WORKDIR /app
 COPY --chown=app:app src/ ./src/
+# El projecte dbt (Fase 3). dbt hi escriu target/ i logs/: l'usuari app n'és el propietari.
+COPY --chown=app:app warehouse/ ./warehouse/
 
 RUN mkdir -p /app/data && chown app:app /app/data
 
@@ -45,6 +48,6 @@ VOLUME ["/app/data"]
 # Sense arguments, run_pipeline.py imprimeix l'ajuda i surt (0) --
 # entrypoint segur per defecte, mai comença una execució llarga per accident.
 # docker-compose.yml sobreescriu aquest entrypoint per als serveis
-# eligibility-scan/version-extractor (una sola fase, ús manual/depuració).
+# eligibility-scan/version-extractor/warehouse (una sola fase, ús manual/depuració).
 ENTRYPOINT ["python", "src/run_pipeline.py"]
 CMD []
