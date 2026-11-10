@@ -113,3 +113,15 @@ def taxonomy() -> pd.DataFrame:
         from dim_kind_of_change
         order by code
     """)
+
+
+def funnel() -> pd.DataFrame:
+    """
+    :return: `mart_funnel`: un pas de la Fase 0 per fila, amb la proporció sobre els classificats.
+    """
+    return _query("""
+        select stage_order, stage, stage_label, n_datasets, n_dropped, n_criterion_a, n_criterion_b,
+               share_of_classified, share_low, share_high
+        from mart_funnel
+        order by stage_order
+    """)
