@@ -1534,6 +1534,46 @@ Estat: Fet
     prova IPv6; amb `NODE_OPTIONS=--dns-result-order=ipv4first` funciona.
 
 
+
+DECISIÓ T-34: la interfície és un visualitzador de l'execució, no una explicació del projecte
+Data: novembre 2026
+Responsable: Joan
+Estat: Fet
+
+  MOTIU: la interfície ha de servir per explorar els resultats d'una execució.
+  L'explicació del projecte (motivació, esquema del pipeline, validació del
+  motor) és a la memòria i a docs/.
+
+  DECISIÓ:
+  - Fora la pàgina de validació amb Census Income. El mart
+    (`mart_census_validation`) es queda: el fan servir la figura
+    `fig_census_validation.png` i `docs/validacio_census_income.md`.
+  - La pàgina d'inici és un resum de l'execució: les xifres clau i quatre
+    destacats (el codi que surt a més comparacions, la proporció de
+    comparacions amb canvis trencadors, les comparacions no fetes i el
+    dataset amb més canvis), cada un amb un enllaç a la pàgina del detall. La
+    taxonomia queda plegada, com a referència.
+  - Pàgina nova de cobertura: quines comparacions s'han pogut fer, i per què
+    no les altres. `mart_change_units` compta les taules de cada estat
+    (`n_tables_<estat>`), i un test comprova que sumen el total i els grups.
+  - A la pàgina de canvis, la mesura per defecte és el nombre de comparacions
+    afectades, no de taules: a run_9, `pulsia/fr-bench-pdf2md` té 1.861 dels
+    1.868 canvis perquè compara centenars de fitxers per versió, i comptant
+    taules tapa els altres datasets. També hi ha la de datasets afectats i un
+    mapa de calor dataset × codi.
+  - Dues correccions trobades en provar-la amb el navegador:
+    - Les pàgines van a `ui/app_pages/` i no a `ui/pages/`: Streamlit tracta
+      `pages/` com una aplicació antiga de diverses pàgines, i un enllaç
+      directe (p.e. `/coverage`) obria la pàgina sola, sense `app.py`.
+    - L'alçada dels gràfics amb una fila per categoria es dona per fila
+      (`alt.Step`), amb `autosize` "fit-x" al nivell de dalt de
+      l'especificació. Si no hi és, Streamlit hi posa "fit", que encabeix el
+      gràfic sencer (llegenda i eixos inclosos) dins l'alçada i aixafa les
+      files; passava també als gràfics d'abans.
+  - Els passos següents (vistes enllaçades entre gràfics i explorador, Criteri
+    A contra B) esperen les preguntes acordades amb el director.
+
+
 ================================================================================
 BLOC 4 — DECISIONS D'ABAST
 ================================================================================

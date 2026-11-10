@@ -232,7 +232,7 @@ python src/build_warehouse.py --run-dir data/run_9                              
 src/                Codi del pipeline: un script per fase i el motor de detecció de canvis
   diffengine/       El motor, com a paquet de Python (s'explica a docs/validacio_census_income.md, secció 1)
 warehouse/          Magatzem de la Fase 3: projecte dbt sobre DuckDB (docs/warehouse.md)
-ui/                 Interfície de consulta (Streamlit), de només lectura sobre el magatzem; components HTML amb Tailwind a ui/components/ (T-33)
+ui/                 Interfície de consulta (Streamlit): un visualitzador de l'execució, de només lectura sobre el magatzem (T-33, T-34)
 tests/              Tests automàtics (pytest), sense xarxa; fixtures/run_sample/ és una execució sintètica
 data/               Resultats de les execucions (secció 10)
 docs/               Documentació (ordre de lectura: docs/README.md)
