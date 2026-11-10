@@ -6,8 +6,10 @@ Aquest treball té com a objectiu analitzar com canvien els datasets allotjats a
 
 | Carpeta | Contingut |
 |---|---|
-| `src/` | El pipeline: `run_pipeline.py` (orquestrador), les fases i el motor de detecció de canvis (`src/diffengine/`) |
-| `tests/` | Tests (`pytest`), sense xarxa |
+| `src/` | El pipeline: `run_pipeline.py` (orquestrador), les fases, el motor de detecció de canvis (`src/diffengine/`) i les figures de la memòria (`src/figures/`) |
+| `warehouse/` | El magatzem de la Fase 3: projecte dbt sobre DuckDB (`docs/warehouse.md`) |
+| `ui/` | La interfície de consulta (Streamlit), de només lectura sobre el magatzem |
+| `tests/` | Tests (`pytest`), sense xarxa; `tests/fixtures/run_sample/` és una execució sintètica |
 | `data/` | Resultats: una carpeta per execució (`data/run_<id>/`) i les de la validació de Census Income (`data/census_income/run_<id>/`) |
 | `docs/` | Documentació. **Ordre de lectura: `docs/README.md`** |
 
@@ -118,6 +120,25 @@ s'hagi executat abans**: llegeixen el CSV que aquesta genera, no en creen
 cap de nou. Sense `docker compose`, l'equivalent amb `docker run` (l'imatge
 usa `run_pipeline.py` com a entrypoint per defecte; sobreescriu-lo per a un
 script individual):
+
+## Magatzem, interfície i figures (Fase 3)
+
+`run_pipeline.py` construeix el magatzem al final de cada execució
+(`--skip-warehouse` ho omet). Per a una execució ja feta, com la de
+referència (run_9):
+
+```bash
+python src/build_warehouse.py --run-dir data/run_9                       # data/warehouse/run_9.duckdb (dbt build: models i tests)
+WAREHOUSE_PATH=data/warehouse/run_9.duckdb streamlit run ui/app.py       # interfície a http://localhost:8501
+python src/figures/make_all.py                                           # figures a docs/figures/
+```
+
+Amb Docker: `docker compose run --rm warehouse --run-dir data/run_9` i
+`docker compose up ui` (per defecte, munta `data/warehouse/run_9.duckdb` de
+només lectura; un altre fitxer amb `WAREHOUSE_FILE=...`).
+
+Detall: `docs/warehouse.md` (capes i esquema en estrella),
+`docs/validacio_magatzem.md` (conciliació) i `docs/figures/README.md`.
 
 ## Variables utils
 

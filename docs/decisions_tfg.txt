@@ -1435,6 +1435,60 @@ Estat: Fet
   `created_at`, `license` ni `downloads`), de manera que aquestes columnes
   de `dim_dataset` i `fact_change.age_days` queden buides.
 
+
+DECISIÓ T-31: comparacions fetes i proporcions als marts
+Data: novembre 2026
+Responsable: Joan
+Estat: Fet
+
+  MOTIU: les proporcions (comparacions amb canvis, amb canvis trencadors,
+  per perspectiva) no poden comptar les comparacions que no s'han pogut fer
+  (T-28): a run_9, 3 de les 52.
+
+  DECISIÓ: `mart_change_units` (una fila per unitat de canvi: una versió
+  contra la següent, com `version_pairs`) dona a cada unitat un estat:
+  `compared` si alguna taula s'ha comparat (`ok` o `identical_content`),
+  `not_compared` si cap i alguna era massa gran o no s'ha pogut baixar o
+  llegir, `no_common_table` si només hi ha taules afegides, eliminades o
+  excloses, `no_tables` o `failed`. Les proporcions dels marts es calculen
+  només sobre les `compared`, amb l'interval de Wilson al 95% quan és una
+  proporció de la mostra. Una unitat amb alguna taula comparada i alguna
+  altra no (p.e. `huggingface/label-files`, amb fitxers que no es poden
+  llegir) compta com a feta; quantes taules no s'han comparat queda a
+  `n_tables_not_compared`. Els marts són la proposta de partida del pla
+  (annex D), pendent d'acordar amb el director.
+
+
+DECISIÓ T-32: interfície amb Streamlit 1.66.1 i figures amb matplotlib 3.11.2
+Data: novembre 2026
+Responsable: Joan
+Estat: Fet
+
+  - `streamlit==1.66.1` (21/10/2026). La 1.67.0 és del 5/11/2026, massa
+    recent. Accepta les versions fixades de pandas, numpy i pyarrow, i no
+    en canvia cap.
+  - Gràfics de la interfície amb Altair (ve amb Streamlit, interactiu) i
+    figures de la memòria amb matplotlib (`matplotlib==3.11.2`, 11/09/2026):
+    Altair necessitaria `vl-convert-python` per desar PNG. Comparteixen la
+    paleta (`ui/palette.py`) i el format dels números (`ui/fmt.py`), i
+    llegeixen els mateixos marts.
+  - Paleta: 4 colors categòrics (un per perspectiva, sempre el mateix
+    encara que un filtre en tregui alguna), 3 per a formes amb tots els
+    parells, i una rampa d'un sol to per als passos de l'embut, validats
+    per a daltonisme, contrast i separació en el tema clar i en el fosc
+    (tons propis del fosc). Els colors amb poc contrast sobre fons blanc
+    (verd aigua, groc) van sempre amb llegenda, etiqueta o taula.
+  - Cada gràfic té al costat la taula amb les mateixes dades i un text que
+    diu què mostra. Números a la catalana (1.868; 0,42 %).
+  - Els filtres de la barra lateral es dibuixen a `app.py` a cada execució,
+    perquè es conservin en canviar de pàgina. `AppTest` (els tests de la
+    interfície) perd l'arbre d'elements quan s'hi interactua amb un widget
+    si l'aplicació fa servir `st.navigation`: els tests posen els filtres a
+    `st.session_state`, que és el que fa el widget.
+  - Cap SQL a les pàgines: tot passa per `ui/data.py`, amb una connexió de
+    només lectura i un cursor per consulta.
+
+
 ================================================================================
 BLOC 4 — DECISIONS D'ABAST
 ================================================================================
