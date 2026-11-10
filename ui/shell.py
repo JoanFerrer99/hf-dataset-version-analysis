@@ -21,7 +21,7 @@ BRAND = "Canvis en datasets de Hugging Face"
 # app_pages/ i no pages/: Streamlit tracta pages/ com una aplicació antiga de diverses pàgines, i un
 # enllaç directe (p.e. /coverage) obriria la pàgina sola, sense app.py (ni navegació ni capçalera).
 PAGES = [
-    {"path": "app_pages/home.py", "title": "Inici", "eyebrow": "Fase 3 · Panorama",
+    {"path": "app_pages/home.py", "title": "Inici", "eyebrow": "Resum de l'execució",
      "subtitle": "Com canvien els datasets publicats a Hugging Face d'una versió a la següent, i amb quina "
                  "freqüència apareix cada tipus de canvi?"},
     {"path": "app_pages/sampling.py", "title": "Mostreig i elegibilitat", "eyebrow": "Fase 0",
@@ -29,8 +29,12 @@ PAGES = [
                  "dades tabulars."},
     {"path": "app_pages/versions.py", "title": "Versions", "eyebrow": "Fase 1",
      "subtitle": "Les versions de cada dataset elegible al llarg del temps: tags o sessions de commits."},
+    {"path": "app_pages/coverage.py", "title": "Cobertura", "eyebrow": "Fase 2 · Cobertura",
+     "subtitle": "Quines comparacions s'han pogut fer, i per què no les altres: taules massa grans, que no es "
+                 "poden llegir o sense cap taula en comú."},
     {"path": "app_pages/changes.py", "title": "Canvis", "eyebrow": "Fase 2",
-     "subtitle": "Quins canvis surten, quants trenquen un pipeline i com evolucionen al llarg del temps."},
+     "subtitle": "Quins canvis surten i en quins datasets, quants trenquen un pipeline i com evolucionen al "
+                 "llarg del temps."},
     {"path": "app_pages/explorer.py", "title": "Explorador", "eyebrow": "Fase 2 · Detall",
      "subtitle": "Un dataset, les seves comparacions, i a quines taules hi ha canvis i de quin tipus."},
 ]
@@ -104,9 +108,39 @@ def figure_cards_data(figures: dict, num) -> list[dict]:
          "hint": f"Criteri A: {figures['eligible_a']} · Criteri B: {figures['eligible_b']}",
          "target": "Versions"},
         {"label": "Comparacions fetes", "value": f"{num(figures['n_compared_units'])} de {num(figures['n_units'])}",
-         "hint": "Cada versió contra la següent", "target": "Explorador"},
+         "hint": "Cada versió contra la següent", "target": "Cobertura"},
         {"label": "Canvis detectats", "value": num(figures["n_changes"]),
          "hint": f"{figures['n_codes']} codis diferents de la taxonomia", "target": "Canvis"},
+    ]
+
+
+def highlight_cards_data(found: dict, num, pct) -> list[dict]:
+    """
+    Els destacats de la pàgina d'inici.
+
+    :param found: `data.highlights()`.
+    :param num: funció de format dels números (`fmt.num`).
+    :param pct: funció de format dels percentatges (`fmt.pct`).
+    :return: una targeta per destacat, amb la pàgina on es veu el detall.
+    """
+    top, breaking, coverage, busiest = found["top_code"], found["breaking"], found["coverage"], found["busiest"]
+    return [
+        {"label": "Codi a més comparacions", "value": top["code"],
+         "hint": f"{top['name']}: {num(top['n_units'])} de {num(top['n_compared_units'])} comparacions fetes",
+         "target": "Canvis", "action": "Veure els canvis"},
+        {"label": "Comparacions amb algun canvi trencador", "value": pct(breaking["share_with_breaking_change"], 1),
+         "hint": f"{num(breaking['n_units_with_breaking_change'])} de {num(breaking['n_compared_units'])}; interval "
+                 f"del 95%: {pct(breaking['share_with_breaking_change_low'], 1)} a "
+                 f"{pct(breaking['share_with_breaking_change_high'], 1)}",
+         "target": "Canvis", "action": "Veure els canvis"},
+        {"label": "Comparacions que no s'han pogut fer",
+         "value": f"{num(coverage['n_not_compared'])} de {num(coverage['n_units'])}",
+         "hint": "Taules massa grans, il·legibles o sense cap taula en comú",
+         "target": "Cobertura", "action": "Veure per què"},
+        {"label": "Dataset amb més canvis", "value": num(busiest["n_changes"]),
+         "hint": f"{busiest['dataset_id']}: {pct(busiest['n_changes'] / busiest['total_changes'], 1)} "
+                 "de tots els canvis",
+         "target": "Explorador", "action": "Explorar"},
     ]
 
 

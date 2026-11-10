@@ -1,4 +1,4 @@
-"""Pàgina 4: quins canvis surten, quants són trencadors i com evolucionen al llarg del temps."""
+"""Pàgina: quins canvis surten, en quins datasets, quants són trencadors i com evolucionen al llarg del temps."""
 
 import streamlit as st
 
@@ -19,16 +19,20 @@ colors = palette.current()
 
 st.subheader("Freqüència de cada codi")
 frequency = data.code_frequency(selected)
-measure = st.segmented_control("Mesura", ["Canvis (un per taula)", "Comparacions afectades"],
-                               default="Canvis (un per taula)", key="changes_measure")
-column, title = (("n_units", "Comparacions amb el codi") if measure == "Comparacions afectades"
-                 else ("n_changes", "Canvis (taules amb el codi)"))
+# Per defecte, comparacions afectades: comptant taules, un dataset amb centenars de fitxers per versió
+# (pulsia/fr-bench-pdf2md a run_9) tapa tots els altres.
+MEASURES = {"Comparacions afectades": ("n_units", "Comparacions amb el codi"),
+            "Datasets afectats": ("n_datasets", "Datasets amb el codi"),
+            "Canvis (un per taula)": ("n_changes", "Canvis (taules amb el codi)")}
+measure = st.segmented_control("Mesura", list(MEASURES), default="Comparacions afectades", key="changes_measure")
+column, title = MEASURES[measure or "Comparacions afectades"]
 if frequency.empty:
     st.info("Cap codi amb aquests filtres.")
 else:
     st.altair_chart(charts.code_bars(frequency, column, title, colors), width="stretch")
-    st.caption("Una barra per codi, en l'ordre de la taxonomia i del color de la seva perspectiva. Un canvi es "
-               "compta un cop per taula: una comparació amb moltes taules en pot sumar molts del mateix codi.")
+    st.caption("Una barra per codi, en l'ordre de la taxonomia i del color de la seva perspectiva. Comparacions: "
+               "quantes versions contra la següent tenen el codi en alguna taula. Canvis: un per taula, de manera "
+               "que una comparació amb moltes taules en pot sumar molts del mateix codi.")
     st.dataframe(
         frequency[["code", "name", "level_1", "is_breaking", "n_changes", "n_units", "n_datasets",
                    "share_of_compared_units"]],
@@ -38,6 +42,23 @@ else:
             "n_changes": "Canvis", "n_units": "Comparacions", "n_datasets": "Datasets",
             "share_of_compared_units": st.column_config.NumberColumn("De les comparacions fetes", format="percent"),
         },
+    )
+
+st.subheader("Per dataset")
+by_dataset = data.changes_by_dataset(selected)
+if by_dataset.empty:
+    st.info("Cap canvi amb aquests filtres.")
+else:
+    st.altair_chart(charts.heatmap(by_dataset, "n_units", "Comparacions", colors, list(frequency["code"])),
+                    width="stretch")
+    st.caption("Una fila per dataset amb algun canvi i una columna per codi: quantes de les seves comparacions "
+               "tenen el codi. Com més fosca, més comparacions. Els datasets sense cap canvi no hi surten "
+               "(vegeu la pàgina de cobertura).")
+    st.dataframe(
+        by_dataset[["dataset_id", "code", "name", "level_1", "n_units", "n_changes"]],
+        hide_index=True,
+        column_config={"dataset_id": "Dataset", "code": "Codi", "name": "Canvi", "level_1": "Perspectiva",
+                       "n_units": "Comparacions", "n_changes": "Canvis (taules)"},
     )
 
 st.subheader("Comparacions amb algun canvi trencador")

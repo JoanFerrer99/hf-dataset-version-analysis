@@ -169,3 +169,62 @@ def stacked_by_quarter(df: pd.DataFrame, palette: dict) -> alt.Chart:
     totals = alt.Chart(df).mark_text(dy=-8, color=palette["text"]).encode(
         x=x, y="sum(n_changes):Q", text=alt.Text("sum(n_changes):Q", format=",d"))
     return _axes((bars + totals).properties(height=320), palette)
+
+
+def units_by_status(df: pd.DataFrame, statuses: list[str], labels: dict[str, str], palette: dict) -> alt.Chart:
+    """
+    Les comparacions de cada dataset, apilades per estat (fetes, no fetes, sense
+    cap taula en comú...), en barres horitzontals. Cada estat té sempre el mateix color.
+
+    :param df: `data.coverage_by_dataset` (dataset_id i una columna `units_<estat>` per estat).
+    :param statuses: els estats, en l'ordre de la pila.
+    :param labels: estat -> nom curt.
+    """
+    columns = [f"units_{s}" for s in statuses]
+    long = df[["dataset_id"] + columns].melt(id_vars=["dataset_id"], value_vars=columns,
+                                             var_name="status", value_name="n_units")
+    long = long[long["n_units"] > 0].assign(status=lambda d: d["status"].str[len("units_"):])
+    long = long.assign(label=long["status"].map(labels), order=long["status"].map(statuses.index))
+    colors = palette["series"][:4] + [palette["deemphasis"]]
+    present = [s for s in statuses if s in set(long["status"])]
+    return _axes(alt.Chart(long).mark_bar(size=BAR, stroke=palette["surface"], strokeWidth=2).encode(
+        y=alt.Y("dataset_id:N", title=None, axis=alt.Axis(labelLimit=320)),
+        x=alt.X("sum(n_units):Q", title="Comparacions (una versió contra la següent)",
+                axis=alt.Axis(format=",d", tickMinStep=1)),
+        color=alt.Color("label:N", title="Comparació", sort=[labels[s] for s in present],
+                        scale=alt.Scale(domain=[labels[s] for s in present],
+                                        range=[colors[statuses.index(s)] for s in present])),
+        order=alt.Order("order:Q"),
+        tooltip=[alt.Tooltip("dataset_id:N", title="Dataset"), alt.Tooltip("label:N", title="Comparació"),
+                 alt.Tooltip("sum(n_units):Q", title="Quantes")],
+    ).properties(height=alt.Step(34)), palette)
+
+
+def heatmap(df: pd.DataFrame, value: str, value_title: str, palette: dict, code_order: list[str]) -> alt.Chart:
+    """
+    Una cel·la per dataset i codi, més fosca com més alt és el valor (una sola
+    rampa de blau), amb el número a dins.
+
+    :param df: `data.changes_by_dataset` (dataset_id, code, name i la columna del valor).
+    :param value: columna del valor (p.e. `n_units`).
+    :param code_order: l'ordre dels codis a l'eix (el de la taxonomia).
+    """
+    ramp = palette["ordinal"]
+    base = alt.Chart(df).encode(
+        x=alt.X("code:N", sort=code_order, title=None, axis=alt.Axis(labelAngle=0, orient="top")),
+        y=alt.Y("dataset_id:N", title=None, axis=alt.Axis(labelLimit=320)),
+    )
+    cells = base.mark_rect(cornerRadius=3, stroke=palette["surface"], strokeWidth=2).encode(
+        color=alt.Color(f"{value}:Q", title=value_title, scale=alt.Scale(range=[ramp[0], ramp[-1]]),
+                        legend=alt.Legend(orient="right", format=",d", tickMinStep=1)),
+        tooltip=[alt.Tooltip("dataset_id:N", title="Dataset"), alt.Tooltip("code:N", title="Codi"),
+                 alt.Tooltip("name:N", title="Canvi"), alt.Tooltip(f"{value}:Q", title=value_title, format=",d")],
+    )
+    # El número, en blanc sobre les cel·les fosques i en negre sobre les clares.
+    middle = (df[value].max() + df[value].min()) / 2 if len(df) else 0
+    numbers = base.mark_text(fontSize=12).encode(
+        text=alt.Text(f"{value}:Q", format=",d"),
+        color=alt.condition(f"datum.{value} > {middle}", alt.value("#ffffff"), alt.value("#0b0b0b")),
+    )
+    return _axes((cells + numbers).properties(height=alt.Step(38)), palette)
+

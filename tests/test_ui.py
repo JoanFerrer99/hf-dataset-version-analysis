@@ -13,7 +13,8 @@ from streamlit.testing.v1 import AppTest
 import build_warehouse as bw
 
 APP = os.path.join(bw.REPO_ROOT, "ui", "app.py")
-PAGES = ["app_pages/home.py", "app_pages/sampling.py", "app_pages/versions.py", "app_pages/changes.py", "app_pages/explorer.py"]
+PAGES = ["app_pages/home.py", "app_pages/sampling.py", "app_pages/versions.py", "app_pages/coverage.py",
+         "app_pages/changes.py", "app_pages/explorer.py"]
 
 
 @pytest.fixture
@@ -26,21 +27,33 @@ def app(warehouse, monkeypatch):
 
 
 def _components(app) -> dict:
-    """Els components HTML (CCv2) dibuixats al cos de la pàgina: nom -> les dades que han rebut."""
+    """Els components HTML (CCv2) dibuixats al cos de la pàgina: nom -> les dades que ha rebut cada un, en ordre."""
     import json
 
-    return {element.proto.component_name: json.loads(element.proto.json)
-            for element in app.main.children.values() if getattr(element, "type", None) == "bidi_component"}
+    found = {}
+    for element in app.main.children.values():
+        if getattr(element, "type", None) == "bidi_component":
+            found.setdefault(element.proto.component_name, []).append(json.loads(element.proto.json))
+    return found
 
 
 def test_home_shows_the_key_figures_of_the_run(app):
     app.run()
 
     assert not app.exception
-    cards = {card["label"]: card["value"] for card in _components(app)["hf_cards"]["cards"]}
-    assert cards == {"Datasets de la mostra": "12", "Elegibles": "3", "Comparacions fetes": "3 de 4",
-                     "Canvis detectats": "7"}
-    assert app.dataframe[0].value.shape[0] == 14  # la taxonomia
+    figures, highlights = (component["cards"] for component in _components(app)["hf_cards"])
+    assert {card["label"]: card["value"] for card in figures} == {
+        "Datasets de la mostra": "12", "Elegibles": "3", "Comparacions fetes": "3 de 4", "Canvis detectats": "7"}
+    # Fixture: cada codi surt en una sola comparació; 1 de les 3 fetes té un canvi trencador (C222, C223);
+    # org/tags-c no s'ha pogut comparar (taula massa gran); org/tags-a té 5 dels 7 canvis.
+    assert [(card["label"], card["value"], card["target"]) for card in highlights] == [
+        ("Codi a més comparacions", "C221", "Canvis"),
+        ("Comparacions amb algun canvi trencador", "33,3 %", "Canvis"),
+        ("Comparacions que no s'han pogut fer", "1 de 4", "Cobertura"),
+        ("Dataset amb més canvis", "5", "Explorador"),
+    ]
+    assert "org/tags-a" in highlights[3]["hint"]
+    assert app.dataframe[0].value.shape[0] == 14  # la taxonomia, plegada
 
 
 def test_the_shell_draws_the_navigation_and_the_page_header(app):
@@ -48,9 +61,9 @@ def test_the_shell_draws_the_navigation_and_the_page_header(app):
     app.run()
 
     components = _components(app)
-    nav, header = components["hf_nav"], components["hf_header"]
-    assert [page["title"] for page in nav["pages"]] == ["Inici", "Mostreig i elegibilitat", "Versions", "Canvis",
-                                                        "Explorador"]
+    nav, header = components["hf_nav"][0], components["hf_header"][0]
+    assert [page["title"] for page in nav["pages"]] == ["Inici", "Mostreig i elegibilitat", "Versions", "Cobertura",
+                                                        "Canvis", "Explorador"]
     assert nav["active"] == "Inici"
     assert "run_sample" in nav["badge"]
     assert header["title"] == "Inici"
@@ -185,7 +198,7 @@ def test_the_filter_bar_says_how_many_filters_are_active(app):
 
     assert not app.exception
     labels = [element.label for element in app.main.children.values() if getattr(element, "type", None) == "expander"]
-    assert labels == ["Filtres (2 actius)"]
+    assert labels[0] == "Filtres (2 actius)"
 
 
 # ---------------------------------------------------------------------------
@@ -240,3 +253,26 @@ def test_compiled_tailwind_has_every_class_the_components_use():
                 if selector not in css:
                     missing.add(name)
     assert not missing, f"classes sense compilar (cal npm run build a ui/styles): {sorted(missing)}"
+
+
+def test_coverage_page_says_why_each_incomplete_comparison_was_not_made(app):
+    _page(app, "app_pages/coverage.py")
+
+    by_dataset, incomplete = app.dataframe[0].value, app.dataframe[1].value
+    assert by_dataset.set_index("dataset_id")[["units_compared", "units_not_compared"]].to_dict("index") == {
+        "org/sessions-b": {"units_compared": 1, "units_not_compared": 0},
+        "org/tags-a": {"units_compared": 2, "units_not_compared": 0},
+        "org/tags-c": {"units_compared": 0, "units_not_compared": 1},
+    }
+    assert incomplete[["dataset_id", "status_label", "reason"]].values.tolist() == [
+        ["org/sessions-b", "Feta", "1 taula que no s'ha pogut llegir (de 2)"],
+        ["org/tags-c", "No feta", "1 taula massa gran (de 1)"],
+    ]
+
+
+def test_changes_page_counts_comparisons_by_default_and_shows_each_dataset(app):
+    _page(app, "app_pages/changes.py")
+
+    by_dataset = app.dataframe[1].value
+    assert sorted(set(by_dataset["dataset_id"])) == ["org/sessions-b", "org/tags-a"]
+    assert by_dataset["n_units"].sum() == 7  # cada codi, en una sola comparació
