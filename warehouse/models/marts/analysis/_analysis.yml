@@ -115,3 +115,18 @@ models:
         description: Comparacions fetes (alguna taula comparada).
       - name: codes
         description: Codis diferents detectats, separats per comes.
+
+  - name: mart_census_validation
+    description: >
+      Pregunta: com encerta el motor els codis de la Taula 1 del paper (Census
+      Income)? Una fila per codi que surt al paper o al motor, amb precisió,
+      recall i F1 (buits quan el denominador és 0).
+    columns:
+      - name: code
+        description: Codi de la taxonomia.
+      - name: precision
+        description: tp / (tp + fp).
+      - name: recall
+        description: tp / (tp + fn).
+      - name: f1
+        description: Mitjana harmònica de precisió i recall.
