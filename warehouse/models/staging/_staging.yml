@@ -6,16 +6,32 @@ models:
     columns:
       - name: dataset_id
         description: Dataset de Hugging Face (`propietari/nom`).
+        data_tests:
+          - unique
+          - not_null
       - name: is_eligible
         description: Si compleix el Criteri A o el B.
+        data_tests:
+          - not_null
       - name: eligibility_reason
         description: El motiu tal com l'escriu la Fase 0 (en català).
       - name: eligibility_outcome
         description: >
           El motiu com a codi: `A`, `B`, o el filtre on s'atura (`no_version_marks`,
           `no_tabular_files`, `no_tabular_commits`). Buit si no s'ha pogut classificar.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["A", "B", "no_version_marks", "no_tabular_files", "no_tabular_commits"]
+          - not_null:
+              config:
+                where: "status = 'classified'"
       - name: status
         description: "`classified`, `access_restricted` (403) o `error`."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["classified", "access_restricted", "error"]
       - name: num_data_files
         description: Fitxers de dades de la versió actual (només candidats; T-25).
       - name: tabular_file_share
@@ -34,52 +50,104 @@ models:
         description: Quan es va escriure el resum (hora local, sense zona).
       - name: sample_size
         description: Datasets de la mostra.
+        data_tests:
+          - not_null
 
   - name: stg_versions
     description: Fase 1, una fila per versió de cada elegible (versions.csv).
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: ["dataset_id", "version_order"]
     columns:
       - name: commit_sha
         description: Commit del tag, o el més recent de la sessió.
+        data_tests:
+          - not_null
       - name: commit_date
         description: Data del commit, en UTC.
       - name: version_source
         description: "`tag` (Criteri A) o `commit_session` (Criteri B)."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["tag", "commit_session"]
       - name: status
         description: "`ok`, `ok_no_size`, `commit_error` o `size_error`."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["ok", "ok_no_size", "commit_error", "size_error"]
 
   - name: stg_change_classification
     description: Fase 2, una fila per taula, parell de versions i codi (change_classification.csv).
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: ["dataset_id", "version_from", "version_to", "table_name", "code"]
     columns:
       - name: version_from
         description: SHA del commit de la versió antiga.
+        data_tests:
+          - not_null
       - name: version_to
         description: SHA del commit de la versió nova.
+        data_tests:
+          - not_null
       - name: table_name
         description: La taula (`subset/split`, o la ruta d'un fitxer sol); la columna `table` del CSV.
+        data_tests:
+          - not_null
       - name: code
         description: Codi de la taxonomia.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["C210", "C221", "C222", "C223", "C311", "C312", "C321", "C322", "C410", "C421", "C422", "C510", "C520", "C530"]
 
   - name: stg_comparison_status
     description: Fase 2, l'estat de cada parell de taules i parell de versions (comparison_status.csv).
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: ["dataset_id", "version_from", "version_to", "table_name"]
     columns:
       - name: status
         description: >
           `ok`, `identical_content`, `absent_old`, `absent_new`, `download_failed`,
           `parse_failed`, `too_large` o `excluded`.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["ok", "identical_content", "absent_old", "absent_new", "download_failed", "parse_failed", "too_large", "excluded"]
       - name: n_codes
         description: Codis diferents de la taula; són les seves files a stg_change_classification.
+        data_tests:
+          - not_null
 
   - name: stg_failures
     description: Totes les fases, una fila per fallada (failures.csv); buit si no n'hi ha.
     columns:
       - name: phase
         description: "La fase on va fallar: `sampling`, `version_extraction` o `classification`."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["sampling", "version_extraction", "classification"]
 
   - name: stg_census_validation
     description: Census Income, encerts i errors del motor per codi contra la Taula 1 del paper (paper_comparison_by_code.csv).
     columns:
       - name: code
         description: Codi de la taxonomia (només els que surten al paper o al motor).
+        data_tests:
+          - unique
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["C210", "C221", "C222", "C223", "C311", "C312", "C321", "C322", "C410", "C421", "C422", "C510", "C520", "C530"]
       - name: true_positives
         description: Versions on el paper i el motor marquen el codi.
       - name: false_negatives
