@@ -8,7 +8,9 @@
 --   no_common_table  només taules afegides o eliminades senceres, o excloses
 --   no_tables        cap parell de taules
 --   failed           la Fase 2 va fallar en aquest dataset (failures.csv)
--- Les proporcions es calculen només sobre les unitats `compared`.
+-- Les proporcions es calculen només sobre les unitats `compared`. A més dels grups,
+-- hi ha el recompte de taules de cada estat (`n_tables_<estat>`), per saber per què
+-- no s'ha pogut fer una comparació.
 
 with versions as (
     select
@@ -45,6 +47,13 @@ tables as (
         count(*) filter (where status in ('too_large', 'download_failed', 'parse_failed')) as n_tables_not_compared,
         count(*) filter (where status in ('absent_old', 'absent_new')) as n_tables_added_or_removed,
         count(*) filter (where status = 'excluded') as n_tables_excluded,
+        count(*) filter (where status = 'ok') as n_tables_ok,
+        count(*) filter (where status = 'identical_content') as n_tables_identical_content,
+        count(*) filter (where status = 'absent_old') as n_tables_absent_old,
+        count(*) filter (where status = 'absent_new') as n_tables_absent_new,
+        count(*) filter (where status = 'download_failed') as n_tables_download_failed,
+        count(*) filter (where status = 'parse_failed') as n_tables_parse_failed,
+        count(*) filter (where status = 'too_large') as n_tables_too_large,
         sum(n_codes) as n_codes
     from {{ ref('stg_comparison_status') }}
     group by dataset_id, version_from, version_to
@@ -80,6 +89,13 @@ joined as (
         coalesce(tables.n_tables_not_compared, 0) as n_tables_not_compared,
         coalesce(tables.n_tables_added_or_removed, 0) as n_tables_added_or_removed,
         coalesce(tables.n_tables_excluded, 0) as n_tables_excluded,
+        coalesce(tables.n_tables_ok, 0) as n_tables_ok,
+        coalesce(tables.n_tables_identical_content, 0) as n_tables_identical_content,
+        coalesce(tables.n_tables_absent_old, 0) as n_tables_absent_old,
+        coalesce(tables.n_tables_absent_new, 0) as n_tables_absent_new,
+        coalesce(tables.n_tables_download_failed, 0) as n_tables_download_failed,
+        coalesce(tables.n_tables_parse_failed, 0) as n_tables_parse_failed,
+        coalesce(tables.n_tables_too_large, 0) as n_tables_too_large,
         coalesce(tables.n_codes, 0) as n_codes,
         coalesce(codes.n_distinct_codes, 0) as n_distinct_codes,
         coalesce(codes.n_breaking_codes, 0) as n_breaking_codes,
@@ -109,6 +125,13 @@ select
     n_tables_not_compared,
     n_tables_added_or_removed,
     n_tables_excluded,
+    n_tables_ok,
+    n_tables_identical_content,
+    n_tables_absent_old,
+    n_tables_absent_new,
+    n_tables_download_failed,
+    n_tables_parse_failed,
+    n_tables_too_large,
     n_codes,
     n_distinct_codes,
     n_breaking_codes,

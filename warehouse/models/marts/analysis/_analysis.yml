@@ -57,6 +57,11 @@ models:
         description: Alguna taula de la unitat s'ha comparat.
       - name: n_tables_not_compared
         description: Taules massa grans, que no s'han pogut baixar o que no s'han pogut llegir.
+      - name: n_tables_too_large
+        description: >
+          Taules de cada estat (`n_tables_ok`, `n_tables_identical_content`, `n_tables_absent_old`,
+          `n_tables_absent_new`, `n_tables_download_failed`, `n_tables_parse_failed`,
+          `n_tables_too_large`; les excloses són `n_tables_excluded`). Sumen `n_tables`.
       - name: n_codes
         description: Files de la unitat a change_classification.csv (un codi per taula).
       - name: has_breaking_change
