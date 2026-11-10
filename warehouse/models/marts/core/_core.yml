@@ -1,0 +1,161 @@
+version: 2
+
+models:
+  - name: dim_kind_of_change
+    description: Els 14 tipus de canvi de la taxonomia (de la seed `taxonomy`).
+    columns:
+      - name: kind_key
+        description: Clau subrogada (md5 del codi).
+        data_tests:
+          - unique
+          - not_null
+      - name: code
+        description: Codi de la taxonomia.
+        data_tests:
+          - unique
+          - not_null
+      - name: perspective
+        description: Categoria del paper.
+      - name: is_breaking
+        description: Trenca l'execució d'un pipeline que llegeix per nom, posició, tipus o ordre.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+                quote: false
+
+  - name: dim_dataset
+    description: Els datasets elegibles de l'execució.
+    columns:
+      - name: dataset_key
+        description: Clau subrogada (md5 de `dataset_id`).
+        data_tests:
+          - unique
+          - not_null
+      - name: dataset_id
+        description: Dataset de Hugging Face (`propietari/nom`).
+        data_tests:
+          - unique
+          - not_null
+      - name: eligibility_criterion
+        description: El criteri que el fa elegible.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["A", "B"]
+      - name: snapshot_date
+        description: Dia de l'execució (el de `downloads`).
+
+  - name: dim_version
+    description: >
+      Una fila per commit (dataset, SHA). Fa dos rols a fact_change:
+      `version_from_key` i `version_to_key`.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: ["dataset_id", "commit_sha"]
+    columns:
+      - name: version_key
+        description: Clau subrogada (md5 de `dataset_id` i `commit_sha`).
+        data_tests:
+          - unique
+          - not_null
+      - name: version_source
+        description: "`tag`, `commit_session`, o `commit` si només surt a les comparacions."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["tag", "commit_session", "commit"]
+
+  - name: dim_table
+    description: Les taules comparades, una per (dataset, taula).
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: ["dataset_id", "table_path"]
+    columns:
+      - name: table_key
+        description: Clau subrogada (md5 de `dataset_id` i la taula).
+        data_tests:
+          - unique
+          - not_null
+      - name: table_path
+        description: "`subset/split`, o la ruta d'un fitxer sol."
+      - name: format
+        description: Extensió del fitxer (de la taula, o del seu primer fitxer).
+
+  - name: dim_date
+    description: Els dies en què hi ha alguna versió.
+    columns:
+      - name: date_key
+        description: Data com a enter AAAAMMDD.
+        data_tests:
+          - unique
+          - not_null
+      - name: year_quarter
+        description: Any i trimestre (p.e. 2025-T1).
+
+  - name: fact_change
+    description: >
+      Gra: un codi de la taxonomia detectat en una taula, entre dues versions
+      consecutives d'un dataset (una fila de change_classification.csv).
+    columns:
+      - name: change_key
+        description: Clau subrogada de la fila (md5 de dataset, versions, taula i codi).
+        data_tests:
+          - unique
+          - not_null
+      - name: dataset_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_dataset')
+                field: dataset_key
+      - name: kind_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_kind_of_change')
+                field: kind_key
+      - name: table_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_table')
+                field: table_key
+      - name: version_from_key
+        description: La versió antiga (rol *from* de dim_version).
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_version')
+                field: version_key
+      - name: version_to_key
+        description: La versió nova (rol *to* de dim_version).
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_version')
+                field: version_key
+      - name: date_key
+        description: Dia de la versió nova; buit si no se sap.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+      - name: run_id
+        description: Dimensió degenerada, la carpeta de l'execució (p.e. run_9).
+      - name: description
+        description: Dimensió degenerada, el nom del codi tal com surt a change_classification.csv.
+      - name: change_count
+        description: Mesura additiva, sempre 1.
+      - name: age_days
+        description: Dies entre la creació del dataset i la versió nova (buit si no se sap la creació).

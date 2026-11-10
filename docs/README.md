@@ -6,6 +6,7 @@
 | 2 | `architecture.md` | Què fa el projecte, com és el pipeline (Fases 0–2) i on és cada cosa |
 | 3 | `taxonomy.md` | Els codis de canvi (C100–C530) del paper |
 | 4 | `validacio_census_income.md` | El motor de detecció de canvis: per què n'hi ha una segona versió, com està muntat, i com es valida amb la Taula 1 del paper (resultat, cada desacord explicat i preguntes pendents) |
+| 5 | `warehouse.md` | El magatzem de la Fase 3 (DuckDB + dbt): capes, esquema en estrella i com es regenera |
 
 Altres:
 
