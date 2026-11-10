@@ -4,9 +4,7 @@ la fixture sintètica (`tests/fixtures/run_sample/`), i cada pàgina renderitzad
 amb `streamlit.testing.v1.AppTest`, sense navegador ni xarxa.
 """
 
-import json
 import os
-import subprocess
 
 import pytest
 import streamlit as st
@@ -15,20 +13,8 @@ from streamlit.testing.v1 import AppTest
 import build_warehouse as bw
 
 APP = os.path.join(bw.REPO_ROOT, "ui", "app.py")
-RUN_SAMPLE = os.path.join(bw.REPO_ROOT, "tests", "fixtures", "run_sample")
 PAGES = ["pages/home.py", "pages/sampling.py", "pages/versions.py", "pages/changes.py", "pages/explorer.py",
          "pages/validation.py"]
-
-
-@pytest.fixture(scope="session")
-def warehouse(tmp_path_factory):
-    """El magatzem de la fixture, construït un sol cop per a tots els tests."""
-    path = str(tmp_path_factory.mktemp("warehouse") / "run_sample.duckdb")
-    command = [bw.dbt_executable(), "build", "--project-dir", bw.PROJECT_DIR, "--profiles-dir", bw.PROJECT_DIR,
-               "--vars", json.dumps({"run_dir": RUN_SAMPLE})]
-    subprocess.run(command, cwd=bw.REPO_ROOT, env={**os.environ, "WAREHOUSE_PATH": path}, check=True,
-                   capture_output=True)
-    return path
 
 
 @pytest.fixture
