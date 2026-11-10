@@ -309,3 +309,25 @@ def test_30_removal_rule_on_a_sample_of_kept_rows(base, rule, expected):
     config = replace(DEFAULT_CONFIG, max_rule_rows=50)
     result = diff_bytes(csv_bytes(base), ".csv", csv_bytes(base[~removed]), ".csv", config)
     assert [c.subtype for c in result.changes if c.code == "C422"] == [expected]
+
+
+def test_31_a_csv_per_year_that_adds_a_column_is_one_dataset(tmp_path):
+    """Reunió de seguiment (T-37): un CSV per any és un sol dataset. L'any nou afegeix files i una columna, que
+    als anys anteriors queda buida."""
+    from diffengine.engine import diff_tables
+    from diffengine.load import load_files
+
+    rng = np.random.default_rng(0)
+
+    def year(y, extra=False):
+        df = pd.DataFrame({"id": range(y * 1000, y * 1000 + 60), "region": rng.choice(["N", "S", "E"], 60),
+                           "sales": rng.integers(10, 99, 60)})
+        if extra:
+            df["channel"] = rng.choice(["web", "shop"], 60)
+        path = tmp_path / f"sales_{y}.csv"
+        df.to_csv(path, index=False)
+        return str(path)
+
+    old = [year(2019), year(2020)]
+    result = diff_tables(load_files(old), load_files(old + [year(2021, extra=True)]))
+    assert {(c.code, c.column) for c in result.changes} == {("C221", "channel"), ("C421", None)}
