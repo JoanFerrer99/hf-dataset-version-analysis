@@ -7,7 +7,6 @@ import data
 import palette
 from fmt import num, pct
 
-st.title("Mostreig i elegibilitat")
 st.markdown(
     "La Fase 0 agafa una mostra aleatòria uniforme de tots els datasets de Hugging Face i hi aplica tres "
     "filtres, del més barat al més car. Un dataset és **elegible** si té almenys dues versions amb canvis "

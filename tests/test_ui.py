@@ -13,8 +13,8 @@ from streamlit.testing.v1 import AppTest
 import build_warehouse as bw
 
 APP = os.path.join(bw.REPO_ROOT, "ui", "app.py")
-PAGES = ["pages/home.py", "pages/sampling.py", "pages/versions.py", "pages/changes.py", "pages/explorer.py",
-         "pages/validation.py"]
+PAGES = ["app_pages/home.py", "app_pages/sampling.py", "app_pages/versions.py", "app_pages/coverage.py",
+         "app_pages/changes.py", "app_pages/explorer.py"]
 
 
 @pytest.fixture
@@ -26,17 +26,48 @@ def app(warehouse, monkeypatch):
     st.cache_resource.clear()
 
 
+def _components(app) -> dict:
+    """Els components HTML (CCv2) dibuixats al cos de la pàgina: nom -> les dades que ha rebut cada un, en ordre."""
+    import json
+
+    found = {}
+    for element in app.main.children.values():
+        if getattr(element, "type", None) == "bidi_component":
+            found.setdefault(element.proto.component_name, []).append(json.loads(element.proto.json))
+    return found
+
+
 def test_home_shows_the_key_figures_of_the_run(app):
     app.run()
 
     assert not app.exception
-    metrics = {m.label: m.value for m in app.metric}
-    assert metrics["Datasets de la mostra"] == "12"
-    assert metrics["Elegibles (≥2 versions amb dades tabulars)"] == "3"
-    assert metrics["Comparacions fetes"] == "3 de 4"
-    assert metrics["Canvis detectats"] == "7"
-    assert "run_sample" in app.caption[0].value
-    assert app.dataframe[0].value.shape[0] == 14  # la taxonomia
+    figures, highlights = (component["cards"] for component in _components(app)["hf_cards"])
+    assert {card["label"]: card["value"] for card in figures} == {
+        "Datasets de la mostra": "12", "Elegibles": "3", "Comparacions fetes": "3 de 4", "Canvis detectats": "7"}
+    # Fixture: cada codi surt en una sola comparació; 1 de les 3 fetes té un canvi trencador (C222, C223);
+    # org/tags-c no s'ha pogut comparar (taula massa gran); org/tags-a té 5 dels 7 canvis.
+    assert [(card["label"], card["value"], card["target"]) for card in highlights] == [
+        ("Codi a més comparacions", "C221", "Canvis"),
+        ("Comparacions amb algun canvi trencador", "33,3 %", "Canvis"),
+        ("Comparacions que no s'han pogut fer", "1 de 4", "Cobertura"),
+        ("Dataset amb més canvis", "5", "Explorador"),
+    ]
+    assert "org/tags-a" in highlights[3]["hint"]
+    assert app.dataframe[0].value.shape[0] == 14  # la taxonomia, plegada
+
+
+def test_the_shell_draws_the_navigation_and_the_page_header(app):
+    # Una execució normal (no `switch_page`) passa per app.py: navegació, capçalera i filtres.
+    app.run()
+
+    components = _components(app)
+    nav, header = components["hf_nav"][0], components["hf_header"][0]
+    assert [page["title"] for page in nav["pages"]] == ["Inici", "Mostreig i elegibilitat", "Versions", "Cobertura",
+                                                        "Canvis", "Explorador"]
+    assert nav["active"] == "Inici"
+    assert "run_sample" in nav["badge"]
+    assert header["title"] == "Inici"
+    assert not app.sidebar.children  # sense barra lateral: la navegació nativa està amagada
 
 
 @pytest.mark.parametrize("page", PAGES)
@@ -45,7 +76,7 @@ def test_every_page_renders_without_errors(app, page):
     app.switch_page(page).run()
 
     assert not app.exception
-    assert app.title
+    assert app.markdown
 
 
 def test_a_missing_warehouse_shows_how_to_build_it(monkeypatch, tmp_path):
@@ -73,14 +104,14 @@ def _page(app, page, **state):
 
 
 def test_sampling_page_shows_the_funnel_and_both_criteria(app):
-    _page(app, "pages/sampling.py")
+    _page(app, "app_pages/sampling.py")
 
     assert app.dataframe[0].value["Hi arriben"].tolist() == [12, 10, 6, 4, 3]
     assert {m.label: m.value for m in app.metric} == {"Criteri A: tags": "2", "Criteri B: sessions de commits": "1"}
 
 
 def test_versions_page_lists_every_version_with_its_commit_link(app):
-    _page(app, "pages/versions.py")
+    _page(app, "app_pages/versions.py")
 
     versions = app.dataframe[0].value
     assert len(versions) == 7
@@ -88,16 +119,16 @@ def test_versions_page_lists_every_version_with_its_commit_link(app):
 
 
 def test_filters_restrict_the_data_and_are_kept_across_pages(app):
-    _page(app, "pages/versions.py", filter_criteria=["B"])
+    _page(app, "app_pages/versions.py", filter_criteria=["B"])
     assert set(app.dataframe[0].value["dataset_id"]) == {"org/sessions-b"}
 
-    _page(app, "pages/home.py")
-    _page(app, "pages/versions.py")
+    _page(app, "app_pages/home.py")
+    _page(app, "app_pages/versions.py")
     assert set(app.dataframe[0].value["dataset_id"]) == {"org/sessions-b"}
 
 
 def test_changes_page_applies_perspective_and_breaking_filters(app):
-    _page(app, "pages/changes.py", filter_perspectives=["Rows Set"], filter_breaking="Només no trencadors")
+    _page(app, "app_pages/changes.py", filter_perspectives=["Rows Set"], filter_breaking="Només no trencadors")
 
     frequency = app.dataframe[0].value
     assert frequency["code"].tolist() == ["C421", "C422"]
@@ -105,7 +136,7 @@ def test_changes_page_applies_perspective_and_breaking_filters(app):
 
 
 def test_explorer_drills_down_from_a_dataset_to_its_codes(app):
-    _page(app, "pages/explorer.py", explorer_dataset="org/tags-a", explorer_unit=1)
+    _page(app, "app_pages/explorer.py", explorer_dataset="org/tags-a", explorer_unit=1)
 
     units, changes = app.dataframe[0].value, app.dataframe[1].value
     assert units["label_to"].tolist() == ["v1.1", "v2.0"]
@@ -114,16 +145,9 @@ def test_explorer_drills_down_from_a_dataset_to_its_codes(app):
 
 
 def test_explorer_says_why_a_comparison_has_no_codes(app):
-    _page(app, "pages/explorer.py", explorer_dataset="org/tags-c")
+    _page(app, "app_pages/explorer.py", explorer_dataset="org/tags-c")
 
     assert "no s'ha pogut fer" in app.info[0].value
-
-
-def test_validation_page_shows_the_overall_measures(app):
-    _page(app, "pages/validation.py")
-
-    assert [m.label for m in app.metric] == ["Precisió", "Recall", "F1"]
-    assert len(app.dataframe[0].value) > 0
 
 
 # ---------------------------------------------------------------------------
@@ -165,3 +189,90 @@ def test_conditions_only_use_the_filters_that_apply(ui_data):
     assert ui_data._conditions(selected, criterion="c") == ("c in (?, ?)", ["A", "B"])
     assert ui_data._conditions(selected, dataset="d", perspective="p", breaking="b") == (
         "d in (?) and b = ?", ["org/a", False])
+
+
+def test_the_filter_bar_says_how_many_filters_are_active(app):
+    app.session_state["filter_criteria"] = ["B"]
+    app.session_state["filter_breaking"] = "Només trencadors"
+    app.run()
+
+    assert not app.exception
+    labels = [element.label for element in app.main.children.values() if getattr(element, "type", None) == "expander"]
+    assert labels[0] == "Filtres (2 actius)"
+
+
+# ---------------------------------------------------------------------------
+# ui/shell.py: les dades dels components, sense navegador
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def shell(monkeypatch):
+    monkeypatch.syspath_prepend(os.path.join(bw.REPO_ROOT, "ui"))
+    import shell
+    return shell
+
+
+def test_every_page_of_the_navigation_exists_once(shell):
+    titles = [entry["title"] for entry in shell.PAGES]
+    assert len(titles) == len(set(titles))
+    for entry in shell.PAGES:
+        assert os.path.exists(os.path.join(bw.REPO_ROOT, "ui", entry["path"])), entry["path"]
+    with pytest.raises(KeyError):
+        shell.page("No existeix")
+
+
+def test_nav_data_marks_the_open_page(shell):
+    data = shell.nav_data(shell.PAGES, "Canvis", "Execució run_9")
+
+    assert data["active"] == "Canvis"
+    assert {page["id"] for page in data["pages"]} == {entry["title"] for entry in shell.PAGES}
+
+
+def test_every_card_opens_an_existing_page(shell):
+    figures = {"sample_size": 2000, "classified": 1903, "eligible": 8, "eligible_a": 4, "eligible_b": 4,
+               "n_units": 52, "n_compared_units": 49, "n_changes": 1868, "n_codes": 10}
+
+    cards = shell.figure_cards_data(figures, lambda n: f"{n:,}".replace(",", "."))
+
+    assert [card["value"] for card in cards] == ["2.000", "8", "49 de 52", "1.868"]
+    assert all(shell.page(card["target"]) for card in cards)
+
+
+def test_compiled_tailwind_has_every_class_the_components_use():
+    """Si es canvia una classe a ui/components/*.js sense tornar a compilar (ui/styles), aquest test falla."""
+    import glob
+    import re
+
+    css = open(os.path.join(bw.REPO_ROOT, "ui", "static", "tailwind.css"), encoding="utf-8").read()
+    missing = set()
+    for path in glob.glob(os.path.join(bw.REPO_ROOT, "ui", "components", "*.js")):
+        source = open(path, encoding="utf-8").read()
+        for classes in re.findall(r'className\s*=\s*(?:[^"]*\?\s*)?"([^"]+)"', source) + re.findall(r'^\s*: "([^"]+)"', source, re.M):
+            for name in classes.split():
+                selector = "." + re.sub(r"([:.\[\]/%])", r"\\\1", name)
+                if selector not in css:
+                    missing.add(name)
+    assert not missing, f"classes sense compilar (cal npm run build a ui/styles): {sorted(missing)}"
+
+
+def test_coverage_page_says_why_each_incomplete_comparison_was_not_made(app):
+    _page(app, "app_pages/coverage.py")
+
+    by_dataset, incomplete = app.dataframe[0].value, app.dataframe[1].value
+    assert by_dataset.set_index("dataset_id")[["units_compared", "units_not_compared"]].to_dict("index") == {
+        "org/sessions-b": {"units_compared": 1, "units_not_compared": 0},
+        "org/tags-a": {"units_compared": 2, "units_not_compared": 0},
+        "org/tags-c": {"units_compared": 0, "units_not_compared": 1},
+    }
+    assert incomplete[["dataset_id", "status_label", "reason"]].values.tolist() == [
+        ["org/sessions-b", "Feta", "1 taula que no s'ha pogut llegir (de 2)"],
+        ["org/tags-c", "No feta", "1 taula massa gran (de 1)"],
+    ]
+
+
+def test_changes_page_counts_comparisons_by_default_and_shows_each_dataset(app):
+    _page(app, "app_pages/changes.py")
+
+    by_dataset = app.dataframe[1].value
+    assert sorted(set(by_dataset["dataset_id"])) == ["org/sessions-b", "org/tags-a"]
+    assert by_dataset["n_units"].sum() == 7  # cada codi, en una sola comparació

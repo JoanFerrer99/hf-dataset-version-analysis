@@ -11,18 +11,24 @@ import pandas as pd
 import palette as palettes
 
 BAR = 18  # gruix de les barres (px)
+# L'alçada dels gràfics amb una fila per categoria es dona per fila (alt.Step), no total:
+# Streamlit respecta el pas, i el gràfic creix amb el nombre de files.
 # Números a la catalana a tots els gràfics (1.868; 0,42%).
 LOCALE = alt.Locale(number=alt.NumberLocale(decimal=",", thousands=".", grouping=[3], currency=["", " €"]))
 
 
 def _axes(chart: alt.Chart, palette: dict) -> alt.Chart:
     """Eixos i quadrícula discrets, del color del text secundari."""
+    # L'amplada s'ajusta al contenidor; l'alçada surt de les files (alt.Step) més la llegenda i els eixos.
+    # Ha d'anar al nivell de dalt de l'especificació: si no hi és, Streamlit hi posa "fit", que encabeix
+    # tot el gràfic (llegenda i eixos inclosos) dins l'alçada i aixafa les files.
     return (chart
+            .properties(autosize=alt.AutoSizeParams(type="fit-x", contains="padding"))
             .configure(locale=LOCALE)
             .configure_axis(gridColor=palette["grid"], gridWidth=1, domainColor=palette["axis"],
                             tickColor=palette["axis"], labelColor=palette["muted"], titleColor=palette["muted"],
                             labelFontSize=12, titleFontSize=12)
-            .configure_legend(labelColor=palette["text"], titleColor=palette["muted"], orient="top")
+            .configure_legend(labelColor=palette["text"], titleColor=palette["muted"], orient="top", labelLimit=0)
             .configure_view(stroke=None))
 
 
@@ -50,7 +56,7 @@ def funnel(df: pd.DataFrame, palette: dict) -> alt.Chart:
     )
     labels = base.mark_text(align="left", dx=6, color=palette["text"]).encode(
         text=alt.Text("n_datasets:Q", format=",d"))
-    return _axes((bars + labels).properties(height=5 * 44), palette)
+    return _axes((bars + labels).properties(height=alt.Step(44)), palette)
 
 
 def share_with_interval(df: pd.DataFrame, category: str, share: str, low: str, high: str, palette: dict,
@@ -79,7 +85,7 @@ def share_with_interval(df: pd.DataFrame, category: str, share: str, low: str, h
     )
     labels = base.mark_text(align="left", dx=10, dy=-10, color=palette["text"]).encode(
         x=f"{share}:Q", text=alt.Text(f"{share}:Q", format=".2%" if not full_scale else ".1%"))
-    return _axes((interval + points + labels).properties(height=max(len(df), 1) * 48), palette)
+    return _axes((interval + points + labels).properties(height=alt.Step(48)), palette)
 
 
 def timeline(df: pd.DataFrame, palette: dict) -> alt.Chart:
@@ -108,7 +114,7 @@ def timeline(df: pd.DataFrame, palette: dict) -> alt.Chart:
                  alt.Tooltip("source_label:N", title="Tipus"), alt.Tooltip("commit_date:T", title="Data"),
                  alt.Tooltip("commit_sha:N", title="Commit")],
     )
-    return _axes((span + points).properties(height=max(df["dataset_id"].nunique(), 1) * 40 + 30), palette)
+    return _axes((span + points).properties(height=alt.Step(40)), palette)
 
 
 def _perspective_color(palette: dict, present: set[str]) -> alt.Color:
@@ -136,7 +142,7 @@ def code_bars(df: pd.DataFrame, measure: str, measure_title: str, palette: dict)
                  alt.Tooltip("level_1:N", title="Perspectiva"), alt.Tooltip("n_changes:Q", title="Canvis", format=",d"),
                  alt.Tooltip("n_units:Q", title="Comparacions"),
                  alt.Tooltip("share_of_compared_units:Q", title="De les comparacions fetes", format=".1%")],
-    ).properties(height=len(df) * 30 + 20), palette)
+    ).properties(height=alt.Step(30)), palette)
 
 
 def stacked_by_quarter(df: pd.DataFrame, palette: dict) -> alt.Chart:
@@ -165,23 +171,60 @@ def stacked_by_quarter(df: pd.DataFrame, palette: dict) -> alt.Chart:
     return _axes((bars + totals).properties(height=320), palette)
 
 
-def grouped_measures(df: pd.DataFrame, measures: dict[str, str], palette: dict) -> alt.Chart:
+def units_by_status(df: pd.DataFrame, statuses: list[str], labels: dict[str, str], palette: dict) -> alt.Chart:
     """
-    Tres mesures entre 0 i 1 per codi (p.e. precisió, recall i F1), una columna
-    de cada al costat de l'altra. Les mesures buides (denominador 0) no es dibuixen.
+    Les comparacions de cada dataset, apilades per estat (fetes, no fetes, sense
+    cap taula en comú...), en barres horitzontals. Cada estat té sempre el mateix color.
 
-    :param df: una fila per codi, amb una columna per mesura.
-    :param measures: columna -> nom de la mesura, en l'ordre de la llegenda.
+    :param df: `data.coverage_by_dataset` (dataset_id i una columna `units_<estat>` per estat).
+    :param statuses: els estats, en l'ordre de la pila.
+    :param labels: estat -> nom curt.
     """
-    long = df.melt(id_vars=["code", "name"], value_vars=list(measures), var_name="measure", value_name="value")
-    long = long.assign(measure=long["measure"].map(measures)).dropna(subset=["value"])
-    names = list(measures.values())
-    return _axes(alt.Chart(long).mark_bar(size=10, cornerRadiusEnd=4).encode(
-        x=alt.X("code:N", title=None, axis=alt.Axis(labelAngle=0)),
-        xOffset=alt.XOffset("measure:N", sort=names),
-        y=alt.Y("value:Q", title=None, scale=alt.Scale(domain=[0, 1]), axis=alt.Axis(format="%")),
-        color=alt.Color("measure:N", title="Mesura", sort=names,
-                        scale=alt.Scale(domain=names, range=palette["series"][:len(names)])),
-        tooltip=[alt.Tooltip("code:N", title="Codi"), alt.Tooltip("name:N", title="Canvi"),
-                 alt.Tooltip("measure:N", title="Mesura"), alt.Tooltip("value:Q", title="Valor", format=".1%")],
-    ).properties(height=300), palette)
+    columns = [f"units_{s}" for s in statuses]
+    long = df[["dataset_id"] + columns].melt(id_vars=["dataset_id"], value_vars=columns,
+                                             var_name="status", value_name="n_units")
+    long = long[long["n_units"] > 0].assign(status=lambda d: d["status"].str[len("units_"):])
+    long = long.assign(label=long["status"].map(labels), order=long["status"].map(statuses.index))
+    colors = palette["series"][:4] + [palette["deemphasis"]]
+    present = [s for s in statuses if s in set(long["status"])]
+    return _axes(alt.Chart(long).mark_bar(size=BAR, stroke=palette["surface"], strokeWidth=2).encode(
+        y=alt.Y("dataset_id:N", title=None, axis=alt.Axis(labelLimit=320)),
+        x=alt.X("sum(n_units):Q", title="Comparacions (una versió contra la següent)",
+                axis=alt.Axis(format=",d", tickMinStep=1)),
+        color=alt.Color("label:N", title="Comparació", sort=[labels[s] for s in present],
+                        scale=alt.Scale(domain=[labels[s] for s in present],
+                                        range=[colors[statuses.index(s)] for s in present])),
+        order=alt.Order("order:Q"),
+        tooltip=[alt.Tooltip("dataset_id:N", title="Dataset"), alt.Tooltip("label:N", title="Comparació"),
+                 alt.Tooltip("sum(n_units):Q", title="Quantes")],
+    ).properties(height=alt.Step(34)), palette)
+
+
+def heatmap(df: pd.DataFrame, value: str, value_title: str, palette: dict, code_order: list[str]) -> alt.Chart:
+    """
+    Una cel·la per dataset i codi, més fosca com més alt és el valor (una sola
+    rampa de blau), amb el número a dins.
+
+    :param df: `data.changes_by_dataset` (dataset_id, code, name i la columna del valor).
+    :param value: columna del valor (p.e. `n_units`).
+    :param code_order: l'ordre dels codis a l'eix (el de la taxonomia).
+    """
+    ramp = palette["ordinal"]
+    base = alt.Chart(df).encode(
+        x=alt.X("code:N", sort=code_order, title=None, axis=alt.Axis(labelAngle=0, orient="top")),
+        y=alt.Y("dataset_id:N", title=None, axis=alt.Axis(labelLimit=320)),
+    )
+    cells = base.mark_rect(cornerRadius=3, stroke=palette["surface"], strokeWidth=2).encode(
+        color=alt.Color(f"{value}:Q", title=value_title, scale=alt.Scale(range=[ramp[0], ramp[-1]]),
+                        legend=alt.Legend(orient="right", format=",d", tickMinStep=1)),
+        tooltip=[alt.Tooltip("dataset_id:N", title="Dataset"), alt.Tooltip("code:N", title="Codi"),
+                 alt.Tooltip("name:N", title="Canvi"), alt.Tooltip(f"{value}:Q", title=value_title, format=",d")],
+    )
+    # El número, en blanc sobre les cel·les fosques i en negre sobre les clares.
+    middle = (df[value].max() + df[value].min()) / 2 if len(df) else 0
+    numbers = base.mark_text(fontSize=12).encode(
+        text=alt.Text(f"{value}:Q", format=",d"),
+        color=alt.condition(f"datum.{value} > {middle}", alt.value("#ffffff"), alt.value("#0b0b0b")),
+    )
+    return _axes((cells + numbers).properties(height=alt.Step(38)), palette)
+

@@ -4,12 +4,10 @@ Comprovació que el magatzem (`docs/warehouse.md`) diu el mateix que els
 fitxers que va escriure el pipeline, amb l'execució de referència, run_9
 (decisió T-30).
 
-- Execució: `data/run_9/` (Fases 0 i 1 del 25/10/2026, Fase 2 del
-  9-10/11/2026).
+- Execució: `data/run_9/`
 - Magatzem: `python src/build_warehouse.py --run-dir data/run_9`
   (`data/warehouse/run_9.duckdb`), amb dbt-core 1.12.6, dbt-duckdb 1.11.1 i
   DuckDB 1.5.6.
-- Data: 10/11/2026, commit `a596271`.
 
 ## Resultat
 

@@ -410,30 +410,149 @@ def explorer_changes(dataset_id: str, version_from: str, version_to: str, filter
     """, [dataset_id, version_from, version_to] + params)
 
 
-def census_validation() -> pd.DataFrame:
-    """
-    :return: `mart_census_validation`: per codi, encerts, errors, precisió, recall i F1 contra el paper.
-    """
-    return _query("""
-        select code, name, perspective, true_positives, false_negatives, false_positives, precision, recall, f1
-        from mart_census_validation
-        order by code
-    """)
+UNIT_STATUSES = ["compared", "not_compared", "no_common_table", "no_tables", "failed"]
+SHORT_UNIT_STATUS = {"compared": "Feta", "not_compared": "No feta", "no_common_table": "Cap taula en comú",
+                     "no_tables": "Sense taules", "failed": "Fallada"}
+TABLE_STATUSES = {
+    "ok": "Comparada",
+    "identical_content": "Mateix contingut (no cal descarregar-la)",
+    "absent_old": "Afegida sencera (no hi era a la versió antiga)",
+    "absent_new": "Eliminada sencera (no hi és a la versió nova)",
+    "too_large": "Massa gran (més de 500 MB entre les dues versions)",
+    "parse_failed": "No s'ha pogut llegir com a taula",
+    "download_failed": "No s'ha pogut descarregar",
+    "excluded": "Fitxer tabular que no forma cap taula",
+}
 
 
-def census_totals() -> dict:
+def coverage_by_dataset(filters=None) -> pd.DataFrame:
     """
-    :return: precisió, recall i F1 de tots els codis junts (sumant encerts i errors), i els recomptes.
+    :param filters: filtres de dataset i criteri.
+    :return: per dataset, les comparacions de cada estat i les taules de cada estat.
     """
-    row = _query("""
+    where, params = _conditions(filters, dataset="u.dataset_id", criterion="d.eligibility_criterion")
+    unit_counts = ",\n            ".join(
+        f"count(*) filter (where u.unit_status = '{status}') as units_{status}" for status in UNIT_STATUSES)
+    table_counts = ",\n            ".join(f"cast(sum(u.n_tables_{status}) as bigint) as tables_{status}"
+                                         for status in TABLE_STATUSES)
+    return _query(f"""
         select
-            sum(true_positives) as tp,
-            sum(false_negatives) as fn,
-            sum(false_positives) as fp
-        from mart_census_validation
+            u.dataset_id,
+            d.eligibility_criterion,
+            count(*) as n_units,
+            {unit_counts},
+            cast(sum(u.n_tables) as bigint) as n_tables,
+            {table_counts}
+        from mart_change_units as u
+        inner join dim_dataset as d
+            on d.dataset_id = u.dataset_id
+        where {where}
+        group by u.dataset_id, d.eligibility_criterion
+        order by u.dataset_id
+    """, params)
+
+
+def incomplete_units(filters=None) -> pd.DataFrame:
+    """
+    :param filters: filtres de dataset i criteri.
+    :return: les comparacions que no s'han pogut fer, o que tenen alguna taula sense comparar, amb el motiu.
+    """
+    where, params = _conditions(filters, dataset="u.dataset_id", criterion="d.eligibility_criterion")
+    df = _query(f"""
+        select
+            u.dataset_id,
+            u.label_from,
+            u.label_to,
+            u.date_to,
+            u.unit_status,
+            u.n_tables,
+            u.n_tables_compared,
+            u.n_tables_too_large,
+            u.n_tables_parse_failed,
+            u.n_tables_download_failed,
+            u.n_tables_absent_old,
+            u.n_tables_absent_new,
+            u.n_tables_excluded,
+            '{HF}' || u.dataset_id || '/commit/' || u.version_to as url_to
+        from mart_change_units as u
+        inner join dim_dataset as d
+            on d.dataset_id = u.dataset_id
+        where (u.unit_status <> 'compared' or u.n_tables_not_compared > 0) and {where}
+        order by u.dataset_id, u.date_to
+    """, params)
+    df["status_label"] = df["unit_status"].map(SHORT_UNIT_STATUS)
+    df["reason"] = df.apply(_reason, axis=1)
+    return df
+
+
+def _reason(unit: pd.Series) -> str:
+    """El motiu d'una comparació incompleta, a partir de les seves taules de cada estat."""
+    parts = [(unit["n_tables_too_large"], "massa gran", "massa grans"),
+             (unit["n_tables_parse_failed"], "que no s'ha pogut llegir", "que no s'han pogut llegir"),
+             (unit["n_tables_download_failed"], "que no s'ha pogut descarregar", "que no s'han pogut descarregar"),
+             (unit["n_tables_absent_old"], "afegida sencera", "afegides senceres"),
+             (unit["n_tables_absent_new"], "eliminada sencera", "eliminades senceres"),
+             (unit["n_tables_excluded"], "exclosa", "excloses")]
+    text = "; ".join(f"{n} {'taula' if n == 1 else 'taules'} {one if n == 1 else many}"
+                     for n, one, many in parts if n)
+    return f"{text} (de {unit['n_tables']})"
+
+
+def changes_by_dataset(filters=None) -> pd.DataFrame:
+    """
+    :param filters: filtres de dataset, criteri, perspectiva i trencador.
+    :return: per dataset i codi, les comparacions afectades i els canvis (taules).
+    """
+    where, params = _conditions(filters, dataset="d.dataset_id", criterion="d.eligibility_criterion",
+                                perspective="k.perspective", breaking="k.is_breaking")
+    return _query(f"""
+        select
+            d.dataset_id,
+            k.code,
+            k.name,
+            k.level_1,
+            count(distinct f.version_to_key) as n_units,
+            cast(sum(f.change_count) as bigint) as n_changes
+        from fact_change as f
+        inner join dim_dataset as d
+            on d.dataset_key = f.dataset_key
+        inner join dim_kind_of_change as k
+            on k.kind_key = f.kind_key
+        where {where}
+        group by d.dataset_id, k.code, k.name, k.level_1
+        order by d.dataset_id, k.code
+    """, params)
+
+
+def highlights() -> dict:
+    """
+    Els destacats de la pàgina d'inici, tots de la capa gold.
+
+    :return: el codi que surt a més comparacions, la proporció de comparacions amb canvis trencadors (amb
+        l'interval), les comparacions no fetes i el dataset amb més canvis.
+    """
+    top_code = _query("""
+        select code, name, n_units, n_compared_units
+        from mart_code_frequency
+        order by n_units desc, n_changes desc, code
+        limit 1
     """).iloc[0]
-    tp, fn, fp = (int(row[c]) for c in ("tp", "fn", "fp"))
-    precision = tp / (tp + fp) if tp + fp else None
-    recall = tp / (tp + fn) if tp + fn else None
-    f1 = 2 * precision * recall / (precision + recall) if precision and recall else None
-    return {"tp": tp, "fn": fn, "fp": fp, "precision": precision, "recall": recall, "f1": f1}
+    breaking = _query("""
+        select n_compared_units, n_units_with_breaking_change, share_with_breaking_change,
+               share_with_breaking_change_low, share_with_breaking_change_high
+        from mart_breaking_share
+        where criterion = 'all'
+    """).iloc[0]
+    coverage = _query("""
+        select count(*) as n_units, count(*) filter (where not is_compared) as n_not_compared
+        from mart_change_units
+    """).iloc[0]
+    busiest = _query("""
+        select dataset_id, cast(n_changes as bigint) as n_changes,
+               cast(sum(n_changes) over () as bigint) as total_changes
+        from mart_dataset_profile
+        order by n_changes desc, dataset_id
+        limit 1
+    """).iloc[0]
+    return {"top_code": top_code.to_dict(), "breaking": breaking.to_dict(), "coverage": coverage.to_dict(),
+            "busiest": busiest.to_dict()}

@@ -6,7 +6,6 @@ import data
 import filters
 from fmt import num
 
-st.title("Explorador")
 st.markdown(
     "Tria un dataset i una de les seves comparacions (una versió contra la següent) per veure a quines taules "
     "hi ha canvis i de quin tipus. S'apliquen els filtres de dataset, criteri, perspectiva i trencador."

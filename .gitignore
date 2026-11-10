@@ -158,3 +158,8 @@ warehouse/target/
 warehouse/logs/
 *.duckdb
 *.duckdb.wal
+
+# Tailwind de la interfície: es compila a ui/static/tailwind.css
+ui/styles/node_modules/
+
+agent-skills/
