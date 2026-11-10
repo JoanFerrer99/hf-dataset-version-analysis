@@ -1382,6 +1382,59 @@ Estat: Fet
   el límit de mida queden pendents de comentar amb el director.
 
 
+
+DECISIÓ T-29: magatzem amb DuckDB 1.5.6, dbt-core 1.12.6 i dbt-duckdb 1.11.1
+Data: novembre 2026
+Responsable: Joan
+Estat: Fet
+
+  MOTIU: la Fase 3 és un magatzem en un sol fitxer (DuckDB) construït amb
+  dbt, amb les capes bronze (la carpeta `data/run_<id>/`), silver (staging)
+  i gold (estrella i marts). Calien versions exactes i compatibles.
+
+  DECISIÓ:
+  - `duckdb==1.5.6` (28/09/2026). El pla preferia la branca LTS 1.4, però
+    el seu suport acaba el 17/11/2026. La 2.0.0 (21/10/2026) és un salt de
+    versió major que dbt-duckdb encara no fa servir: l'extra de MotherDuck
+    de dbt-duckdb 1.11.1 fixa la 1.5.5. La 1.5.6 és l'última d'aquesta
+    branca.
+  - `dbt-core==1.12.6` (14/10/2026) i `dbt-duckdb==1.11.1` (26/10/2026).
+    dbt-duckdb declara `duckdb>=1.0` i `dbt-core>=1.8`. Python >=3.10 (el
+    projecte fa servir 3.12).
+  - `typing_extensions` passa de 4.15.0 a 4.16.0: ho demana pydantic, una
+    dependència de dbt-core.
+  - Bronze es llegeix com a text (`all_varchar`) i els tipus es posen a
+    staging: així un CSV no canvia de tipus segons el que hi hagi a les
+    primeres files.
+  - La seed de la taxonomia (`warehouse/seeds/taxonomy.csv`) té els 14
+    codis. Cap document no definia `level_1..3`: segueixen les xifres del
+    codi (perspectiva, grup de dues xifres, canvi). `perspective` és el nom
+    de la categoria al paper (`docs/taxonomy.md`). Un test comprova que els
+    codis i els trencadors són els de `diffengine.output`.
+  - La fixture `tests/fixtures/run_sample/` es genera amb les mateixes
+    funcions que escriuen la sortida real (`make_run_sample.py`), i un test
+    falla si queda desactualitzada.
+
+
+DECISIÓ T-30: run_9 és l'execució de referència, sense congelar
+Data: novembre 2026
+Responsable: Joan
+Estat: Fet
+
+  MOTIU: el pla de la Fase 3 (pas 1) proposava congelar l'execució de
+  referència amb un manifest de hash (`data/reference_run.json`). No fa
+  falta per construir l'esquema en estrella.
+
+  DECISIÓ: l'execució de referència és run_9 (Fases 0 i 1 del 25/10/2026,
+  Fase 2 del 9-10/11/2026, T-27 i T-28), i no es congela: run_9 no es
+  tornarà a tocar. El pas 1 queda fora. Conseqüències: la pàgina d'inici
+  de la interfície mostra la data de l'execució (de `funnel_summary.json`)
+  en lloc de la de congelació, i la conciliació (pas 11) no comprova hash.
+  run_9 té dues limitacions: la llavor no es va desar, i el report de la
+  Fase 0 és d'abans de T-25 (sense `num_data_files`, `tabular_file_share`,
+  `created_at`, `license` ni `downloads`), de manera que aquestes columnes
+  de `dim_dataset` i `fact_change.age_days` queden buides.
+
 ================================================================================
 BLOC 4 — DECISIONS D'ABAST
 ================================================================================
