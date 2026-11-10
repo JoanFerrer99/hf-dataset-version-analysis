@@ -41,6 +41,11 @@ jobs:
           HF_TOKEN: ci-dummy-token
         run: pytest -v
 
+      - name: Warehouse (dbt build on the synthetic fixture)
+        env:
+          WAREHOUSE_PATH: ${{ runner.temp }}/ci.duckdb
+        run: dbt build --project-dir warehouse --profiles-dir warehouse
+
   docker-build:
     name: Docker build
     runs-on: ubuntu-latest
