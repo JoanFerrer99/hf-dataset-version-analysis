@@ -1,0 +1,31 @@
+# Magatzem de la Fase 3: DuckDB + dbt (docs/warehouse.md).
+# Bronze = una carpeta data/run_<id>/ (variable run_dir); silver = staging;
+# gold = l'esquema en estrella (marts/core) i els marts de consulta (marts/analysis).
+# S'executa des de l'arrel del repositori:
+#   dbt build --project-dir warehouse --profiles-dir warehouse --vars '{run_dir: data/run_9}'
+name: hf_changes
+version: "1.0.0"
+config-version: 2
+profile: hf_changes
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+target-path: target
+clean-targets: ["target", "logs"]
+
+flags:
+  send_anonymous_usage_stats: false
+
+vars:
+  # Carpeta de l'execució que es llegeix, relativa a l'arrel del repositori.
+  # Per defecte, la fixture sintètica de la CI.
+  run_dir: tests/fixtures/run_sample
+
+models:
+  hf_changes:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: table

@@ -1,0 +1,33 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: >
+      Els fitxers d'una carpeta `data/run_<id>/` (variable `run_dir`), tal com
+      els escriu el pipeline (docs/architecture.md, secció 10). Es llegeixen
+      com a text; els tipus es posen a staging.
+    tables:
+      - name: eligibility_report
+        description: Fase 0, una fila per dataset de la mostra.
+        meta:
+          external_location: "read_csv('{{ var('run_dir') }}/eligibility_report.csv', header = true, all_varchar = true)"
+      - name: funnel_summary
+        description: Fase 0, resum de l'embut (un sol objecte JSON).
+        meta:
+          external_location: "read_json('{{ var('run_dir') }}/funnel_summary.json')"
+      - name: versions
+        description: Fase 1, una fila per versió de cada elegible.
+        meta:
+          external_location: "read_csv('{{ var('run_dir') }}/versions.csv', header = true, all_varchar = true)"
+      - name: change_classification
+        description: Fase 2, una fila per taula, parell de versions i codi.
+        meta:
+          external_location: "read_csv('{{ var('run_dir') }}/change_classification.csv', header = true, all_varchar = true)"
+      - name: comparison_status
+        description: Fase 2, una fila per taula i parell de versions, també sense codis.
+        meta:
+          external_location: "read_csv('{{ var('run_dir') }}/comparison_status.csv', header = true, all_varchar = true)"
+      - name: failures
+        description: Totes les fases, una fila per fallada. Només existeix si n'hi ha hagut.
+        meta:
+          external_location: "read_csv('{{ var('run_dir') }}/failures.csv', header = true, all_varchar = true)"
