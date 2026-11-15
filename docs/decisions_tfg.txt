@@ -1791,8 +1791,22 @@ Estat: Fet
   RESULTAT: P09 reproduït amb dades sintètiques. Abans: C223 (2) i C210.
   Ara: C222 a les 12 columnes eliminades i C221 a les 4 afegides, com diu
   Carlos. Tests: `test_34` i `test_35` de
-  `tests/test_diffengine_regressions.py`. Falta comprovar-ho amb les dades
-  reals de tots dos datasets (cal descarregar-les del Hub).
+  `tests/test_diffengine_regressions.py`.
+
+  AMB LES DADES REALS (les revisions de Carlos, el motor de T-37 a T-41 i
+  els valors per defecte):
+  - P09: C222 a les 12 columnes de marques i C221 a les 4 noves, sense C223
+    ni C210. Com que ara es compara el repositori sencer (T-37) i no només
+    `overall`, surten també C312 (PROMPT), C421, C422, C510 i C530.
+    PDL-Bench repeteix cada fila al fitxer de la seva categoria i a
+    `overall`: la unió té 163 files amb 60 ID (v1) i 198 amb 99 (v2.0).
+    D'aquí surt C422 `duplicate_removed`, i que PROMPT sembli categòrica
+    (37-49% de valors diferents, per sota de `text_min_distinct_share`).
+  - P20: C322 (`episode_index`, `renumbered`) i C421, el mateix que va
+    obtenir Carlos comparant la taula sencera; cap C410, C422 ni C520. Els
+    fitxers de dades de les dues versions sumen 99 MB (per sota del límit
+    per defecte, 500 MB). La comparació triga uns 4 minuts, amb la
+    descàrrega, i fa servir 3,8 GB de memòria.
 
 
 DECISIÓ T-42: els formats es poden canviar per a una execució (`--formats`)
