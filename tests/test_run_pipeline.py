@@ -263,6 +263,26 @@ class TestRunFullPipeline:
         monkeypatch.setattr(sys, "argv", ["run_pipeline.py", "--sample-size", "5"])
         assert rp.parse_args().max_dataset_mb == es.DEFAULT_MAX_DATASET_MB == 500
 
+    def test_min_distribution_distance_reaches_the_classification(self, monkeypatch, tmp_path):
+        _patch_base_output_dir(monkeypatch, tmp_path)
+        calls = []
+        _patch_run_sampling(monkeypatch, calls, str(tmp_path / "run_1" / "eligibility_report.csv"), eligible_total=1)
+        _patch_run_extraction(monkeypatch, calls)
+        _patch_run_classification(monkeypatch, calls)
+
+        rp.run_full_pipeline(
+            sample_size=1, max_scanned=None, num_threads=1, tags_only=False,
+            input_csv=None, skip_version_extraction=False, skip_classification=False, skip_size=False,
+            min_distribution_distance=0.3,
+        )
+
+        config = next(c[2] for c in calls if c[0] == "run_classification")
+        assert config.c530_min_distance == 0.3
+
+    def test_cli_min_distribution_distance_defaults_to_the_engine_threshold(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["run_pipeline.py", "--sample-size", "5"])
+        assert rp.parse_args().min_distribution_distance == es.DEFAULT_MIN_DISTRIBUTION_DISTANCE == 0.1
+
 
 # ---------------------------------------------------------------------------
 # Fase 3: el magatzem (dbt build se simula; no s'executa mai a aquests tests)

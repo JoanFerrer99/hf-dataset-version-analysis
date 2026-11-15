@@ -934,6 +934,35 @@ class TestMaxTableSize:
         assert [c.max_dataset_bytes for c in seen] == [3 * 1024**2]
 
 
+class TestMinDistributionDistance:
+    """El llindar de distribució (C530) és un paràmetre de l'execució (`--min-distribution-distance`)."""
+
+    def test_the_default_is_the_engine_default(self):
+        assert es.DEFAULT_MIN_DISTRIBUTION_DISTANCE == 0.1
+        assert es.engine_config().c530_min_distance == es.DEFAULT_CONFIG.c530_min_distance
+
+    def test_only_the_threshold_changes(self):
+        from dataclasses import replace
+
+        config = es.engine_config(min_distribution_distance=0.25)
+
+        assert config.c530_min_distance == 0.25
+        assert replace(config, c530_min_distance=es.DEFAULT_CONFIG.c530_min_distance,
+                       formats=es.DEFAULT_CONFIG.formats) == es.DEFAULT_CONFIG
+
+    def test_cli_reads_the_threshold(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["eligibility_scan.py", "--classify-versions", "v.csv",
+                                          "--min-distribution-distance", "0.2"])
+        assert es.parse_args().min_distribution_distance == 0.2
+
+    @pytest.mark.parametrize("value", ["0", "-0.1", "1.5", "molt"])
+    def test_cli_rejects_a_threshold_outside_0_and_1(self, monkeypatch, value):
+        monkeypatch.setattr(sys, "argv", ["eligibility_scan.py", "--classify-versions", "v.csv",
+                                          "--min-distribution-distance", value])
+        with pytest.raises(SystemExit):
+            es.parse_args()
+
+
 # ---------------------------------------------------------------------------
 # Commits tabulars: la Fase 0 els retorna en memòria i la Fase 1 els reaprofita
 # ---------------------------------------------------------------------------

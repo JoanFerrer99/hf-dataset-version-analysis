@@ -152,6 +152,7 @@ Detall: `docs/warehouse.md` (capes i esquema en estrella),
 - `--max-scanned`: limit opcional nomes per proves rapides
 - `--seed`: mostra reproduible
 - `--max-dataset-mb`: mida màxima del dataset (tots els seus fitxers, de les dues versions), en MB (500 per defecte); els més grans no es comparen i queden com a `too_large`
+- `--min-distribution-distance`: distància mínima entre les distribucions d'una columna per reportar-ne el canvi (C530), entre 0 i 1 (0,1 per defecte)
 - `config/formats.toml` (fitxer, no variable): quins formats compten com a tabulars i en quin ordre de preferència; si una versió en té més d'un, només es compara el primer de la llista
 - `--skip-version-extraction` / `--skip-classification` (`run_pipeline.py`): ometen una fase concreta
 - `--input-csv` (`run_pipeline.py`): salta el mostreig, reutilitza un CSV d'un run previ

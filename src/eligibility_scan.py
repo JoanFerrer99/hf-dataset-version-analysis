@@ -120,6 +120,7 @@ INTERNAL_FIELDS = ("tabular_commits",)
 COMPARISON_STATUS_FILE = "comparison_status.csv"
 MB = 1024**2
 DEFAULT_MAX_DATASET_MB = DEFAULT_CONFIG.max_dataset_bytes // MB
+DEFAULT_MIN_DISTRIBUTION_DISTANCE = DEFAULT_CONFIG.c530_min_distance
 
 # Motiu que queda al report: el criteri que es compleix, o el filtre on s'atura el dataset.
 ELIGIBILITY_REASONS = {
@@ -849,16 +850,21 @@ def run_sampling(
     return csv_path, json_path, summary, tabular_commits
 
 
-def engine_config(max_dataset_mb: float = DEFAULT_MAX_DATASET_MB) -> EngineConfig:
+def engine_config(max_dataset_mb: float = DEFAULT_MAX_DATASET_MB,
+                  min_distribution_distance: float = DEFAULT_MIN_DISTRIBUTION_DISTANCE) -> EngineConfig:
     """
     Els llindars del motor per a una execució: els de `DEFAULT_CONFIG`, amb la
-    mida màxima del dataset que es dona i els formats de `config/formats.toml`.
+    mida màxima del dataset i el llindar de distribució que es donen, i els
+    formats de `config/formats.toml`.
 
     :param max_dataset_mb: mida màxima del dataset, en MB (1 MB = 1024² bytes),
         sumant els fitxers de la versió antiga i de la nova. Per sobre, no es compara (`too_large`).
+    :param min_distribution_distance: distància mínima entre les distribucions
+        d'una columna per reportar-ne el canvi (C530, `c530_min_distance`).
     :return: la configuració del motor.
     """
-    return replace(DEFAULT_CONFIG, max_dataset_bytes=int(max_dataset_mb * MB), formats=TABULAR_FORMATS)
+    return replace(DEFAULT_CONFIG, max_dataset_bytes=int(max_dataset_mb * MB), formats=TABULAR_FORMATS,
+                   c530_min_distance=min_distribution_distance)
 
 
 def run_classification(versions_csv: str, config: EngineConfig = DEFAULT_CONFIG) -> str:
@@ -888,7 +894,8 @@ def run_classification(versions_csv: str, config: EngineConfig = DEFAULT_CONFIG)
         versions = pd.DataFrame(columns=["dataset_id", "version_order", "commit_sha"])
     by_dataset = versions.groupby("dataset_id", sort=False)
     log.info(f"Classificant canvis de {by_dataset.ngroups} datasets de {versions_csv} (datasets de fins a "
-             f"{config.max_dataset_bytes / MB:g} MB; formats, per ordre: {', '.join(config.formats)})...")
+             f"{config.max_dataset_bytes / MB:g} MB; formats, per ordre: {', '.join(config.formats)}; "
+             f"distància mínima entre distribucions: {config.c530_min_distance:g})...")
 
     output_csv = os.path.join(OUTPUT_DIR, "change_classification.csv")
     status_csv = os.path.join(OUTPUT_DIR, COMPARISON_STATUS_FILE)
@@ -934,6 +941,18 @@ def positive_float(text: str) -> float:
     return value
 
 
+def fraction(text: str) -> float:
+    """
+    Tipus d'argument de la CLI: un nombre més gran que 0 i com a molt 1.
+
+    :raises argparse.ArgumentTypeError: si no ho és.
+    """
+    value = positive_float(text)
+    if value > 1:
+        raise argparse.ArgumentTypeError(f"ha de ser com a molt 1: {text}")
+    return value
+
+
 def parse_args() -> argparse.Namespace:
     """
     Arguments de la CLI. Sense cap argument mostra l'ajuda i surt, perquè
@@ -960,6 +979,13 @@ def parse_args() -> argparse.Namespace:
             "Amb --classify-versions: mida màxima del dataset (1 MB = 1024² bytes), sumant els fitxers de la "
             "versió antiga i de la nova. Els més grans no es descarreguen ni es comparen: queden amb l'estat "
             "too_large."
+        ),
+    )
+    parser.add_argument(
+        "--min-distribution-distance", type=fraction, default=DEFAULT_MIN_DISTRIBUTION_DISTANCE, metavar="D",
+        help=(
+            "Amb --classify-versions: distància mínima entre les distribucions d'una columna per reportar-ne el "
+            "canvi (C530): Kolmogorov-Smirnov per a numèriques, variació total per a categòriques. Entre 0 i 1."
         ),
     )
     parser.add_argument(
@@ -1042,7 +1068,7 @@ if __name__ == "__main__":
 
     new_run_dir()
     if args.classify_versions:
-        run_classification(args.classify_versions, engine_config(args.max_dataset_mb))
+        run_classification(args.classify_versions, engine_config(args.max_dataset_mb, args.min_distribution_distance))
     else:
         run_sampling(
             sample_size=args.sample_size,

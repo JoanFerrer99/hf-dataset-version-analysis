@@ -93,7 +93,9 @@ class EngineConfig:
     c520_max_columns: int = 30
     """C520: màxim de columnes considerades (parells = n·(n-1)/2)."""
     c530_min_distance: float = 0.1
-    """C530: distància mínima entre distribucions (KS per a numèriques, variació total per a categòriques)."""
+    """C530: distància mínima entre distribucions (KS per a numèriques, variació total per a categòriques).
+    També decideix si una columna reanomenada sobre una altra mostra de files té la mateixa distribució (C223).
+    A la Fase 2 és un paràmetre de l'execució (`--min-distribution-distance`; decisió T-40)."""
     alpha: float = 0.01
     """Nivell de significació de les proves (filtre secundari: decideix la mida d'efecte)."""
 
