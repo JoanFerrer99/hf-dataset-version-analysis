@@ -649,10 +649,9 @@ descàrregues es fan.
 - Recórrer la població: una passada paginada (~1M ids), temps O(total),
   memòria O(N).
 - `classify_dataset` per dataset: 1 crida `list_repo_refs`; en la
-  majoria (98,5% a `run_8`) s'acaba aquí. Per als candidats: 1
-  `dataset_info` (llista de fitxers). Si tenen dades tabulars: 1
-  `list_repo_commits` + 1 clon (51 commits, sense contingut, ~1 s) + fins
-  a 50 `git show` locals, sense xarxa.
+  majoria s'acaba aquí. Per als candidats: 1 `dataset_info` (llista de fitxers).
+  Si tenen dades tabulars: 1 `list_repo_commits` + 1 clon (51 commits, sense contingut,
+  ~1 s) + fins a 50 `git show` locals, sense xarxa.
 
 **Fase 1** (només elegibles):
 - Criteri A: 1 `list_repo_refs` + per tag, 1 `list_repo_commits` i 1
@@ -674,12 +673,8 @@ descàrregues es fan.
   per passada, vectoritzat. Aparellar files sense identificador no és
   quadràtic: cada fila es resumeix en un hash i les dues versions s'uneixen
   per aquest hash. Buscar si una fila afegida o eliminada és còpia d'una
-  altra també fa servir un hash (T-39): sense identificador, 1.000.000 de
-  files es comparen en uns 70 s amb 1,9 GB. La memòria és el límit pràctic: un dataset de
-  2,5 M de files (run_9, `qld-unclaimed-money`) en fa servir uns 4 GB i
-  triga 2 minuts. Per això la regla de les files eliminades (C422
-  `predicate`) s'entrena amb una mostra de 100.000 files conservades
-  (`max_rule_rows`, decisió T-24).
+  altra també fa servir un hash sense identificador, 1.000.000 de
+  files es comparen en uns 70 s amb 1,9 GB.
 
 Límits fixos: 50 commits per dataset (`MAX_COMMITS` a la Fase 0), 30 s per clonar,
 10 s per `git show`. La mida màxima del dataset és un paràmetre de l'execució

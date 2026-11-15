@@ -133,8 +133,8 @@ WAREHOUSE_PATH=data/warehouse/<run_id>.duckdb streamlit run ui/app.py       # in
 python src/figures/make_all.py                                           # figures a docs/figures/
 ```
 
-Amb Docker: `docker compose run --rm warehouse --run-dir data/run_9` i
-`docker compose up ui` (per defecte, munta `data/warehouse/run_9.duckdb` de
+Amb Docker: `docker compose run --rm warehouse --run-dir data/<run_id>` i
+`docker compose up ui` (per defecte, munta `data/warehouse/<run_id>.duckdb` de
 només lectura; un altre fitxer amb `WAREHOUSE_FILE=...`).
 
 La navegació, la capçalera i les targetes de la interfície són components HTML
