@@ -76,8 +76,8 @@ class EngineConfig:
     si era numèrica. Amb `False`, es triaria pel tipus nou."""
     report_representation: bool = True
     """Els canvis que només afecten com s'escriuen els valors d'una columna
-    numèrica (coma decimal, notació científica) es reporten com a C322
-    `representation`, en lloc d'amagar-los. Els espais o les majúscules en una
+    numèrica (coma decimal, notació científica) es reporten com a C323 (format
+    d'una columna numèrica), en lloc d'amagar-los. Els espais o les majúscules en una
     categòrica (C312 `representation`) es reporten sempre. Canviar el símbol
     que vol dir "absent" no es reporta mai."""
     transformation_suppresses_c530: bool = True

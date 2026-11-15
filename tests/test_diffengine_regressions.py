@@ -331,3 +331,15 @@ def test_31_a_csv_per_year_that_adds_a_column_is_one_dataset(tmp_path):
     old = [year(2019), year(2020)]
     result = diff_tables(load_files(old), load_files(old + [year(2021, extra=True)]))
     assert {(c.code, c.column) for c in result.changes} == {("C221", "channel"), ("C421", None)}
+
+
+def test_32_decimal_comma_is_c323(base):
+    """Taxonomia revisada (T-38): els mateixos valors escrits amb coma decimal són C323, no C322."""
+    assert labels(csv_bytes(base), csv_bytes(base, sep=";", decimal=",")) == {("C323", "representation")}
+
+
+def test_33_scientific_notation_is_c323_unless_the_values_change(base):
+    old = csv_bytes(base)
+    assert labels(old, csv_bytes(base, float_format="%.10e")) == {("C323", "representation")}
+    got = labels(old, csv_bytes(base.assign(score=base["score"] * 2.5), float_format="%.10e"))
+    assert ("C322", "factor") in got and "C323" not in {c for c, _ in got}

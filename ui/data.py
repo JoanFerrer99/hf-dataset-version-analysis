@@ -162,7 +162,7 @@ def key_figures() -> dict:
 
 def taxonomy() -> pd.DataFrame:
     """
-    :return: els 14 codis de la taxonomia, amb la perspectiva i si trenquen.
+    :return: els 15 codis de la taxonomia, amb la perspectiva i si trenquen.
     """
     return _query("""
         select code, name, perspective, level_1, is_breaking

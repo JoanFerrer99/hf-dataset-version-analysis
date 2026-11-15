@@ -53,7 +53,7 @@ def test_home_shows_the_key_figures_of_the_run(app):
         ("Dataset amb més canvis", "5", "Explorador"),
     ]
     assert "org/tags-a" in highlights[3]["hint"]
-    assert app.dataframe[0].value.shape[0] == 14  # la taxonomia, plegada
+    assert app.dataframe[0].value.shape[0] == 15  # la taxonomia, plegada
 
 
 def test_the_shell_draws_the_navigation_and_the_page_header(app):

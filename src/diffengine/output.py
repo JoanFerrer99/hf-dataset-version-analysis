@@ -14,15 +14,16 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-# Els 14 codis tabulars de la taxonomia (C100, metadades, és fora d'abast).
-TABULAR_CODES = ("C210", "C221", "C222", "C223", "C311", "C312", "C321", "C322",
+# Els 15 codis tabulars de la taxonomia (C100, metadades, és fora d'abast).
+TABULAR_CODES = ("C210", "C221", "C222", "C223", "C311", "C312", "C321", "C322", "C323",
                  "C410", "C421", "C422", "C510", "C520", "C530")
 
 CODE_DESCRIPTIONS = {
     "C210": "Ordre de columnes", "C221": "Afegir columna", "C222": "Eliminar columna",
     "C223": "Renombrar columna", "C311": "Tipus de columna categòrica",
     "C312": "Valors d'una columna categòrica", "C321": "Tipus de columna numèrica",
-    "C322": "Valors d'una columna numèrica", "C410": "Ordre de files", "C421": "Afegir fila",
+    "C322": "Valors d'una columna numèrica", "C323": "Format d'una columna numèrica",
+    "C410": "Ordre de files", "C421": "Afegir fila",
     "C422": "Eliminar fila", "C510": "Missings", "C520": "Correlacions", "C530": "Distribució de les dades",
 }
 

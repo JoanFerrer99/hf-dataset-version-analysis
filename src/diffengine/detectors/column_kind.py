@@ -9,7 +9,11 @@ C3xx, canvis en una columna concreta.
 - C312/C322: canvien els valors. Es comparen cel·la a cel·la a les files
   aparellades, i el subtipus diu què ho explica: una transformació
   (`factor`, `log`…), un mapatge de categories (`relabel`, `merge`…), només
-  el format (`representation`) o edicions soltes (`cell_edits`).
+  el format d'una categòrica (C312 `representation`: espais, majúscules) o
+  edicions soltes (`cell_edits`).
+- C323: una columna numèrica té els mateixos valors, escrits d'una altra
+  manera (coma decimal, notació científica). Si els valors també canvien, és
+  C322.
 """
 
 import numpy as np
@@ -107,9 +111,9 @@ def detect_values(ctx: Context) -> list[Change]:
 def _numeric_values(ctx: Context, m: ColumnMatch, a: pd.Series, b: pd.Series) -> list[Change]:
     """
     Explica com han canviat els valors d'una columna numèrica, en aquest ordre:
-    només el format (`representation`), un comptador renumerat (`renumbered`), una
-    fórmula (`factor`, `log`...), soroll (`perturbation`) o cel·les soltes
-    (`cell_edits`).
+    només el format (C323 `representation`), un comptador renumerat
+    (`renumbered`), una fórmula (`factor`, `log`...), soroll (`perturbation`) o
+    cel·les soltes (`cell_edits`). Tots, menys el primer, són C322.
 
     :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
     :param m: parella de columnes.
@@ -128,7 +132,7 @@ def _numeric_values(ctx: Context, m: ColumnMatch, a: pd.Series, b: pd.Series) ->
         # Els mateixos valors, escrits d'una altra manera (coma decimal, notació científica).
         style_changed = abs(ko.exponent_share - kn.exponent_share) > 0.5 or ko.decimal_comma != kn.decimal_comma
         if ctx.config.report_representation and style_changed:
-            return [change("C322", m, subtype="representation")]
+            return [change("C323", m, subtype="representation")]
         return []
 
     if is_sequence(ctx.old, m.old) and is_sequence(ctx.new, m.new):

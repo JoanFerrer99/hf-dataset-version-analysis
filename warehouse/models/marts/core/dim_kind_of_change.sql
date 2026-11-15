@@ -1,4 +1,4 @@
--- Dimensió dels tipus de canvi: els 14 codis de la taxonomia (seed), un per fila.
+-- Dimensió dels tipus de canvi: els 15 codis de la taxonomia (seed), un per fila.
 
 with taxonomy as (
     select

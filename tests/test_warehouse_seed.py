@@ -1,6 +1,6 @@
 """
 La seed de la taxonomia del magatzem (`warehouse/seeds/taxonomy.csv`) ha de
-dir el mateix que el motor (`diffengine.output`): els mateixos 14 codis i els
+dir el mateix que el motor (`diffengine.output`): els mateixos 15 codis i els
 mateixos codis trencadors.
 """
 
@@ -17,7 +17,7 @@ def _seed() -> pd.DataFrame:
     return pd.read_csv(SEED)
 
 
-def test_seed_has_the_14_tabular_codes_in_order():
+def test_seed_has_the_15_tabular_codes_in_order():
     assert tuple(_seed()["code"]) == TABULAR_CODES
     assert "C100" not in set(_seed()["code"])
 

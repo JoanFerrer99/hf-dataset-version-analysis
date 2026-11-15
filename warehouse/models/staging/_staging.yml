@@ -100,7 +100,7 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ["C210", "C221", "C222", "C223", "C311", "C312", "C321", "C322", "C410", "C421", "C422", "C510", "C520", "C530"]
+                values: ["C210", "C221", "C222", "C223", "C311", "C312", "C321", "C322", "C323", "C410", "C421", "C422", "C510", "C520", "C530"]
 
   - name: stg_comparison_status
     description: Fase 2, l'estat de la comparació de cada parell de versions d'un dataset (comparison_status.csv).
@@ -154,7 +154,7 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ["C210", "C221", "C222", "C223", "C311", "C312", "C321", "C322", "C410", "C421", "C422", "C510", "C520", "C530"]
+                values: ["C210", "C221", "C222", "C223", "C311", "C312", "C321", "C322", "C323", "C410", "C421", "C422", "C510", "C520", "C530"]
       - name: true_positives
         description: Versions on el paper i el motor marquen el codi.
       - name: false_negatives
