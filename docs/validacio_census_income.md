@@ -332,6 +332,12 @@ que vinguin d'eliminar files: "Notice that these can be a consequence of the
 addition/removal of rows. However, we consider them separately" (§4). Per a
 un pipeline importa: el pas d'imputar valors absents deixa de fer falta.
 
+Amb la taxonomia posterior al paper (decisió T-43), aquests dos codis ja no
+surten: els C5xx només miren les files aparellades, i aquí cap cel·la que
+continua s'omple ni es buida (les files amb `?` són C422). Pel mateix motiu,
+el C530 de D6 (l'equilibri de classes) passa a ser un fals negatiu. Els
+resultats d'aquest document són d'abans de T-43.
+
 ---
 
 ## 6. Canvis al motor arran de la validació
@@ -355,8 +361,10 @@ lectura de la taula:
 - **Codificar categories com a nombres** és C311 i també C312 `recoded`.
 - **C510 es reporta encara que vingui de files eliminades.** Una versió
   anterior del motor l'amagava per coincidir amb la taula, i es va retirar.
+  Des de T-43 ja no: els C5xx només miren les files aparellades (secció 5.4).
 
 ## 7. Preguntes obertes
 
 1. **C510 quan s'eliminen les files amb valors absents? El paper sembla dir que sí
+   (resolta a T-43: no, els C5xx són disjunts dels C4xx)
 2. **Mida de la mostra.** Quants datasets comparats voldries tenir?

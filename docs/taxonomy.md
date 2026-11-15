@@ -17,9 +17,14 @@
 | C410 | Rows Set | Ordre de files |
 | C421 | Rows Set | Afegir fila |
 | C422 | Rows Set | Eliminar fila |
-| C510 | Data Characteristics | Missings |
-| C520 | Data Characteristics | Correlacions |
-| C530 | Data Characteristics | Distribució de les dades |
+| C510 | Data Value | Afegir valors absents (*Add missing*) |
+| C520 | Data Value | Eliminar valors absents (*Remove missing*) |
+| C530 | Data Value | Actualitzar valors sense absents (*Update value not involving missing*) |
+
+Els C5xx són els de la revisió posterior al paper (decisió T-43). Abans es
+deien *Data Characteristics*: C510 Missings, C520 Correlacions i C530
+Distribució de les dades. Ara la correlació i la distribució són dues maneres
+de detectar el C530, i es miren només a les files aparellades.
 
 ## `is_breaking`: heurística d'execució, no de qualitat
 
@@ -33,8 +38,8 @@ defineix cap de formal.
 C311/C321 (canvi de tipus), C410 (ordre de files).
 
 `False` per a la resta -- C221/C421/C422 (afegir/eliminar columna o
-fila), C312/C322/C323/C510/C520/C530 (canvis de valors/format/missings/correlacions/
-distribució). Aquests **poden degradar la qualitat del model igualment**
+fila), C312/C322/C323/C510/C520/C530 (canvis de valors/format, valors absents que
+apareixen o desapareixen, valors actualitzats). Aquests **poden degradar la qualitat del model igualment**
 (data drift, concept drift), però no fan fallar un pipeline que
 simplement llegeix el dataset. La distinció és deliberada, no un
 oblit: `is_breaking` respon una pregunta d'infraestructura (crasha

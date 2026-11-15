@@ -1125,6 +1125,8 @@ Estat: Fet
     (retirada l'opció que l'amagava): es reporta. El paper (§4) diu que
     aquests canvis "can be a consequence of the addition/removal of rows.
     However, we consider them separately".
+    Revisat a T-43: ja no es reporta, els C5xx només miren les files
+    aparellades.
   - C530 només per a la variable objectiu (proposta del prompt original, no
     s'aplica): C530 és un canvi de distribució de qualsevol atribut; el
     motor no identifica la variable objectiu.
@@ -1800,8 +1802,13 @@ Estat: Fet
     `overall`, surten també C312 (PROMPT), C421, C422, C510 i C530.
     PDL-Bench repeteix cada fila al fitxer de la seva categoria i a
     `overall`: la unió té 163 files amb 60 ID (v1) i 198 amb 99 (v2.0).
-    D'aquí surt C422 `duplicate_removed`, i que PROMPT sembli categòrica
-    (37-49% de valors diferents, per sota de `text_min_distinct_share`).
+    D'aquí surt C422 `duplicate_removed` (la versió nova té menys còpies
+    d'algunes files). També fa que ID no sigui única, i per tant no és clau
+    ni identificador, i que PROMPT sembli categòrica (37-49% de valors
+    diferents, per sota de `text_min_distinct_share`): per això totes dues
+    tenien C530 (abans de T-43, a la taula sencera). El C312 `relabel` de
+    PROMPT no ve de la duplicació: surt dels enunciats reescrits, i
+    sortiria igual sense files repetides (comprovat amb dades sintètiques).
   - P20: C322 (`episode_index`, `renumbered`) i C421, el mateix que va
     obtenir Carlos comparant la taula sencera; cap C410, C422 ni C520. Els
     fitxers de dades de les dues versions sumen 99 MB (per sota del límit
@@ -1841,6 +1848,140 @@ Estat: Fet
     (`format_from`, `format_to`).
   - Sense `--formats`, no canvia res: els formats són els de
     `config/formats.toml`.
+
+
+DECISIÓ T-43: C5xx, valors de les dades (Data Value), només a les files aparellades
+Data: novembre 2026
+Responsable: Joan
+Estat: Fet (substitueix el punt de C510 de T-20)
+
+  MOTIU: la revisió de la taxonomia posterior al paper canvia la
+  perspectiva C5xx, que passa a dir-se Data Value: C510 Add missing, C520
+  Remove missing i C530 Update value not involving missing. Amb el
+  director vam acordar que els C5xx es calculin sobre les parelles de
+  files, perquè siguin disjunts dels C4xx: afegir o eliminar files ja és
+  C421/C422 i no ha de tornar a sortir com a canvi de valors. Abans (T-20,
+  seguint el paper, §4) els C5xx es reportaven encara que venien de files
+  afegides o eliminades, i C520 eren les correlacions.
+
+  DECISIÓ:
+  - Les files afegides i les eliminades no entren als C5xx. Amb files
+    aparellades, només es miren aquestes.
+  - C510 (Afegir valors absents) i C520 (Eliminar valors absents) es
+    compten per cel·les: una cel·la que passa de tenir valor a estar buida
+    és C510 (`masking`); una que passa de buida a tenir valor, C520
+    (`imputed`, o `imputed_constant:mean/median/mode/value` si s'omplen
+    amb un sol valor). En una mateixa columna poden sortir tots dos. Ja ho
+    calculava el motor (abans, tot era C510) i no costa més. L'opció
+    `missing_by_cell = False` fa servir el percentatge net de buits de les
+    files aparellades (C510 si puja, C520 si baixa, subtipus `rate`).
+  - C530 (Actualitzar valors sense absents) només mira les cel·les que
+    tenen valor a totes dues versions, és a dir, les que no toquen ni C510
+    ni C520. Surt si canvia la distribució de la columna (`distribution`,
+    amb `c530_min_distance`) o la correlació amb una altra columna
+    (`correlation`, columna `a|b`, amb `correlation_min_delta`; abans era
+    el C520). Es mantenen les exclusions: identificadors, text lliure,
+    columnes complexes, columnes que canvien de tipus i columnes que ja
+    explica una fórmula (C322).
+  - Si no hi ha cap fila aparellada (no hi ha clau i cap columna conserva
+    prou valors per fer el hash, o cap fila no coincideix), es mira la
+    taula sencera, com abans: C510 o C520 segons si la proporció de buits
+    puja o baixa (amb la prova de dues proporcions i
+    `missing_min_rate_delta`), i C530 només a les columnes on aquesta
+    proporció no canvia. En aquest cas no són disjunts dels C4xx, perquè
+    totes les files surten com a C421 + C422.
+  - C510/C520 per cel·les només a les columnes que es comparen cel·la a
+    cel·la (mateix tipus, no complexes ni números de fila), com fins ara.
+  - Noms: `CODE_DESCRIPTIONS`, el seed `taxonomy.csv` (perspectiva Data
+    Value, "Valors de les dades") i la paleta de la interfície. Opcions de
+    `config.py` reanomenades: `null_transition_is_c510` → `missing_by_cell`,
+    `c510_min_rate_delta` → `missing_min_rate_delta`, `c520_min_delta` →
+    `correlation_min_delta`, `c520_max_columns` →
+    `correlation_max_columns`.
+
+  PER QUÈ S'ACCEPTEN FALSOS POSITIUS. Abans, els C5xx comparaven dues
+  mostres, totes les files antigues amb totes les noves, i demanaven una
+  diferència mínima (1 punt de buits, distància 0,1) i una prova
+  estadística. Aquest filtre amagava els errors petits, però feia sortir
+  C5xx per files afegides o eliminades (Census D6 i D7, `test_16`,
+  `test_25`), que ara són C4xx. Ara la decisió es pren cel·la a cel·la, a
+  les mateixes files a totes dues versions. Si l'aparellament és correcte,
+  és exacta: sense cap canvi de valor, les distribucions i les correlacions
+  són idèntiques i no hi ha soroll de mostra. Però hereta els errors de
+  l'aparellament, i per a C510/C520 no hi ha llindar: n'hi ha prou amb una
+  parella equivocada.
+  - Parelles equivocades. Sense identificador, les files s'aparellen pel
+    contingut, i s'accepten files que coincideixen en totes les columnes
+    menys una o dues (files editades). Si s'elimina una fila i se n'afegeix
+    una altra que coincideix amb ella a la resta de columnes, el motor les
+    pren per la mateixa fila amb una cel·la editada. Si aquesta cel·la és
+    buida en una de les dues, surt C510 o C520 on de fet hi ha C422 + C421.
+    Cas conegut: Census D7, on 14 files d'`adult.data` amb un `?` tenen els
+    mateixos valors numèrics que 14 files d'`adult.test`. El motor ja no
+    les fa servir per jutjar l'ordre (C410), però sí per als C5xx. A D7 no
+    donen C520 perquè les columnes amb `?` canvien de tipus i no es
+    comparen, però en una columna que no canviés de tipus sortiria (`test_28`
+    en guarda el cas). Una fila amb una cel·la buidada és justament una
+    parella amb un canvi de buit, i amb les dades soles no es pot distingir
+    de dues files diferents que coincideixen en la resta: descartar-les
+    faria impossible el C510/C520 sense identificador. El motor ja en limita
+    el risc: només accepta files editades si les coincidències no poden ser
+    casualitat i coincideixen almenys en la meitat de les columnes.
+  - Una clau que no ho és. Si un comptador irregular fa de clau, les
+    files s'aparellen per posició: les cel·les de files diferents es
+    comparen entre elles i surten C510/C520/C530 que són files afegides i
+    eliminades.
+  - Absents que el motor no reconeix. Si una versió escriu un absent amb un
+    valor que no és a `missing_tokens` (`unknown`, `-1`, `999`), passar
+    d'aquest valor a un absent reconegut, o al revés, surt com a C510 o
+    C520 tot i que la dada continua sense valor.
+  - Fitxers units (T-37). Si un fitxer del dataset guanya una columna que
+    abans no tenia, les cel·les de les seves files passen de buides a tenir
+    valor: C520. És un canvi real de la taula, però ve de com estan
+    organitzats els fitxers.
+  - C530. Com que les files són les mateixes, només surt si algun valor
+    canvia. Pot ser un fals positiu si el canvi ve de parelles
+    equivocades (els valors de dues files diferents), o si és un canvi de
+    format que el motor no desfà (els reetiquetatges, el format de les
+    categòriques i les fórmules ja es desfan o se suprimeixen). La prova
+    estadística suposa mostres independents i aquí són les mateixes files:
+    el p-valor és aproximat, i el que decideix és la mida de l'efecte, com
+    a la resta del motor.
+
+  FALSOS NEGATIUS:
+  - C530: si s'editen poques cel·les, la distribució es mou per sota del
+    llindar (0,1). Les edicions sí que surten com a C312/C322
+    `cell_edits`.
+  - Files editades en més de dues columnes, sense clau: no s'aparellen, i
+    els seus canvis surten com a C421 + C422, no com a C5xx.
+  - Columnes que canvien de tipus: no es miren les seves cel·les buides.
+
+  COST (pregunta del director): els C5xx fan una passada per columna sobre
+  les parelles, vectoritzada, i les correlacions són les mateixes 435
+  parelles de columnes com a màxim (30 columnes). Taula sintètica de 10
+  columnes, sense clau: amb 200.000 files, 2,9 s abans i 3,2 s ara; amb
+  1.000.000, 14 s abans i 17 s ara (aparellar les files, 21 s; pic de
+  memòria de tot el procés, 1,9 GB).
+
+  EFECTE EN RESULTATS ANTERIORS: les execucions `run_6`…`run_9` i la
+  validació de Census Income (`data/census_income/run_2`) són d'abans de
+  T-43: allà C520 són correlacions i C510/C530 inclouen els canvis de files
+  afegides i eliminades. El seed de la taxonomia és un de sol, així que el
+  magatzem d'una d'aquestes execucions mostraria les correlacions com a
+  "Eliminar valors absents": cal una execució nova. A Census s'espera que
+  el C530 de D6 (equilibrar les classes eliminant files) passi a ser un
+  fals negatiu i que els C510 de D6 i D7 (els `?` desapareixen perquè
+  s'eliminen files) deixin de sortir. La Taula 1 fa servir la taxonomia del
+  paper: és un canvi de taxonomia, no un error del motor. Pendent de
+  tornar a executar `validate_census_income.py`.
+
+  TESTS: `tests/test_diffengine_regressions.py`. Canvien d'expectativa
+  `test_16` (la classe minoritària duplicada és només C421), `test_21`,
+  `test_25` (les files eliminades amb buits són només C422) i `test_28`.
+  Nous: `test_36` a `test_41` (C510 i C520 per cel·les, tots dos a la
+  mateixa columna, per percentatge net, files afegides amb buits, C530
+  només amb cel·les amb valor, correlació d'una columna barrejada i el cas
+  sense files aparellades).
 
 
 ================================================================================

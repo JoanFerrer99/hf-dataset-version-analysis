@@ -148,9 +148,24 @@ Cada tipus té un codi:
 | C410 | Ordre de files | Conjunt de files |
 | C421 | Afegir fila | Conjunt de files |
 | C422 | Eliminar fila | Conjunt de files |
-| C510 | Valors absents (missings) | Característiques estadístiques |
-| C520 | Correlacions | Característiques estadístiques |
-| C530 | Distribució de les dades | Característiques estadístiques |
+| C510 | Afegir valors absents (*Add missing*) | Valors de les dades |
+| C520 | Eliminar valors absents (*Remove missing*) | Valors de les dades |
+| C530 | Actualitzar valors sense absents (*Update value not involving missing*) | Valors de les dades |
+
+Els C5xx segueixen la revisió de la taxonomia posterior al paper (*Data
+Value*, decisió T-43), i es miren només a les **files aparellades**: les
+afegides i les eliminades ja són C421/C422, així que els dos grups són
+disjunts. A cada columna, una cel·la que passa de tenir valor a estar buida
+és C510 i una que passa de buida a tenir valor, C520 (en una mateixa columna
+poden sortir tots dos). El C530 només mira les cel·les que tenen valor a
+totes dues versions: canvia la distribució de la columna (subtipus
+`distribution`) o la correlació amb una altra (`correlation`, columna
+`a|b`). Si no hi ha cap fila aparellada, es mira la taula sencera: C510 o C520
+segons si la proporció de buits puja o baixa (subtipus `rate`), i C530 només
+a les columnes on no canvia. Fins a T-43, C510 eren tots els canvis de buits,
+C520 les correlacions i C530 la distribució, també quan venien de files
+afegides o eliminades: les execucions anteriors (`run_6`…`run_9`) fan servir
+aquests significats.
 
 Decisions d'abast: **C100 no es classifica** (el director va indicar que
 no interessa), així que el projecte treballa amb els altres 15 codis. I
@@ -708,6 +723,12 @@ mateixes dades: 64,5% / 76,9% / 70,2% (20 dels 26 codis; `docs/validacio_census_
 El motor troba tots els codis del paper, i cap dels 11 falsos positius és un
 error del motor. Cadascun, explicat amb les dades, a
 `docs/validacio_census_income.md`.
+
+Aquest resultat és d'abans de T-43. Amb els C5xx a les files aparellades,
+s'espera que el C530 de D6 (l'equilibri de classes, que elimina files) passi a
+ser un fals negatiu i que els C510 de D6 i D7 (els `?` desapareixen perquè
+s'eliminen files) deixin de sortir: la Taula 1 fa servir la taxonomia del
+paper. Cal tornar a executar `validate_census_income.py` per confirmar-ho.
 
 ---
 
