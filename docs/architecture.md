@@ -194,7 +194,7 @@ Termes que defineix aquest codi:
 | **Criteri B** | ≥2 branques i commits tabulars repartits en ≥2 sessions. | funció `eligibility_criterion` (sessions: `has_time_dispersed_substantive_commits`) |
 | **Versió** | Criteri A: cada tag. Criteri B: cada sessió (representada pel seu commit més recent). | extracció a `version_extractor.extract_versions_for_dataset` |
 | **Unitat de canvi** | Què es compara a la Fase 2: cada versió contra la següent. Criteri A: cada tag contra el tag següent. Criteri B: el final de cada sessió contra el final de la sessió següent. | funció `version_pairs` |
-| **Fitxer tabular** | D'un dels formats de `config/formats.toml` (per defecte, `.csv`, `.tsv`, `.parquet`, `.jsonl` i `.json`) i fora de les carpetes de metadades (`meta/`...). L'únic tipus que es descarrega i es compara. Si una versió en té de més d'un format, només es compara el primer de la llista (decisió T-36). | es defineix a la funció `diffengine.datafiles.is_tabular_path` |
+| **Fitxer tabular** | D'un dels formats de l'execució (els de `config/formats.toml`, per defecte `.csv`, `.tsv`, `.parquet`, `.jsonl` i `.json`, o els de `--formats`) i fora de les carpetes de metadades (`meta/`...). L'únic tipus que es descarrega i es compara. Si una versió en té de més d'un format, només es compara el primer de la llista (decisions T-36 i T-42). | es defineix a la funció `diffengine.datafiles.is_tabular_path` |
 | **Shard** | Fitxer amb només una part de les files d'un split. |  |
 | **Dataset** | Un repositori del Hub. A la Fase 2, tots els seus fitxers tabulars s'uneixen en ordre i es comparen com un de sol (secció 2.2, decisió T-37). | funció `diffengine.datafiles.dataset_files` |
 
@@ -283,7 +283,7 @@ xarxa ni token. `conftest.py` afegeix `src/` al camí d'importació.
 |---|---|
 | `requirements.txt` | Dependències amb versió fixada |
 | `ruff.toml` | Regles de lint |
-| `config/formats.toml` | Els formats tabulars, en ordre de preferència (decisió T-36). `docker-compose.yml` el munta a sobre del de la imatge, de manera que es pot canviar sense reconstruir-la |
+| `config/formats.toml` | Els formats tabulars, en ordre de preferència (decisió T-36). `docker-compose.yml` el munta a sobre del de la imatge, de manera que es pot canviar sense reconstruir-la. Per a una execució, `--formats` el substitueix (decisió T-42) |
 | `Dockerfile`, `docker-compose.yml` | Imatge per executar el pipeline sense instal·lar res; `docker-compose` hi defineix un servei per script (`run-pipeline`, `eligibility-scan`, `version-extractor`, `warehouse`) |
 | `.github/workflows/ci.yml` | A cada push: lint, tests i construcció de la imatge |
 | `.github/workflows/docker-publish.yml` | Publica la imatge |
@@ -418,7 +418,10 @@ condicions:
   `.json`), excepte els JSON de metadades del Hub i de LeRobot. És la mateixa
   definició que fa servir el motor de la Fase 2, de manera que tot dataset
   elegible té alguna cosa que el motor pot comparar. Per deixar un format
-  fora de l'estudi, es treu de la llista (decisió T-36).
+  fora de l'estudi, es treu de la llista (decisió T-36). Per a una sola
+  execució, `--formats` (p.e. `--formats json,csv`) substitueix la llista, i
+  llavors el fitxer no es llegeix: els mateixos formats valen per a totes les
+  fases (`use_formats`, decisió T-42).
 
 `is_substantive_path` decideix si un fitxer és dades, en aquest ordre:
 
@@ -538,8 +541,9 @@ mostra baixaria centenars de GB).
    - de cada revisió en treu els **fitxers del dataset**
      (`datafiles.dataset_files`): els fitxers tabulars, amb la mateixa
      regla que l'elegibilitat de la Fase 0 (secció 7.3), i si n'hi ha de
-     més d'un format, només els del primer de `config/formats.toml` que hi
-     surt (decisió T-36);
+     més d'un format, només els del primer de la llista de formats
+     (`config/formats.toml` o `--formats`) que hi surt (decisions T-36 i
+     T-42);
    - si els fitxers són els mateixos i tenen el mateix contingut, no es
      descarrega res;
    - si no, es descarreguen tots, s'uneixen en ordre en un sol dataset per
@@ -667,6 +671,8 @@ Límits fixos: 50 commits per dataset (`MAX_COMMITS` a la Fase 0), 30 s per clon
 (`--max-dataset-mb` a `run_pipeline.py` i a `eligibility_scan.py --classify-versions`;
 500 MB per defecte, decisió T-35). El llindar de distribució (C530) també:
 `--min-distribution-distance`, als mateixos dos scripts (0,1 per defecte, decisió T-40).
+I els formats tabulars: `--formats`, a `run_pipeline.py`, `eligibility_scan.py` i
+`version_extractor.py`, en lloc dels de `config/formats.toml` (decisió T-42).
 
 ---
 

@@ -1599,7 +1599,7 @@ Estat: Fet
 DECISIÓ T-36: els formats tabulars i el seu ordre es configuren en un fitxer
 Data: novembre 2026
 Responsable: Joan (acordat amb el director a la reunió de seguiment)
-Estat: Fet
+Estat: Fet (revisada: per a una execució, `--formats` substitueix el fitxer, T-42)
 
   MOTIU: quan una versió tenia fitxers tabulars de més d'un format, el motor
   comparava el més freqüent (la regla de la llibreria `datasets`; en cas
@@ -1793,6 +1793,40 @@ Estat: Fet
   Carlos. Tests: `test_34` i `test_35` de
   `tests/test_diffengine_regressions.py`. Falta comprovar-ho amb les dades
   reals de tots dos datasets (cal descarregar-les del Hub).
+
+
+DECISIÓ T-42: els formats es poden canviar per a una execució (`--formats`)
+Data: novembre 2026
+Responsable: Joan
+Estat: Fet
+
+  MOTIU: Carlos va provar l'eina amb 20 parelles de versions i, per
+  usabilitat, proposa poder fixar per paràmetre quin format es compara quan
+  un dataset en té més d'un (p.e. CSV abans que JSON, o al revés).
+  `config/formats.toml` (T-36) ja ho permetia sense tocar el codi, però
+  editant un fitxer. Es manté el fitxer com a valor per defecte de l'estudi
+  i s'hi afegeix l'opció.
+
+  DECISIÓ:
+  - `--formats`, a `run_pipeline.py`, `eligibility_scan.py` i
+    `version_extractor.py`: formats separats per comes, en ordre de
+    preferència (p.e. `--formats json,csv`). Es comproven com els del fitxer
+    (`check_formats`): no buida, sense repeticions i només formats que el
+    motor sap llegir.
+  - Substitueix la llista sencera, i llavors el fitxer no es llegeix: només
+    compten com a tabulars els formats que es donen. Per prioritzar un
+    format sense deixar-ne cap fora, s'han de donar tots (p.e.
+    `--formats json,csv,tsv,parquet,jsonl`).
+  - Els mateixos formats per a totes les fases de l'execució: es fixen en
+    començar (`use_formats`) i valen per a la Fase 0 (elegibilitat), la Fase
+    1 (commits tabulars) i la Fase 2 (fitxers del dataset). Si es reprèn un
+    run anterior per una fase (`--input-csv`, `--classify-versions`), cal
+    donar-li els formats que tenia aquell run.
+  - Els formats de l'execució, i d'on surten, queden al log; el format
+    comparat de cada parell de versions, a `comparison_status.csv`
+    (`format_from`, `format_to`).
+  - Sense `--formats`, no canvia res: els formats són els de
+    `config/formats.toml`.
 
 
 ================================================================================
