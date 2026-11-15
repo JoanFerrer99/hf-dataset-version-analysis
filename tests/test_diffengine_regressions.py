@@ -362,3 +362,40 @@ def test_34_columns_empty_on_every_paired_row_are_not_a_rename():
     result = diff_bytes(parquet_bytes(old), ".parquet", parquet_bytes(new), ".parquet")
     got = {(c.code, c.old_column or c.column) for c in result.changes if c.code in ("C210", "C221", "C222", "C223")}
     assert got == {("C222", "Pz"), ("C222", "HM"), ("C221", "task_version"), ("C221", "TASK FILES")}
+
+
+def test_35_lerobot_rows_that_move_to_the_next_file_are_one_dataset(tmp_path):
+    """Carlos, P20 (armnetbench, LeRobot): s'afegeixen episodis i, a partir d'un fitxer, les files passen al
+    següent. Fitxer a fitxer sortien C410, C422 i C520 falsos; com un sol dataset (T-37), només hi ha files noves."""
+    from diffengine.datafiles import dataset_files
+    from diffengine.engine import diff_tables
+    from diffengine.load import load_files
+
+    rng = np.random.default_rng(0)
+
+    def episode(e, n=40):
+        last = np.arange(n) == n - 1
+        return pd.DataFrame({"action": np.round(rng.normal(size=n), 4),
+                             "observation.state": np.round(rng.normal(size=n), 4), "timestamp": np.arange(n) / 30,
+                             "frame_index": np.arange(n), "episode_index": e, "next.reward": last.astype(float),
+                             "next.done": last, "task_index": 0})
+
+    def version(name, episodes):
+        df = pd.concat(episodes, ignore_index=True)
+        df.insert(0, "index", np.arange(len(df)))
+        paths = ["meta/tasks.parquet"]
+        for i, start in enumerate(range(0, len(df), 100)):  # fitxers de 100 files
+            paths.append(f"data/chunk-000/file-{i:03d}.parquet")
+            (tmp_path / name / "data" / "chunk-000").mkdir(parents=True, exist_ok=True)
+            df.iloc[start:start + 100].to_parquet(tmp_path / name / paths[-1], index=False)
+        (tmp_path / name / "meta").mkdir()
+        pd.DataFrame({"task_index": [0], "task": ["pick"]}).to_parquet(tmp_path / name / paths[0], index=False)
+        files = dataset_files(paths).files
+        assert not any(f.startswith("meta/") for f in files)
+        return load_files([str(tmp_path / name / f) for f in files])
+
+    old_episodes = [episode(e) for e in range(10)]
+    new_episodes = old_episodes[:3] + [episode(e) for e in range(10, 14)] + old_episodes[3:]
+    result = diff_tables(version("a", old_episodes), version("b", new_episodes))
+    got = {c.code for c in result.changes}
+    assert "C421" in got and not {"C410", "C422", "C520"} & got
