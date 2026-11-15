@@ -144,6 +144,7 @@ Cada tipus té un codi:
 | C312 | Valors d'una columna categòrica | Característiques d'una columna |
 | C321 | Tipus d'una columna numèrica | Característiques d'una columna |
 | C322 | Valors d'una columna numèrica | Característiques d'una columna |
+| C323 | Format d'una columna numèrica (coma decimal, notació científica) | Característiques d'una columna |
 | C410 | Ordre de files | Conjunt de files |
 | C421 | Afegir fila | Conjunt de files |
 | C422 | Eliminar fila | Conjunt de files |
@@ -152,7 +153,7 @@ Cada tipus té un codi:
 | C530 | Distribució de les dades | Característiques estadístiques |
 
 Decisions d'abast: **C100 no es classifica** (el director va indicar que
-no interessa), així que el projecte treballa amb els altres 14 codis. I
+no interessa), així que el projecte treballa amb els altres 15 codis. I
 la taxonomia només té sentit sobre **fitxers tabulars** (files i
 columnes): àudio, vídeo, imatges o tensors queden fora de la
 classificació. La taxonomia classifica el *dataset*, no l'ús que se'n
@@ -651,7 +652,11 @@ descàrregues es fan.
   un paràmetre de l'execució: `--max-dataset-mb`, 500 MB per defecte) i
   el filtre d'elegibles.
 - Comparar un dataset de `r` files i `c` columnes: majoritàriament O(r·c)
-  per passada, vectoritzat. La memòria és el límit pràctic: un dataset de
+  per passada, vectoritzat. Aparellar files sense identificador no és
+  quadràtic: cada fila es resumeix en un hash i les dues versions s'uneixen
+  per aquest hash. Buscar si una fila afegida o eliminada és còpia d'una
+  altra també fa servir un hash (T-39): sense identificador, 1.000.000 de
+  files es comparen en uns 70 s amb 1,9 GB. La memòria és el límit pràctic: un dataset de
   2,5 M de files (run_9, `qld-unclaimed-money`) en fa servir uns 4 GB i
   triga 2 minuts. Per això la regla de les files eliminades (C422
   `predicate`) s'entrena amb una mostra de 100.000 files conservades
@@ -660,7 +665,8 @@ descàrregues es fan.
 Límits fixos: 50 commits per dataset (`MAX_COMMITS` a la Fase 0), 30 s per clonar,
 10 s per `git show`. La mida màxima del dataset és un paràmetre de l'execució
 (`--max-dataset-mb` a `run_pipeline.py` i a `eligibility_scan.py --classify-versions`;
-500 MB per defecte, decisió T-35).
+500 MB per defecte, decisió T-35). El llindar de distribució (C530) també:
+`--min-distribution-distance`, als mateixos dos scripts (0,1 per defecte, decisió T-40).
 
 ---
 

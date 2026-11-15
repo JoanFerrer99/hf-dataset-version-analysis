@@ -1688,6 +1688,113 @@ Estat: Fet (la Fase 2 de run_9 s'ha de tornar a fer)
     versions (run_10): Fases 0 i 1 de run_9, sense tocar, i Fase 2 nova.
 
 
+DECISIÓ T-38: el format d'una columna numèrica és C323
+Data: novembre 2026
+Responsable: Joan
+Estat: Fet
+
+  MOTIU: la taxonomia revisada després del paper afegeix C323 (Numerical
+  column format). Fins ara, una columna numèrica amb els mateixos valors
+  escrits d'una altra manera (coma decimal en lloc de punt, notació
+  científica) sortia com a C322 `representation`.
+
+  DECISIÓ:
+  - C323 quan els valors són els mateixos a totes les files aparellades i
+    només canvia com s'escriuen: el separador decimal, o la notació
+    científica en més de la meitat dels valors. Subtipus `representation`.
+  - Si els valors també canvien, és C322 amb el subtipus de sempre
+    (`factor`, `log`, `perturbation`, `cell_edits`...), sense C323.
+  - C323 no és trencador, com no ho era C322 `representation`.
+  - Espais o majúscules en una categòrica continuen sent C312
+    `representation`.
+  - Els codis tabulars passen de 14 a 15: motor (`output.TABULAR_CODES`),
+    seed `taxonomy.csv` del magatzem i interfície. Les execucions anteriors
+    poden tenir algun C322 que ara seria C323 (la sortida no guarda el
+    subtipus).
+
+
+DECISIÓ T-39: buscar les files copiades en temps lineal
+Data: novembre 2026
+Responsable: Joan
+Estat: Fet
+
+  MOTIU: el director va preguntar si aparellar files sense identificador no
+  és quadràtic. L'aparellament no ho és (un hash per fila i una unió per
+  hash), però mesurant-ho va sortir una part que sí: per saber si una fila
+  afegida o eliminada és còpia d'una altra (C421 `duplicate_of_existing`,
+  C422 `duplicate_removed`), `np.isin` sobre text compara cada fila amb
+  totes. Amb 100.000 files eren 10 dels 14 segons de la comparació, i amb
+  1.000.000 no acabava en 10 minuts.
+
+  DECISIÓ: la cerca es fa amb `isin` de pandas, que fa servir una taula de
+  hash. El resultat és el mateix.
+
+  RESULTAT: taules sense identificador (12 columnes; la versió nova elimina
+  el 5% de les files, n'insereix un 5% de noves i edita una cel·la en un 2%):
+
+    files        aparellar files   comparació sencera   memòria màxima
+    10.000       0,5 s             1,9 s                0,3 GB
+    100.000      2,5 s             7,5 s                0,6 GB
+    1.000.000    24 s              71 s                 1,9 GB
+
+  L'aparellament és exacte en els tres casos: amb 1.000.000 de files, 950.000
+  parelles i 50.000 files sense parella a cada versió.
+
+
+DECISIÓ T-40: el llindar de distribució és un paràmetre de l'execució
+Data: novembre 2026
+Responsable: Joan
+Estat: Fet
+
+  MOTIU: Carlos va provar l'eina amb 20 parelles de versions i, per
+  usabilitat, proposa poder canviar el llindar que decideix si ha canviat la
+  distribució d'una columna sense tocar el codi.
+
+  DECISIÓ:
+  - `--min-distribution-distance` a `run_pipeline.py` i a
+    `eligibility_scan.py --classify-versions`, com `--max-dataset-mb`
+    (T-35). Per defecte, 0,1 (`c530_min_distance` de `DEFAULT_CONFIG`). Ha
+    de ser més gran que 0 i com a molt 1: és una distància de
+    Kolmogorov-Smirnov (numèriques) o de variació total (categòriques).
+  - El mateix llindar decideix si una columna reanomenada sobre una altra
+    mostra de files té la mateixa distribució (C223 `same_distribution`):
+    canviar-lo també canvia aquests renoms.
+  - El valor surt al log de la Fase 2. Des de Python ja es podia canviar
+    amb `dataclasses.replace(DEFAULT_CONFIG, c530_min_distance=...)`.
+
+
+DECISIÓ T-41: dues cel·les buides no fan que dues columnes siguin la mateixa
+Data: novembre 2026
+Responsable: Joan
+Estat: Fet
+
+  MOTIU: Carlos va revisar a mà l'eina (`develop`, commit cb8e4ce) amb 20
+  parelles de versions i va trobar falsos positius en dues:
+  - P09 (`Poindexter-Labs/PDL-Bench`, v1 → v2.0): C223 `Pz` → `TASK FILES`
+    i `HM` → `task_version`, i C210. Les quatre columnes són buides a les
+    33 files comunes, i en aparellar columnes pel contingut buit contra buit
+    comptava com a coincidència (100%, per sobre de
+    `column_match_min_validity`). El C210 sortia d'aquests renoms falsos.
+  - P20 (`armnet/armnetbench_v01_lerobot_so101`, LeRobot): C410, C422 i C520
+    a gairebé tots els fitxers. `meta/tasks.parquet` feia que la partició es
+    comparés fitxer a fitxer, i en afegir episodis les files passen d'un
+    fitxer al següent.
+
+  DECISIÓ:
+  - En aparellar columnes pel contingut (pas 3c), només compten les files
+    aparellades on alguna de les dues cel·les té valor, i n'hi ha d'haver
+    almenys 10. En comparar els valors de les dues columnes senceres, els
+    buits tampoc compten.
+  - P20 ja no passa des de T-37: `meta/` no forma part del dataset i tots
+    els fitxers s'uneixen en una sola taula. Un test en guarda el cas.
+
+  RESULTAT: P09 reproduït amb dades sintètiques. Abans: C223 (2) i C210.
+  Ara: C222 a les 12 columnes eliminades i C221 a les 4 afegides, com diu
+  Carlos. Tests: `test_34` i `test_35` de
+  `tests/test_diffengine_regressions.py`. Falta comprovar-ho amb les dades
+  reals de tots dos datasets (cal descarregar-les del Hub).
+
+
 ================================================================================
 BLOC 4 — DECISIONS D'ABAST
 ================================================================================
