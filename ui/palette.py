@@ -31,10 +31,10 @@ DARK = {
     "ordinal": ["#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95"],
 }
 
-# Ordre fix de les perspectives de la taxonomia (categories del paper) i el seu nom en català.
-PERSPECTIVES = ["Columns Set", "Column Kind", "Rows Set", "Data Characteristics"]
+# Ordre fix de les perspectives de la taxonomia (categories del paper; C5xx, Data Value, T-43) i el seu nom en català.
+PERSPECTIVES = ["Columns Set", "Column Kind", "Rows Set", "Data Value"]
 PERSPECTIVE_LABELS = {"Columns Set": "Conjunt de columnes", "Column Kind": "Característiques d'una columna",
-                      "Rows Set": "Conjunt de files", "Data Characteristics": "Característiques estadístiques"}
+                      "Rows Set": "Conjunt de files", "Data Value": "Valors de les dades"}
 
 
 def current() -> dict:

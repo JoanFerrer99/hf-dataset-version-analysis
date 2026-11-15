@@ -11,6 +11,6 @@ C323,Format d'una columna numèrica,Column Kind,Característiques d'una columna,
 C410,Ordre de files,Rows Set,Conjunt de files,Ordre de files,Ordre de files,true
 C421,Afegir fila,Rows Set,Conjunt de files,Afegir o eliminar files,Afegir fila,false
 C422,Eliminar fila,Rows Set,Conjunt de files,Afegir o eliminar files,Eliminar fila,false
-C510,Valors absents (missings),Data Characteristics,Característiques estadístiques,Valors absents,Valors absents,false
-C520,Correlacions,Data Characteristics,Característiques estadístiques,Correlacions,Correlacions,false
-C530,Distribució de les dades,Data Characteristics,Característiques estadístiques,Distribució,Distribució,false
+C510,Afegir valors absents,Data Value,Valors de les dades,Afegir valors absents,Afegir valors absents,false
+C520,Eliminar valors absents,Data Value,Valors de les dades,Eliminar valors absents,Eliminar valors absents,false
+C530,Actualitzar valors sense absents,Data Value,Valors de les dades,Actualitzar valors,Actualitzar valors sense absents,false
