@@ -45,7 +45,8 @@ class TestNewRunDir:
 
 
 def _patch_base_output_dir(monkeypatch, tmp_path):
-    # Les carpetes run_<id> es creen dins de tmp_path; es restaura la sortida en acabar.
+    # Les carpetes run_<id> es creen dins de tmp_path; es restaura la sortida (i els formats) en acabar.
+    monkeypatch.setattr(es, "TABULAR_FORMATS", None)
     monkeypatch.setattr(es, "DATA_DIR", str(tmp_path))
     monkeypatch.setattr(es, "OUTPUT_DIR", str(tmp_path))
     monkeypatch.setattr(es, "FAILURES_LOG_PATH", str(tmp_path / "failures.csv"))
@@ -282,6 +283,51 @@ class TestRunFullPipeline:
     def test_cli_min_distribution_distance_defaults_to_the_engine_threshold(self, monkeypatch):
         monkeypatch.setattr(sys, "argv", ["run_pipeline.py", "--sample-size", "5"])
         assert rp.parse_args().min_distribution_distance == es.DEFAULT_MIN_DISTRIBUTION_DISTANCE == 0.1
+
+    def test_formats_reach_every_phase_without_reading_the_file(self, monkeypatch, tmp_path):
+        _patch_base_output_dir(monkeypatch, tmp_path)
+        monkeypatch.setattr(es, "load_formats", lambda *a: pytest.fail("amb --formats no es llegeix el fitxer"))
+        calls, seen = [], {}
+        _patch_run_sampling(monkeypatch, calls, str(tmp_path / "run_1" / "eligibility_report.csv"), eligible_total=1)
+        _patch_run_extraction(monkeypatch, calls)
+        _patch_run_classification(monkeypatch, calls)
+        for module, name in ((es, "run_sampling"), (ve, "run_extraction")):  # els formats que veuen les Fases 0 i 1
+            def spy(*args, _phase=getattr(module, name), _name=name, **kwargs):
+                seen[_name] = es.tabular_formats()
+                return _phase(*args, **kwargs)
+            monkeypatch.setattr(module, name, spy)
+
+        rp.run_full_pipeline(
+            sample_size=1, max_scanned=None, num_threads=1, tags_only=False,
+            input_csv=None, skip_version_extraction=False, skip_classification=False, skip_size=False,
+            formats=("json", "csv"),
+        )
+
+        config = next(c[2] for c in calls if c[0] == "run_classification")
+        assert seen == {"run_sampling": ("json", "csv"), "run_extraction": ("json", "csv")}
+        assert config.formats == ("json", "csv")
+
+    def test_a_run_without_formats_uses_the_file(self, monkeypatch, tmp_path):
+        _patch_base_output_dir(monkeypatch, tmp_path)
+        monkeypatch.setattr(es, "TABULAR_FORMATS", ("json",))  # p.e. d'una execució anterior del mateix procés
+        calls = []
+        _patch_run_sampling(monkeypatch, calls, str(tmp_path / "run_1" / "eligibility_report.csv"), eligible_total=1)
+        _patch_run_extraction(monkeypatch, calls)
+        _patch_run_classification(monkeypatch, calls)
+
+        rp.run_full_pipeline(
+            sample_size=1, max_scanned=None, num_threads=1, tags_only=False,
+            input_csv=None, skip_version_extraction=False, skip_classification=False, skip_size=False,
+        )
+
+        config = next(c[2] for c in calls if c[0] == "run_classification")
+        assert config.formats == es.load_formats()
+
+    def test_cli_reads_the_formats(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["run_pipeline.py", "--sample-size", "5", "--formats", "json,csv"])
+        assert rp.parse_args().formats == ("json", "csv")
+        monkeypatch.setattr(sys, "argv", ["run_pipeline.py", "--sample-size", "5"])
+        assert rp.parse_args().formats is None
 
 
 # ---------------------------------------------------------------------------

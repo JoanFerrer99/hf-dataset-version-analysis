@@ -388,6 +388,8 @@ def parse_args() -> argparse.Namespace:
         "--skip-size", action="store_true",
         help="No calcular approx_size_bytes (estalvia una crida list_repo_tree per versió).",
     )
+    parser.add_argument("--formats", type=es.format_list, default=None, metavar="F1,F2,...",
+                        help="Per als commits tabulars, que es tornen a buscar. " + es.FORMATS_HELP)
     parser.add_argument(
         "--retry-max-attempts", type=int, default=errors.DEFAULT_MAX_RETRIES,
         help="Nombre màxim de reintents davant rate limiting (429) o errors transitoris.",
@@ -423,6 +425,7 @@ if __name__ == "__main__":
         "max_wait_s": args.retry_max_wait,
     }
 
+    es.use_formats(args.formats)
     run_dir = es.new_run_dir()
     FAILURES_LOG_PATH = es.FAILURES_LOG_PATH
     output_csv = os.path.join(run_dir, "versions.csv")

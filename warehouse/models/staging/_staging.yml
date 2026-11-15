@@ -124,7 +124,7 @@ models:
         data_tests:
           - not_null
       - name: format_from
-        description: El format comparat a la versió antiga (`config/formats.toml`); buit si no té fitxers de dades.
+        description: El format comparat a la versió antiga (el primer de `config/formats.toml` o de `--formats` que hi surt); buit si no té fitxers de dades.
       - name: n_files_from
         description: Fitxers del dataset a la versió antiga (`format_to` i `n_files_to`, a la nova).
         data_tests:

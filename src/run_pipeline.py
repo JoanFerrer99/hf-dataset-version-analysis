@@ -16,6 +16,7 @@ carpeta, no hi ha Fase 3.
   python run_pipeline.py --sample-size 2000 --skip-warehouse                         # sense Fase 3
   python run_pipeline.py --sample-size 2000 --max-dataset-mb 1000                    # datasets de fins a 1 GB
   python run_pipeline.py --sample-size 2000 --min-distribution-distance 0.2          # C530 amb canvis més grans
+  python run_pipeline.py --sample-size 2000 --formats json,csv                       # només JSON i CSV, primer JSON
   python eligibility_scan.py --classify-versions ../data/run_8/versions.csv          # només Fase 2
 
 Output: tot dins d'una carpeta nova, `data/run_<id>/` (mai sobreescriu):
@@ -56,6 +57,7 @@ def run_full_pipeline(
     skip_warehouse: bool = False,
     max_dataset_mb: float = es.DEFAULT_MAX_DATASET_MB,
     min_distribution_distance: float = es.DEFAULT_MIN_DISTRIBUTION_DISTANCE,
+    formats: tuple[str, ...] | None = None,
 ) -> dict:
     """
     Executa Fase 0 -> 1 -> 2 -> 3 dins d'una carpeta `run_<id>` nova
@@ -71,10 +73,14 @@ def run_full_pipeline(
         (`es.engine_config`).
     :param min_distribution_distance: per a la Fase 2: distància mínima entre
         distribucions per reportar C530 (`es.engine_config`).
+    :param formats: per a les Fases 0, 1 i 2: els formats tabulars, en ordre
+        de preferència, en lloc dels de `config/formats.toml`
+        (`es.use_formats`). `None` per fer servir els del fitxer.
     :return: `run_dir`, `eligibility_csv`, `eligible`, `versions_csv`,
         `change_classification_csv`, `warehouse_path` (`None` si la fase no
         s'ha executat) i `generated_files` (rutes agrupades per fase).
     """
+    es.use_formats(formats)
     run_dir = es.new_run_dir()
     ve.FAILURES_LOG_PATH = es.FAILURES_LOG_PATH
     log.info(f"Carpeta d'aquesta execució: {run_dir}")
@@ -194,6 +200,8 @@ def parse_args() -> argparse.Namespace:
             "(C530): Kolmogorov-Smirnov per a numèriques, variació total per a categòriques. Entre 0 i 1."
         ),
     )
+    parser.add_argument("--formats", type=es.format_list, default=None, metavar="F1,F2,...",
+                        help="Es passa a les Fases 0, 1 i 2. " + es.FORMATS_HELP)
     parser.add_argument(
         "--tags-only", action="store_true",
         help="Es passa a la Fase 0-1 (vegeu eligibility_scan.py --tags-only).",
@@ -260,6 +268,7 @@ if __name__ == "__main__":
         skip_warehouse=args.skip_warehouse,
         max_dataset_mb=args.max_dataset_mb,
         min_distribution_distance=args.min_distribution_distance,
+        formats=args.formats,
     )
 
     print(f"\n{'=' * 65}")

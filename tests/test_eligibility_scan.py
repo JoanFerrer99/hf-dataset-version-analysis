@@ -8,6 +8,7 @@ Cobreixen:
      d'elegibilitat (separant accés restringit i errors dels no elegibles).
 """
 
+import argparse
 import os
 import random
 import sys
@@ -388,10 +389,11 @@ class TestFormatsFile:
         path.write_text(text + "\n", encoding="utf-8")
         return str(path)
 
-    def test_the_file_of_the_repository_is_valid(self):
+    def test_the_file_of_the_repository_is_valid(self, monkeypatch):
+        monkeypatch.setattr(es, "TABULAR_FORMATS", None)
         formats = es.load_formats()
         assert set(formats) <= set(es.datafiles.READABLE_FORMATS)
-        assert es.TABULAR_FORMATS == formats
+        assert es.tabular_formats() == formats
 
     def test_reads_the_order(self, tmp_path):
         assert es.load_formats(self._write(tmp_path, 'order = ["Parquet", ".csv"]')) == ("parquet", "csv")
@@ -411,6 +413,55 @@ class TestFormatsFile:
     def test_phase_2_gets_the_formats(self, monkeypatch):
         monkeypatch.setattr(es, "TABULAR_FORMATS", ("parquet", "csv"))
         assert es.engine_config().formats == ("parquet", "csv")
+
+
+class TestFormatsOption:
+    """`--formats`: els formats d'una execució, en lloc dels de `config/formats.toml` (decisió T-42)."""
+
+    @staticmethod
+    def _without_file(monkeypatch):
+        monkeypatch.setattr(es, "TABULAR_FORMATS", None)
+        monkeypatch.setattr(es, "load_formats", lambda *a: pytest.fail("amb --formats no es llegeix el fitxer"))
+
+    def test_reads_the_list(self):
+        assert es.format_list("Parquet, .csv") == ("parquet", "csv")
+
+    @pytest.mark.parametrize("text", ["", "csv,,json", "csv,xlsx", "csv,CSV"])
+    def test_rejects_a_wrong_list(self, text):
+        with pytest.raises(argparse.ArgumentTypeError):
+            es.format_list(text)
+
+    def test_replaces_the_file_in_every_phase_without_reading_it(self, monkeypatch):
+        self._without_file(monkeypatch)
+
+        assert es.use_formats(("json", "csv")) == ("json", "csv")
+
+        assert es.is_tabular_data_path("data/train.json")
+        assert not es.is_tabular_data_path("data/train.parquet")
+        assert es.tabular_file_share(["data/a.json", "data/b.parquet"]) == (2, 0.5)
+        assert es.engine_config().formats == ("json", "csv")
+
+    def test_without_the_option_the_formats_are_those_of_the_file(self, monkeypatch):
+        monkeypatch.setattr(es, "TABULAR_FORMATS", ("json",))  # p.e. d'una execució anterior del mateix procés
+        assert es.use_formats(None) == es.load_formats()
+        assert es.engine_config().formats == es.load_formats()
+
+    def test_until_they_are_fixed_the_formats_are_those_of_the_file(self, monkeypatch):
+        monkeypatch.setattr(es, "TABULAR_FORMATS", None)
+        assert es.tabular_formats() == es.load_formats()
+
+    def test_cli_reads_the_formats(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["eligibility_scan.py", "--classify-versions", "v.csv", "--formats", "json,csv"])
+        assert es.parse_args().formats == ("json", "csv")
+
+    def test_cli_without_the_option_uses_the_file(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["eligibility_scan.py", "--sample-size", "5"])
+        assert es.parse_args().formats is None
+
+    def test_cli_rejects_an_unknown_format(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["eligibility_scan.py", "--sample-size", "5", "--formats", "csv,xlsx"])
+        with pytest.raises(SystemExit):
+            es.parse_args()
 
 
 class TestTabularFileShare:

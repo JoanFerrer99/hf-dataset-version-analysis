@@ -144,29 +144,70 @@ FAILURES_LOG_PATH = os.path.join(OUTPUT_DIR, "failures.csv")
 RETRY_CONFIG: dict = dict(errors.DEFAULT_RETRY_CONFIG)
 
 
-def load_formats(path: str = FORMATS_FILE) -> tuple[str, ...]:
+def check_formats(order, source: str = "") -> tuple[str, ...]:
     """
-    Els formats tabulars de l'execució, en ordre de preferència (decisió T-36).
+    Comprova una llista de formats tabulars i la normalitza: en minúscules i
+    sense el punt (`.CSV` és `csv`).
 
-    :param path: el fitxer de configuració (`config/formats.toml`).
+    :param order: els formats, en ordre de preferència.
+    :param source: d'on surten (p.e. el fitxer), per al missatge d'error.
     :return: els formats, p.e. `("csv", "tsv", "parquet", "jsonl", "json")`.
     :raises ValueError: si la llista és buida, té formats repetits o algun que el motor no sap llegir.
     """
-    with open(path, "rb") as f:
-        order = tomllib.load(f).get("order")
+    where = f"{source}: " if source else ""
     if not isinstance(order, list) or not order or not all(isinstance(x, str) for x in order):
-        raise ValueError(f"{path}: `order` ha de ser una llista de formats, no buida")
+        raise ValueError(f"{where}ha de ser una llista de formats, no buida")
     formats = tuple(x.strip().lower().lstrip(".") for x in order)
-    unknown = [x for x in formats if x not in datafiles.READABLE_FORMATS]
+    unknown = [x or "(buit)" for x in formats if x not in datafiles.READABLE_FORMATS]
     if unknown:
-        raise ValueError(f"{path}: el motor no sap llegir {', '.join(unknown)} "
+        raise ValueError(f"{where}el motor no sap llegir {', '.join(unknown)} "
                          f"(sap llegir {', '.join(datafiles.READABLE_FORMATS)})")
     if len(set(formats)) < len(formats):
-        raise ValueError(f"{path}: hi ha formats repetits")
+        raise ValueError(f"{where}hi ha formats repetits")
     return formats
 
 
-TABULAR_FORMATS = load_formats()
+def load_formats(path: str = FORMATS_FILE) -> tuple[str, ...]:
+    """
+    Els formats tabulars de `config/formats.toml`, en ordre de preferència (decisió T-36).
+
+    :param path: el fitxer de configuració.
+    :return: els formats (`check_formats`).
+    :raises ValueError: si la llista `order` és buida, té formats repetits o algun que el motor no sap llegir.
+    """
+    with open(path, "rb") as f:
+        order = tomllib.load(f).get("order")
+    return check_formats(order, f"{path}, `order`")
+
+
+# Formats tabulars de l'execució, en ordre de preferència: els de `--formats` o, si no se'n donen, els de
+# `config/formats.toml` (decisions T-36 i T-42). Es fixen en començar (`use_formats`); fins llavors, `None`.
+TABULAR_FORMATS: tuple[str, ...] | None = None
+
+
+def use_formats(formats: tuple[str, ...] | None = None) -> tuple[str, ...]:
+    """
+    Fixa els formats tabulars de l'execució, els mateixos per a totes les
+    fases (decisió T-42). Les CLI la criden abans de començar.
+
+    :param formats: els de `--formats` (`format_list`): substitueixen la
+        llista de `config/formats.toml`, que llavors no es llegeix. `None`
+        per fer servir els del fitxer.
+    :return: els formats de l'execució.
+    """
+    global TABULAR_FORMATS
+    TABULAR_FORMATS = formats if formats is not None else load_formats()
+    log.info(f"Formats tabulars, per ordre de preferència: {', '.join(TABULAR_FORMATS)} "
+             f"({'--formats' if formats is not None else 'config/formats.toml'})")
+    return TABULAR_FORMATS
+
+
+def tabular_formats() -> tuple[str, ...]:
+    """
+    :return: els formats tabulars de l'execució (`use_formats`); si encara no
+        s'han fixat, els de `config/formats.toml`.
+    """
+    return TABULAR_FORMATS if TABULAR_FORMATS is not None else use_formats()
 
 load_dotenv()
 HF_TOKEN = os.getenv("HF_TOKEN")
@@ -377,11 +418,11 @@ def is_tabular_data_path(path: str) -> bool:
     """
     Fitxer de dades tabular: el que fa elegible un dataset i el que compara el
     motor. Ha de ser dades (`is_substantive_path`, que exclou p.e. `meta/`) i
-    d'un dels formats de `config/formats.toml` (`TABULAR_FORMATS`), sense els
+    d'un dels formats de l'execució (`tabular_formats`), sense els
     JSON de metadades (`diffengine.datafiles.is_tabular_path`, la regla amb què
     el motor tria els fitxers del dataset).
     """
-    return is_substantive_path(path) and datafiles.is_tabular_path(path, TABULAR_FORMATS)
+    return is_substantive_path(path) and datafiles.is_tabular_path(path, tabular_formats())
 
 
 def read_current_version(dataset_id: str) -> tuple[list[str], dict]:
@@ -429,7 +470,7 @@ def tabular_file_share(paths: list[str]) -> tuple[int, float | None]:
     data = [p for p in paths if is_substantive_path(p)]
     if not data:
         return 0, None
-    return len(data), round(sum(datafiles.is_tabular_path(p, TABULAR_FORMATS) for p in data) / len(data), 4)
+    return len(data), round(sum(datafiles.is_tabular_path(p, tabular_formats()) for p in data) / len(data), 4)
 
 
 @contextmanager
@@ -855,7 +896,7 @@ def engine_config(max_dataset_mb: float = DEFAULT_MAX_DATASET_MB,
     """
     Els llindars del motor per a una execució: els de `DEFAULT_CONFIG`, amb la
     mida màxima del dataset i el llindar de distribució que es donen, i els
-    formats de `config/formats.toml`.
+    formats de l'execució (`tabular_formats`).
 
     :param max_dataset_mb: mida màxima del dataset, en MB (1 MB = 1024² bytes),
         sumant els fitxers de la versió antiga i de la nova. Per sobre, no es compara (`too_large`).
@@ -863,7 +904,7 @@ def engine_config(max_dataset_mb: float = DEFAULT_MAX_DATASET_MB,
         d'una columna per reportar-ne el canvi (C530, `c530_min_distance`).
     :return: la configuració del motor.
     """
-    return replace(DEFAULT_CONFIG, max_dataset_bytes=int(max_dataset_mb * MB), formats=TABULAR_FORMATS,
+    return replace(DEFAULT_CONFIG, max_dataset_bytes=int(max_dataset_mb * MB), formats=tabular_formats(),
                    c530_min_distance=min_distribution_distance)
 
 
@@ -953,6 +994,26 @@ def fraction(text: str) -> float:
     return value
 
 
+def format_list(text: str) -> tuple[str, ...]:
+    """
+    Tipus d'argument de la CLI: formats tabulars separats per comes, en ordre
+    de preferència (p.e. `json,csv`).
+
+    :raises argparse.ArgumentTypeError: si la llista és buida, té formats repetits o algun que el motor no sap llegir.
+    """
+    try:
+        return check_formats(text.split(","))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from None
+
+
+FORMATS_HELP = (
+    "Formats tabulars de l'execució, separats per comes i en ordre de preferència (p.e. json,csv). Substitueixen "
+    "la llista de config/formats.toml, que llavors no es llegeix: només compten com a tabulars els formats que s'hi "
+    "donen, a totes les fases. Sense l'opció, els del fitxer."
+)
+
+
 def parse_args() -> argparse.Namespace:
     """
     Arguments de la CLI. Sense cap argument mostra l'ajuda i surt, perquè
@@ -988,6 +1049,7 @@ def parse_args() -> argparse.Namespace:
             "canvi (C530): Kolmogorov-Smirnov per a numèriques, variació total per a categòriques. Entre 0 i 1."
         ),
     )
+    parser.add_argument("--formats", type=format_list, default=None, metavar="F1,F2,...", help=FORMATS_HELP)
     parser.add_argument(
         "--tags-only", action="store_true",
         help=(
@@ -1066,6 +1128,7 @@ if __name__ == "__main__":
         max_wait_s=args.retry_max_wait,
     )
 
+    use_formats(args.formats)
     new_run_dir()
     if args.classify_versions:
         run_classification(args.classify_versions, engine_config(args.max_dataset_mb, args.min_distribution_distance))

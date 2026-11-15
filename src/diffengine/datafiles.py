@@ -13,8 +13,9 @@ reparteixen en més o menys fitxers, no surt cap canvi.
 Els fitxers del dataset (`dataset_files`) són els fitxers de dades tabulars de
 la revisió, amb la mateixa regla que l'elegibilitat de la Fase 0:
 
-- d'un dels formats de `EngineConfig.formats` (`config/formats.toml`); si n'hi
-  ha de més d'un, només els del primer de la llista que hi surt (T-36);
+- d'un dels formats de `EngineConfig.formats` (`config/formats.toml` o
+  `--formats`); si n'hi ha de més d'un, només els del primer de la llista que
+  hi surt (T-36, T-42);
 - que no siguin metadades: res de dins de `meta/`, `meta_data/` o `.github/`
   (p.e. els índexs d'episodis de LeRobot), ni els JSON de metadades del Hub.
 """

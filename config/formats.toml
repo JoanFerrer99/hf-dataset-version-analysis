@@ -6,6 +6,9 @@
 # - Si una versió d'un dataset té fitxers tabulars de més d'un format, només es
 #   compara el primer de la llista que hi surt: els fitxers dels altres formats
 #   no formen part del dataset.
+# - Per a una sola execució, l'opció `--formats` (p.e. `--formats json,csv`)
+#   substitueix aquesta llista, i llavors aquest fitxer no es llegeix (decisió
+#   T-42).
 #
 # Formats que sap llegir el motor: csv, tsv, parquet, jsonl, json.
 order = ["csv", "tsv", "parquet", "jsonl", "json"]
