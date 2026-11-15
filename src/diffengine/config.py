@@ -66,11 +66,13 @@ class EngineConfig:
     memòria."""
 
     # --- Pas 4: detectar els canvis -----------------------------------------
-    null_transition_is_c510: bool = True
-    """Una cel·la d'una fila aparellada que passa de tenir valor a estar buida,
-    o al revés, es reporta com a canvi de valors absents (C510), no com a canvi
-    de valor (C312/C322). Amb `False`, aquestes cel·les no es busquen: només
-    es mira si canvia la proporció de buits de tota la columna."""
+    missing_by_cell: bool = True
+    """C510/C520 es compten cel·la a cel·la a les files aparellades: una cel·la
+    que passa de tenir valor a estar buida és C510, i una que passa de buida a
+    tenir valor, C520 (en una mateixa columna poden sortir tots dos). No són
+    canvis de valor (C312/C322). Amb `False`, només es mira el percentatge net
+    de buits de la columna a les files aparellades: C510 si puja, C520 si baixa
+    (decisió T-43)."""
     kind_change_by_old_kind: bool = True
     """Quan una columna passa de categòrica a numèrica, o al revés, el codi es
     tria pel tipus que tenia a la versió antiga: C311 si era categòrica, C321
@@ -87,14 +89,16 @@ class EngineConfig:
     estandardització...) o amb soroll afegit, no s'hi afegeix també un canvi de
     distribució (C530)."""
 
-    c510_min_rate_delta: float = 0.01
-    """C510: diferència mínima de proporció de nuls (efecte), a més de la prova estadística."""
-    c520_min_delta: float = 0.1
-    """C520: canvi mínim de correlació (|Δ|)."""
-    c520_max_columns: int = 30
-    """C520: màxim de columnes considerades (parells = n·(n-1)/2)."""
+    missing_min_rate_delta: float = 0.01
+    """C510/C520 sense files aparellades: diferència mínima de proporció de buits
+    de la columna sencera (efecte), a més de la prova estadística."""
+    correlation_min_delta: float = 0.1
+    """C530 `correlation`: canvi mínim de correlació entre dues columnes (|Δ|)."""
+    correlation_max_columns: int = 30
+    """C530 `correlation`: màxim de columnes considerades (parells = n·(n-1)/2)."""
     c530_min_distance: float = 0.1
-    """C530: distància mínima entre distribucions (KS per a numèriques, variació total per a categòriques).
+    """C530 `distribution`: distància mínima entre distribucions (KS per a numèriques, variació total per a
+    categòriques).
     També decideix si una columna reanomenada sobre una altra mostra de files té la mateixa distribució (C223).
     A la Fase 2 és un paràmetre de l'execució (`--min-distribution-distance`; decisió T-40)."""
     alpha: float = 0.01

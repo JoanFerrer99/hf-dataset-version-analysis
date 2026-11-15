@@ -24,7 +24,8 @@ CODE_DESCRIPTIONS = {
     "C312": "Valors d'una columna categòrica", "C321": "Tipus de columna numèrica",
     "C322": "Valors d'una columna numèrica", "C323": "Format d'una columna numèrica",
     "C410": "Ordre de files", "C421": "Afegir fila",
-    "C422": "Eliminar fila", "C510": "Missings", "C520": "Correlacions", "C530": "Distribució de les dades",
+    "C422": "Eliminar fila", "C510": "Afegir valors absents", "C520": "Eliminar valors absents",
+    "C530": "Actualitzar valors sense absents",
 }
 
 # Trenquen l'EXECUCIÓ d'un pipeline que llegeix per nom/posició/tipus/ordre;
@@ -35,7 +36,7 @@ BREAKING_CODES = frozenset({"C210", "C222", "C223", "C311", "C321", "C410"})
 class Change:
     """
     :ivar code: codi de la taxonomia (`C223`, `C421`...).
-    :ivar column: columna afectada (nom nou), o parell `a|b` per a C520.
+    :ivar column: columna afectada (nom nou), o parell `a|b` per a C530 `correlation`.
     :ivar old_column: nom antic si és diferent (renoms).
     :ivar subtype: què explica el canvi (p.e. C422 `had_nulls`, C322 `log`).
     """
