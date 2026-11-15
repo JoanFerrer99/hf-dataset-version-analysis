@@ -343,3 +343,22 @@ def test_33_scientific_notation_is_c323_unless_the_values_change(base):
     assert labels(old, csv_bytes(base, float_format="%.10e")) == {("C323", "representation")}
     got = labels(old, csv_bytes(base.assign(score=base["score"] * 2.5), float_format="%.10e"))
     assert ("C322", "factor") in got and "C323" not in {c for c, _ in got}
+
+
+def test_34_columns_empty_on_every_paired_row_are_not_a_rename():
+    """Carlos, P09 (PDL-Bench): s'eliminen `Pz` i `HM`, s'afegeixen `task_version` i `TASK FILES`, i a les files
+    comunes totes quatre són buides. Buit contra buit no fa que siguin la mateixa columna: ni C223 ni C210."""
+    def version(ids):
+        return pd.DataFrame({"ID": [f"t{i:03d}" for i in ids], "SOURCE": [["web", "book"][i % 2] for i in ids],
+                             "PROMPT": [f"prompt {i}" for i in ids]})
+
+    old = version(range(60))
+    old.insert(1, "Pz", np.where(np.arange(60) >= 40, "Y", None))  # les marques, en files que no continuen
+    old.insert(2, "HM", None)
+    new = version(list(range(33)) + list(range(100, 160)))
+    filled = np.arange(len(new)) >= 40  # només les files noves tenen valor
+    new["task_version"] = np.where(filled, [str(1 + i % 3) for i in range(len(new))], "")
+    new["TASK FILES"] = np.where(filled, [f"tasks/{i}/files" for i in range(len(new))], "")
+    result = diff_bytes(parquet_bytes(old), ".parquet", parquet_bytes(new), ".parquet")
+    got = {(c.code, c.old_column or c.column) for c in result.changes if c.code in ("C210", "C221", "C222", "C223")}
+    assert got == {("C222", "Pz"), ("C222", "HM"), ("C221", "task_version"), ("C221", "TASK FILES")}
