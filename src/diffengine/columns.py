@@ -125,8 +125,6 @@ def _score(old: Table, new: Table, o: str, n: str, rows: RowAlignment, config: E
     found = _score_on_pairs(old, new, o, n, rows, config, ta_all, tb_all)
     if found[0] or not many_values:
         return found
-    # Una altra mostra de files (p.e. Census D3): la majoria de valors distints
-    # nous ja hi eren i la distribució no canvia segons el criteri de C530.
     shared = len(set(ta_vals) & set(tb_vals)) / tb_vals.nunique()
     same_kind = (old.columns[o].kind == NUMERIC) == (new.columns[n].kind == NUMERIC)
     if same_kind and shared >= config.same_column_min_shared_values:
