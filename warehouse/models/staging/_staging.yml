@@ -80,11 +80,11 @@ models:
                 values: ["ok", "ok_no_size", "commit_error", "size_error"]
 
   - name: stg_change_classification
-    description: Fase 2, una fila per taula, parell de versions i codi (change_classification.csv).
+    description: Fase 2, una fila per parell de versions d'un dataset i codi (change_classification.csv).
     data_tests:
       - unique_combination:
           arguments:
-            columns: ["dataset_id", "version_from", "version_to", "table_name", "code"]
+            columns: ["dataset_id", "version_from", "version_to", "code"]
     columns:
       - name: version_from
         description: SHA del commit de la versió antiga.
@@ -94,36 +94,43 @@ models:
         description: SHA del commit de la versió nova.
         data_tests:
           - not_null
-      - name: table_name
-        description: La taula (`subset/split`, o la ruta d'un fitxer sol); la columna `table` del CSV.
-        data_tests:
-          - not_null
       - name: code
         description: Codi de la taxonomia.
         data_tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ["C210", "C221", "C222", "C223", "C311", "C312", "C321", "C322", "C410", "C421", "C422", "C510", "C520", "C530"]
+                values: ["C210", "C221", "C222", "C223", "C311", "C312", "C321", "C322", "C323", "C410", "C421", "C422", "C510", "C520", "C530"]
 
   - name: stg_comparison_status
-    description: Fase 2, l'estat de cada parell de taules i parell de versions (comparison_status.csv).
+    description: Fase 2, l'estat de la comparació de cada parell de versions d'un dataset (comparison_status.csv).
     data_tests:
       - unique_combination:
           arguments:
-            columns: ["dataset_id", "version_from", "version_to", "table_name"]
+            columns: ["dataset_id", "version_from", "version_to"]
     columns:
       - name: status
         description: >
-          `ok`, `identical_content`, `absent_old`, `absent_new`, `download_failed`,
-          `parse_failed`, `too_large` o `excluded`.
+          `ok`, `identical_content`, `absent_old` o `absent_new` (una de les
+          versions no té cap fitxer de dades), `no_data` (cap de les dues),
+          `download_failed`, `parse_failed` o `too_large`.
         data_tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ["ok", "identical_content", "absent_old", "absent_new", "download_failed", "parse_failed", "too_large", "excluded"]
+                values: ["ok", "identical_content", "absent_old", "absent_new", "no_data", "download_failed", "parse_failed", "too_large"]
       - name: n_codes
-        description: Codis diferents de la taula; són les seves files a stg_change_classification.
+        description: Codis diferents; són les files de la comparació a stg_change_classification.
+        data_tests:
+          - not_null
+      - name: format_from
+        description: El format comparat a la versió antiga (el primer de `config/formats.toml` o de `--formats` que hi surt); buit si no té fitxers de dades.
+      - name: n_files_from
+        description: Fitxers del dataset a la versió antiga (`format_to` i `n_files_to`, a la nova).
+        data_tests:
+          - not_null
+      - name: size_bytes
+        description: Mida dels fitxers de les dues versions, sumades; és la que es compara amb `--max-dataset-mb`.
         data_tests:
           - not_null
 
@@ -147,7 +154,7 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ["C210", "C221", "C222", "C223", "C311", "C312", "C321", "C322", "C410", "C421", "C422", "C510", "C520", "C530"]
+                values: ["C210", "C221", "C222", "C223", "C311", "C312", "C321", "C322", "C323", "C410", "C421", "C422", "C510", "C520", "C530"]
       - name: true_positives
         description: Versions on el paper i el motor marquen el codi.
       - name: false_negatives

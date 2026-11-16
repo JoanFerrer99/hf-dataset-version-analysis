@@ -15,7 +15,7 @@ for target in (opened, highlighted):
     if target:
         st.switch_page(shell.page(target)["path"])
 
-with st.expander("Els 14 codis de la taxonomia", icon=":material/menu_book:"):
+with st.expander("Els 15 codis de la taxonomia", icon=":material/menu_book:"):
     st.markdown("C100 (metadades) és fora d'abast. Un canvi **trencador** fa fallar un pipeline que llegeix el "
                 "dataset per nom, posició, tipus o ordre.")
     st.dataframe(

@@ -69,23 +69,6 @@ models:
               arguments:
                 values: ["tag", "commit_session", "commit"]
 
-  - name: dim_table
-    description: Les taules comparades, una per (dataset, taula).
-    data_tests:
-      - unique_combination:
-          arguments:
-            columns: ["dataset_id", "table_path"]
-    columns:
-      - name: table_key
-        description: Clau subrogada (md5 de `dataset_id` i la taula).
-        data_tests:
-          - unique
-          - not_null
-      - name: table_path
-        description: "`subset/split`, o la ruta d'un fitxer sol."
-      - name: format
-        description: Extensió del fitxer (de la taula, o del seu primer fitxer).
-
   - name: dim_date
     description: Els dies en què hi ha alguna versió.
     columns:
@@ -99,11 +82,12 @@ models:
 
   - name: fact_change
     description: >
-      Gra: un codi de la taxonomia detectat en una taula, entre dues versions
-      consecutives d'un dataset (una fila de change_classification.csv).
+      Gra: un codi de la taxonomia detectat entre dues versions consecutives
+      d'un dataset (una fila de change_classification.csv). Un repositori és un
+      dataset, encara que les dades siguin en diversos fitxers (T-37).
     columns:
       - name: change_key
-        description: Clau subrogada de la fila (md5 de dataset, versions, taula i codi).
+        description: Clau subrogada de la fila (md5 de dataset, versions i codi).
         data_tests:
           - unique
           - not_null
@@ -121,13 +105,6 @@ models:
               arguments:
                 to: ref('dim_kind_of_change')
                 field: kind_key
-      - name: table_key
-        data_tests:
-          - not_null
-          - relationships:
-              arguments:
-                to: ref('dim_table')
-                field: table_key
       - name: version_from_key
         description: La versió antiga (rol *from* de dim_version).
         data_tests:

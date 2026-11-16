@@ -1,7 +1,16 @@
 """
-C5xx: característiques de les dades. C510 valors absents, C520 correlacions,
-C530 distribució. Segons el paper (§4), es reporten encara que siguin
-conseqüència d'afegir o eliminar files.
+C5xx: valors de les dades (Data Value, la taxonomia posterior al paper).
+
+- C510 (Add missing): cel·les que passen de tenir valor a estar buides.
+- C520 (Remove missing): cel·les que passen de buides a tenir valor.
+- C530 (Update value not involving missing): canvia la distribució d'una
+  columna (`distribution`) o la correlació entre dues (`correlation`), mirant
+  només les cel·les que tenen valor a totes dues versions.
+
+Es fan servir només les files aparellades: les afegides i les eliminades ja
+són C421/C422, i així els C5xx en són disjunts. Si no hi ha cap fila
+aparellada, es mira la taula sencera: C510 o C520 segons si la proporció de
+buits puja o baixa, i C530 només on no canvia (decisió T-43).
 """
 
 import numpy as np
@@ -16,32 +25,32 @@ from diffengine.transforms import distribution_distance, normalize_value
 
 def detect_missing(ctx: Context) -> list[Change]:
     """
-    Canvis en els valors absents (C510), per columna:
-    1. cel·les de files aparellades que passen de buides a tenir valor
-       (`imputed...`) o al revés (`masking`);
-    2. si no hi ha cap cas 1, canvi de la proporció de buits de la columna: `rate`.
+    Canvis en els valors absents, per columna: C510 si se n'afegeixen, C520 si
+    se n'eliminen. Amb files aparellades, es miren les seves cel·les; si no
+    n'hi ha cap, la proporció de buits de tota la columna (subtipus `rate`).
 
     :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
     :return: els canvis trobats.
     """
     out = []
-    cfg = ctx.config
+    paired = len(ctx.rows.pairs) > 0
     for m in ctx.cols.matches:
-        # Cel·les de files aparellades que passen de buides a tenir valor, o al revés.
-        if cfg.null_transition_is_c510 and len(ctx.rows.pairs) and ctx.comparable(m):
-            out += _null_transitions(ctx, m)
-        o_null, n_null = ctx.old.values[m.old].isna(), ctx.new.values[m.new].isna()
-        # Si el pas anterior no ha trobat res, canvia la proporció de buits de tota la columna?
-        if m.old in ctx.c510_columns:
+        if paired:
+            if ctx.comparable(m):
+                out += _null_transitions(ctx, m)
             continue
-        if _rate_changed(o_null, n_null, cfg):
-            out.append(change("C510", m, subtype="rate"))
+        direction = _rate_direction(ctx.old.values[m.old].isna(), ctx.new.values[m.new].isna(), ctx.config)
+        if direction:
+            ctx.missing_changed.add(m.old)
+            out.append(change("C510" if direction > 0 else "C520", m, subtype="rate"))
     return out
 
 
 def _null_transitions(ctx: Context, m) -> list[Change]:
     """
-    Cel·les de files aparellades que passen de buides a tenir valor, o al revés.
+    Cel·les de files aparellades que passen de tenir valor a estar buides
+    (C510 `masking`) o al revés (C520, amb el subtipus de com s'han omplert).
+    Amb `missing_by_cell = False`, només compta el percentatge net de buits.
 
     :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
     :param m: parella de columnes.
@@ -49,14 +58,18 @@ def _null_transitions(ctx: Context, m) -> list[Change]:
     """
     a, b = ctx.paired(m)
     na, nb = a.isna().to_numpy(), b.isna().to_numpy()
-    imputed, masked = na & ~nb, ~na & nb
-    out = []
-    if imputed.any():
-        out.append(change("C510", m, subtype=_imputed_label(b[imputed].to_numpy(), ctx.old.values[m.old])))
-    if masked.any():
-        out.append(change("C510", m, subtype="masking"))
+    if not ctx.config.missing_by_cell:
+        net = int(nb.sum()) - int(na.sum())
+        out = [change("C510" if net > 0 else "C520", m, subtype="rate")] if net else []
+    else:
+        emptied, filled = ~na & nb, na & ~nb
+        out = []
+        if emptied.any():
+            out.append(change("C510", m, subtype="masking"))
+        if filled.any():
+            out.append(change("C520", m, subtype=_imputed_label(b[filled].to_numpy(), ctx.old.values[m.old])))
     if out:
-        ctx.c510_columns.add(m.old)
+        ctx.missing_changed.add(m.old)
     return out
 
 
@@ -83,54 +96,66 @@ def _imputed_label(values: np.ndarray, reference: pd.Series) -> str:
     return "imputed_constant:value"
 
 
-def _rate_changed(o_null: pd.Series, n_null: pd.Series, cfg) -> bool:
+def _rate_direction(o_null: pd.Series, n_null: pd.Series, cfg) -> int:
     """
-    Prova si la proporció de buits d'una columna ha canviat prou: cal una
-    diferència mínima i que la prova de dues proporcions ho confirmi.
+    Sense files aparellades: prova si la proporció de buits d'una columna ha
+    canviat prou. Cal una diferència mínima i que la prova de dues proporcions
+    ho confirmi.
 
     :param o_null: per a cada fila antiga, si és buida.
     :param n_null: per a cada fila nova, si és buida.
     :param cfg: llindars del motor.
-    :return: `True` si la proporció ha canviat.
+    :return: 1 si puja, -1 si baixa, 0 si no canvia prou.
     """
     p1, p2, n1, n2 = o_null.mean(), n_null.mean(), len(o_null), len(n_null)
-    if not n1 or not n2 or abs(p1 - p2) < cfg.c510_min_rate_delta:
-        return False
+    if not n1 or not n2 or abs(p1 - p2) < cfg.missing_min_rate_delta:
+        return 0
     p = (o_null.sum() + n_null.sum()) / (n1 + n2)
     se = np.sqrt(p * (1 - p) * (1 / n1 + 1 / n2))
     pval = float(2 * stats.norm.sf(abs(p1 - p2) / se)) if se > 0 else 0.0
-    return pval < cfg.alpha
+    return (1 if p2 > p1 else -1) if pval < cfg.alpha else 0
 
 
 def detect_correlation(ctx: Context) -> list[Change]:
     """
-    Canvis de correlació entre parelles de columnes (C520). La mesura depèn dels
-    tipus: Spearman per a dues numèriques, V de Cramér per a dues categòriques,
-    i la raó de correlació per a una de cada. Cal una diferència mínima i que una
-    prova estadística la confirmi.
+    Canvis de correlació entre parelles de columnes (C530 `correlation`). La
+    mesura depèn dels tipus: Spearman per a dues numèriques, V de Cramér per a
+    dues categòriques, i la raó de correlació per a una de cada. Amb files
+    aparellades, es mesura a les mateixes files a totes dues versions, només
+    on les dues columnes tenen valor. Cal una diferència mínima i que una prova
+    estadística la confirmi.
 
     :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
     :return: un canvi per cada parella de columnes amb correlació diferent.
     """
     cfg = ctx.config
-    cols = [m for m in ctx.cols.matches if _is_variable(ctx, m)][: cfg.c520_max_columns]
+    cols = [m for m in ctx.cols.matches if _is_variable(ctx, m)][: cfg.correlation_max_columns]
+    paired = len(ctx.rows.pairs) > 0
+    if paired:
+        values = {m.old: ctx.paired(m) for m in cols}
+    else:
+        values = {m.old: (ctx.old.values[m.old], ctx.new.values[m.new]) for m in cols}
+        cols = [m for m in cols if m.old not in ctx.missing_changed]
     out = []
     for i in range(len(cols)):
         for j in range(i + 1, len(cols)):
             a, b = cols[i], cols[j]
+            (xa, xb), (ya, yb) = values[a.old], values[b.old]
+            if paired:
+                keep = (xa.notna() & xb.notna() & ya.notna() & yb.notna()).to_numpy()
+                xa, xb, ya, yb = xa[keep], xb[keep], ya[keep], yb[keep]
             ka, kb = ctx.old.columns[a.old].kind, ctx.old.columns[b.old].kind
-            r_old = _association(ctx.old.values[a.old], ctx.old.values[b.old], ka, kb)
-            r_new = _association(ctx.new.values[a.new], ctx.new.values[b.new], ka, kb)
-            if r_old is None or r_new is None or abs(r_new - r_old) < cfg.c520_min_delta:
+            r_old, r_new = _association(xa, ya, ka, kb), _association(xb, yb, ka, kb)
+            if r_old is None or r_new is None or abs(r_new - r_old) < cfg.correlation_min_delta:
                 continue
-            n1, n2 = ctx.old.n_rows, ctx.new.n_rows
+            n1, n2 = len(xa), len(xb)
             if min(n1, n2) <= 3:
                 continue
             z = np.arctanh(np.clip(r_old, -0.9999, 0.9999)) - np.arctanh(np.clip(r_new, -0.9999, 0.9999))
             pval = float(2 * stats.norm.sf(abs(z) / np.sqrt(1 / (n1 - 3) + 1 / (n2 - 3))))
             if pval >= cfg.alpha:
                 continue
-            out.append(change("C520", column=f"{a.new}|{b.new}"))
+            out.append(change("C530", column=f"{a.new}|{b.new}", subtype="correlation"))
     return out
 
 
@@ -218,14 +243,18 @@ def _group_rare(s: pd.Series, min_count: int = 5) -> pd.Series:
 
 def detect_distribution(ctx: Context) -> list[Change]:
     """
-    Canvis de distribució d'una columna (C530): prova de Kolmogorov-Smirnov per a
-    numèriques, variació total per a categòriques. No es miren els
-    identificadors, el text lliure ni les columnes que ja explica una fórmula.
+    Canvis de distribució d'una columna (C530 `distribution`): prova de
+    Kolmogorov-Smirnov per a numèriques, variació total per a categòriques.
+    Amb files aparellades, es comparen els seus valors antics i nous, només a
+    les cel·les que tenen valor a totes dues versions; sense, tota la columna,
+    si no ha canviat la proporció de buits. No es miren els identificadors, el
+    text lliure ni les columnes que ja explica una fórmula.
 
     :param ctx: context de la comparació: les dues taules, els aparellaments i els llindars.
     :return: els canvis trobats.
     """
     cfg = ctx.config
+    paired = len(ctx.rows.pairs) > 0
     out = []
     for m in ctx.cols.matches:
         ko, kn = ctx.old.columns[m.old], ctx.new.columns[m.new]
@@ -236,7 +265,14 @@ def detect_distribution(ctx: Context) -> list[Change]:
         # de distribució n'és la conseqüència: no s'hi afegeix C530.
         if cfg.transformation_suppresses_c530 and m.old in ctx.explained:
             continue
-        a, b = ctx.old.values[m.old].dropna(), ctx.new.values[m.new].dropna()
+        if paired:
+            a, b = ctx.paired(m)
+            both = (a.notna() & b.notna()).to_numpy()
+            a, b = a[both], b[both]
+        elif m.old in ctx.missing_changed:
+            continue
+        else:
+            a, b = ctx.old.values[m.old].dropna(), ctx.new.values[m.new].dropna()
         if len(a) < 20 or len(b) < 20:
             continue
         if ko.kind != NUMERIC:
@@ -247,5 +283,5 @@ def detect_distribution(ctx: Context) -> list[Change]:
                 a, b = a.map(normalize_value), b.map(normalize_value)
         distance, pval, _ = distribution_distance(a, b, ko.kind == NUMERIC)
         if distance >= cfg.c530_min_distance and pval < cfg.alpha:
-            out.append(change("C530", m))
+            out.append(change("C530", m, subtype="distribution"))
     return out

@@ -1,8 +1,8 @@
 """
 L'índex del motor: com es comparen dues versions d'un dataset, en 5 passos.
 
-    Pas 1. Trobar les taules que es comparen     units.py, pairs.py
-    Pas 2. Llegir cada taula                     load.py
+    Pas 1. Trobar els fitxers del dataset        datafiles.py, pairs.py
+    Pas 2. Llegir el dataset                     load.py
     Pas 3. Aparellar columnes i files            columns.py, rows.py, transforms.py
              3a. columnes pel nom
              3b. files
@@ -13,7 +13,8 @@ L'índex del motor: com es comparen dues versions d'un dataset, en 5 passos.
 Hi ha dues maneres d'entrar:
 
 - `pairs.compare_revisions` (el fa servir el pipeline): dues revisions d'un
-  repositori. Fa el pas 1 i, per a cada parell de taules, crida `diff_tables`.
+  repositori. Fa el pas 1 i crida `diff_tables` amb el dataset de cada una (un
+  repositori és un dataset, decisió T-37).
 - `diff_bytes`: dos fitxers sols (validació de Census Income, tests). Comença
   al pas 2.
 

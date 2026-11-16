@@ -11,20 +11,20 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class EngineConfig:
-    # --- Pas 1: quines taules es comparen -----------------------------------
-    concat_shards: bool = True
-    """Una taula partida en diversos fitxers (shards del Hub com
-    `train-00000-of-00003.parquet`, o episodis numerats de LeRobot) es llegeix
-    com una sola taula: els fitxers s'uneixen en ordre, només si tots tenen les
-    mateixes columnes. Amb `False`, cada fitxer es compara pel seu compte, i
-    un canvi en com està partida la taula sortiria com a fitxers sencers
-    afegits i eliminats."""
-    max_unit_bytes: int = 500 * 1024**2
-    """Mida màxima d'una taula, sumant la versió antiga i la nova. Per sobre,
-    no es descarrega ni es compara: la parella queda amb l'estat `too_large` i
-    sense cap codi."""
+    # --- Pas 1: quins fitxers formen el dataset ------------------------------
+    formats: tuple[str, ...] = ("csv", "tsv", "parquet", "jsonl", "json")
+    """Formats tabulars, en ordre de preferència. Només els fitxers d'aquests
+    formats són dades. Si una revisió en té de més d'un, només es compara el
+    primer de la llista que hi surt. El pipeline els llegeix de
+    `config/formats.toml` o, per a una execució, de `--formats` (decisions
+    T-36 i T-42)."""
+    max_dataset_bytes: int = 500 * 1024**2
+    """Mida màxima del dataset, sumant tots els seus fitxers de la versió
+    antiga i de la nova. Per sobre, no es descarrega ni es compara: la
+    comparació queda amb l'estat `too_large` i sense cap codi. A la Fase 2 és
+    un paràmetre de l'execució (`--max-dataset-mb`, en MB; decisió T-35)."""
 
-    # --- Pas 2: llegir cada taula -------------------------------------------
+    # --- Pas 2: llegir el dataset ---------------------------------------------
     missing_tokens: tuple[str, ...] = ("", "?", "NA", "N/A", "n/a", "NaN", "nan", "null", "NULL", "None", "none", "-")
     """Valors que es llegeixen com a absents (comparats després de treure espais)."""
     text_min_distinct_share: float = 0.5
@@ -66,19 +66,21 @@ class EngineConfig:
     memòria."""
 
     # --- Pas 4: detectar els canvis -----------------------------------------
-    null_transition_is_c510: bool = True
-    """Una cel·la d'una fila aparellada que passa de tenir valor a estar buida,
-    o al revés, es reporta com a canvi de valors absents (C510), no com a canvi
-    de valor (C312/C322). Amb `False`, aquestes cel·les no es busquen: només
-    es mira si canvia la proporció de buits de tota la columna."""
+    missing_by_cell: bool = True
+    """C510/C520 es compten cel·la a cel·la a les files aparellades: una cel·la
+    que passa de tenir valor a estar buida és C510, i una que passa de buida a
+    tenir valor, C520 (en una mateixa columna poden sortir tots dos). No són
+    canvis de valor (C312/C322). Amb `False`, només es mira el percentatge net
+    de buits de la columna a les files aparellades: C510 si puja, C520 si baixa
+    (decisió T-43)."""
     kind_change_by_old_kind: bool = True
     """Quan una columna passa de categòrica a numèrica, o al revés, el codi es
     tria pel tipus que tenia a la versió antiga: C311 si era categòrica, C321
     si era numèrica. Amb `False`, es triaria pel tipus nou."""
     report_representation: bool = True
     """Els canvis que només afecten com s'escriuen els valors d'una columna
-    numèrica (coma decimal, notació científica) es reporten com a C322
-    `representation`, en lloc d'amagar-los. Els espais o les majúscules en una
+    numèrica (coma decimal, notació científica) es reporten com a C323 (format
+    d'una columna numèrica), en lloc d'amagar-los. Els espais o les majúscules en una
     categòrica (C312 `representation`) es reporten sempre. Canviar el símbol
     que vol dir "absent" no es reporta mai."""
     transformation_suppresses_c530: bool = True
@@ -87,14 +89,18 @@ class EngineConfig:
     estandardització...) o amb soroll afegit, no s'hi afegeix també un canvi de
     distribució (C530)."""
 
-    c510_min_rate_delta: float = 0.01
-    """C510: diferència mínima de proporció de nuls (efecte), a més de la prova estadística."""
-    c520_min_delta: float = 0.1
-    """C520: canvi mínim de correlació (|Δ|)."""
-    c520_max_columns: int = 30
-    """C520: màxim de columnes considerades (parells = n·(n-1)/2)."""
+    missing_min_rate_delta: float = 0.01
+    """C510/C520 sense files aparellades: diferència mínima de proporció de buits
+    de la columna sencera (efecte), a més de la prova estadística."""
+    correlation_min_delta: float = 0.1
+    """C530 `correlation`: canvi mínim de correlació entre dues columnes (|Δ|)."""
+    correlation_max_columns: int = 30
+    """C530 `correlation`: màxim de columnes considerades (parells = n·(n-1)/2)."""
     c530_min_distance: float = 0.1
-    """C530: distància mínima entre distribucions (KS per a numèriques, variació total per a categòriques)."""
+    """C530 `distribution`: distància mínima entre distribucions (KS per a numèriques, variació total per a
+    categòriques).
+    També decideix si una columna reanomenada sobre una altra mostra de files té la mateixa distribució (C223).
+    A la Fase 2 és un paràmetre de l'execució (`--min-distribution-distance`; decisió T-40)."""
     alpha: float = 0.01
     """Nivell de significació de les proves (filtre secundari: decideix la mida d'efecte)."""
 

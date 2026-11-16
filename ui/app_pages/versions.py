@@ -51,11 +51,11 @@ st.dataframe(
         "n_units": "Comparacions",
         "n_compared_units": "Fetes",
         "n_units_with_change": "Amb canvis",
-        "n_tables": "Taules",
+        "n_units_not_compared": "No fetes",
         "n_changes": "Canvis",
         "n_breaking_changes": "Trencadors",
         "codes": "Codis",
     },
 )
-st.caption("Comparacions: cada versió contra la següent. Fetes: les que tenen alguna taula comparada (les altres "
-           "eren massa grans, no s'han pogut llegir o no tenien cap taula en comú).")
+st.caption("Comparacions: cada versió contra la següent. Fetes: les que s'han pogut comparar (vegeu la pàgina de "
+           "cobertura per saber per què no les altres).")

@@ -4,7 +4,7 @@ Pas 4: detectors de canvis, un mòdul per perspectiva de la taxonomia (paper §4
 - `columns_set.py`   C2xx: conjunt de columnes (ordre, afegir, eliminar, renom)
 - `column_kind.py`   C3xx: tipus i valors d'una columna
 - `rows_set.py`      C4xx: conjunt de files (ordre, afegir, eliminar)
-- `data.py`          C5xx: característiques de les dades (nuls, correlació, distribució)
+- `data.py`          C5xx: valors de les dades (afegir i eliminar absents, actualitzar valors)
 
 C1xx (metadades) és fora d'abast. Els detectors s'executen en l'ordre de
 `DETECTORS`: els de tipus i valors deixen anotacions al `Context` (columnes

@@ -10,11 +10,13 @@ Cobreixen:
   4. `fetch_tree_size_bytes`: `list_repo_tree` (generador lazy) es consumeix
      DINS de la crida reintentada -- no abans (Finding B).
   5. `run_extraction`: una fallada de dataset sencer no atura els altres.
+  6. La CLI: `--formats` (decisió T-42).
 
 Cap d'aquests tests fa crides reals a l'API de Hugging Face ni espera temps
 real (s'injecten `sleep_fn`/`jitter_fn` fake quan cal exercir `with_retry`).
 """
 
+import sys
 from datetime import datetime, timedelta
 
 import httpx
@@ -354,3 +356,12 @@ class TestRunExtraction:
 
         assert received == {"org/a": commits, "org/b": None}
 
+
+class TestCli:
+    def test_reads_the_formats(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["version_extractor.py", "--input", "e.csv", "--formats", "json,csv"])
+        assert ve.parse_args().formats == ("json", "csv")
+
+    def test_without_the_option_uses_the_file(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["version_extractor.py", "--input", "e.csv"])
+        assert ve.parse_args().formats is None

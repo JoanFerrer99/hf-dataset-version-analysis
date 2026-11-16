@@ -27,11 +27,11 @@ seeds:
         data_tests:
           - not_null
       - name: perspective
-        description: Categoria del paper (Columns Set, Column Kind, Rows Set, Data Characteristics).
+        description: Categoria de la taxonomia (Columns Set, Column Kind, Rows Set, Data Value; abans de T-43, Data Characteristics).
         data_tests:
           - accepted_values:
               arguments:
-                values: ["Columns Set", "Column Kind", "Rows Set", "Data Characteristics"]
+                values: ["Columns Set", "Column Kind", "Rows Set", "Data Value"]
       - name: level_1
         description: Perspectiva, en català (primera xifra del codi).
       - name: level_2

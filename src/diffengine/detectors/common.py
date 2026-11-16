@@ -25,14 +25,14 @@ class Context:
     """
     Les dues taules ja aparellades, més anotacions que uns detectors deixen per als següents.
 
-    :ivar identifiers: columnes que identifiquen files (no són variables: fora de C520/C530).
+    :ivar identifiers: columnes que identifiquen files (no són variables: fora de C530).
     :ivar row_numbers: columnes que són la posició de la fila (fora també de C322).
     :ivar explained: columnes on una fórmula o un soroll (C322) explica els valors nous;
         el detector de distribució no hi afegeix C530.
     :ivar relabeled: mapatge de les columnes reetiquetades, per comparar-ne la distribució.
     :ivar representation: columnes que només canvien de format (espais, majúscules).
     :ivar kind_changed: columnes que canvien de tipus: no se'n comparen els valors.
-    :ivar c510_columns: columnes amb cel·les que passen de nul a valor o al revés.
+    :ivar missing_changed: columnes amb C510 o C520 (sense files aparellades, no tenen C530).
     """
 
     old: Table
@@ -46,7 +46,7 @@ class Context:
     relabeled: dict[str, dict] = field(default_factory=dict)
     representation: set[str] = field(default_factory=set)
     kind_changed: set[str] = field(default_factory=set)
-    c510_columns: set[str] = field(default_factory=set)
+    missing_changed: set[str] = field(default_factory=set)
 
     def paired(self, m: ColumnMatch) -> tuple[pd.Series, pd.Series]:
         """

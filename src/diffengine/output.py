@@ -14,16 +14,18 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-# Els 14 codis tabulars de la taxonomia (C100, metadades, és fora d'abast).
-TABULAR_CODES = ("C210", "C221", "C222", "C223", "C311", "C312", "C321", "C322",
+# Els 15 codis tabulars de la taxonomia (C100, metadades, és fora d'abast).
+TABULAR_CODES = ("C210", "C221", "C222", "C223", "C311", "C312", "C321", "C322", "C323",
                  "C410", "C421", "C422", "C510", "C520", "C530")
 
 CODE_DESCRIPTIONS = {
     "C210": "Ordre de columnes", "C221": "Afegir columna", "C222": "Eliminar columna",
     "C223": "Renombrar columna", "C311": "Tipus de columna categòrica",
     "C312": "Valors d'una columna categòrica", "C321": "Tipus de columna numèrica",
-    "C322": "Valors d'una columna numèrica", "C410": "Ordre de files", "C421": "Afegir fila",
-    "C422": "Eliminar fila", "C510": "Missings", "C520": "Correlacions", "C530": "Distribució de les dades",
+    "C322": "Valors d'una columna numèrica", "C323": "Format d'una columna numèrica",
+    "C410": "Ordre de files", "C421": "Afegir fila",
+    "C422": "Eliminar fila", "C510": "Afegir valors absents", "C520": "Eliminar valors absents",
+    "C530": "Actualitzar valors sense absents",
 }
 
 # Trenquen l'EXECUCIÓ d'un pipeline que llegeix per nom/posició/tipus/ordre;
@@ -34,7 +36,7 @@ BREAKING_CODES = frozenset({"C210", "C222", "C223", "C311", "C321", "C410"})
 class Change:
     """
     :ivar code: codi de la taxonomia (`C223`, `C421`...).
-    :ivar column: columna afectada (nom nou), o parell `a|b` per a C520.
+    :ivar column: columna afectada (nom nou), o parell `a|b` per a C530 `correlation`.
     :ivar old_column: nom antic si és diferent (renoms).
     :ivar subtype: què explica el canvi (p.e. C422 `had_nulls`, C322 `log`).
     """
@@ -58,18 +60,17 @@ class DiffResult:
         return {c.code for c in self.changes}
 
 
-CLASSIFICATION_COLUMNS = ["dataset_id", "version_from", "version_to", "table", "file_path", "code",
-                          "description", "is_breaking"]
+CLASSIFICATION_COLUMNS = ["dataset_id", "version_from", "version_to", "code", "description", "is_breaking"]
 
 
 def classification_frame(rows: list[dict]) -> pd.DataFrame:
     """
-    La taula de sortida de la Fase 2: un codi per taula i parell de versions,
-    amb la descripció i si trenca. Si una taula té el mateix codi en diverses
+    La taula de sortida de la Fase 2: un codi per parell de versions d'un
+    dataset, amb la descripció i si trenca. Si el mateix codi surt en diverses
     columnes, surt un sol cop.
 
     :param rows: una fila per canvi, amb `dataset_id`, `version_from`,
-        `version_to`, `table`, `file_path` i `code`.
+        `version_to` i `code` (`pairs.revision_rows`).
     :return: la taula, sense files repetides.
     """
     out = pd.DataFrame(rows, columns=CLASSIFICATION_COLUMNS[:-2])
@@ -78,15 +79,16 @@ def classification_frame(rows: list[dict]) -> pd.DataFrame:
     return out.drop_duplicates().reset_index(drop=True)
 
 
-STATUS_COLUMNS = ["dataset_id", "version_from", "version_to", "table", "file_path", "status", "n_codes"]
+STATUS_COLUMNS = ["dataset_id", "version_from", "version_to", "status", "n_codes", "format_from", "format_to",
+                  "n_files_from", "n_files_to", "size_bytes"]
 
 
 def status_frame(rows: list[dict]) -> pd.DataFrame:
     """
     La taula de l'estat de cada comparació de la Fase 2: una fila per parell
-    de taules i parell de versions, també les que no tenen cap codi.
+    de versions d'un dataset, també les que no tenen cap codi.
 
-    :param rows: una fila per parell de taules (`pairs.status_rows`).
+    :param rows: una fila per parell de versions (`pairs.status_row`).
     :return: la taula, amb les columnes de `STATUS_COLUMNS`.
     """
     return pd.DataFrame(rows, columns=STATUS_COLUMNS)

@@ -38,6 +38,7 @@ services:
       - .env
     volumes:
       - ./data:/app/data
+      - ./config:/app/config:ro
 
   eligibility-scan:
     build: .
@@ -47,6 +48,7 @@ services:
       - .env
     volumes:
       - ./data:/app/data
+      - ./config:/app/config:ro
 
   version-extractor:
     build: .
@@ -56,6 +58,7 @@ services:
       - .env
     volumes:
       - ./data:/app/data
+      - ./config:/app/config:ro
 
   warehouse:
     build: .

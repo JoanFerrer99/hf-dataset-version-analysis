@@ -1,6 +1,6 @@
 # Taxonomia de canvis de dataset
 
-## Els 15 codis oficials
+## Els 16 codis oficials
 
 | Codi | Categoria | Descripció |
 |---|---|---|
@@ -13,12 +13,18 @@
 | C312 | Column Kind | Valors d'una columna categòrica |
 | C321 | Column Kind | Tipus de columna numèrica |
 | C322 | Column Kind | Valors d'una columna numèrica |
+| C323 | Column Kind | Format d'una columna numèrica |
 | C410 | Rows Set | Ordre de files |
 | C421 | Rows Set | Afegir fila |
 | C422 | Rows Set | Eliminar fila |
-| C510 | Data Characteristics | Missings |
-| C520 | Data Characteristics | Correlacions |
-| C530 | Data Characteristics | Distribució de les dades |
+| C510 | Data Value | Afegir valors absents (*Add missing*) |
+| C520 | Data Value | Eliminar valors absents (*Remove missing*) |
+| C530 | Data Value | Actualitzar valors sense absents (*Update value not involving missing*) |
+
+Els C5xx són els de la revisió posterior al paper (decisió T-43). Abans es
+deien *Data Characteristics*: C510 Missings, C520 Correlacions i C530
+Distribució de les dades. Ara la correlació i la distribució són dues maneres
+de detectar el C530, i es miren només a les files aparellades.
 
 ## `is_breaking`: heurística d'execució, no de qualitat
 
@@ -32,8 +38,8 @@ defineix cap de formal.
 C311/C321 (canvi de tipus), C410 (ordre de files).
 
 `False` per a la resta -- C221/C421/C422 (afegir/eliminar columna o
-fila), C312/C322/C510/C520/C530 (canvis de valors/missings/correlacions/
-distribució). Aquests **poden degradar la qualitat del model igualment**
+fila), C312/C322/C323/C510/C520/C530 (canvis de valors/format, valors absents que
+apareixen o desapareixen, valors actualitzats). Aquests **poden degradar la qualitat del model igualment**
 (data drift, concept drift), però no fan fallar un pipeline que
 simplement llegeix el dataset. La distinció és deliberada, no un
 oblit: `is_breaking` respon una pregunta d'infraestructura (crasha
@@ -55,7 +61,7 @@ descàrrega".
 |---|---|---|---|
 | 1 — Metadada pura | C100 | ~0 | API REST (`DatasetInfo`, dataset card) |
 | 2 — Lectura parcial (schema) | C210, C221, C222, C223, C311, C321 | Baix, constant per fitxer | Capçalera CSV / footer Parquet (`pyarrow`, lectura per rangs) |
-| 3 — Contingut complet | C312, C322, C410, C421, C422, C510, C520, C530 | Proporcional a la mida real | Lectura del fitxer (idealment només les columnes rellevants, no tot el fitxer sencer) |
+| 3 — Contingut complet | C312, C322, C323, C410, C421, C422, C510, C520, C530 | Proporcional a la mida real | Lectura del fitxer (idealment només les columnes rellevants, no tot el fitxer sencer) |
 
 ### Viabilitat real del Nivell 3 (US-303 AC2, calculat amb dades pròpies)
 
@@ -130,5 +136,6 @@ Límits que encara té:
 - **Files duplicades i ordre (C410).** Quan hi ha files idèntiques,
   quina còpia correspon a quina és ambigu; en combinació amb altres canvis
   pot aparèixer un C410 que no hi és.
-- **Taules massa grans.** Per sobre de `max_unit_bytes` el parell queda
-  amb l'estat `too_large` i sense codis.
+- **Datasets massa grans.** Per sobre de la mida màxima (`--max-dataset-mb`,
+  500 MB per defecte, sumant tots els fitxers de les dues versions) la
+  comparació queda amb l'estat `too_large` i sense codis.

@@ -71,7 +71,8 @@ def detect_rows(ctx: Context) -> list[Change]:
 
     added = ctx.rows.unmatched_new
     if len(added):
-        is_copy = np.isin(new_rows[added], old_rows)
+        # Amb text, `np.isin` compara cada fila amb totes (cost quadràtic); `isin` de pandas fa servir un hash.
+        is_copy = pd.Series(new_rows[added]).isin(old_rows).to_numpy()
         for flag, subtype in ((True, "duplicate_of_existing"), (False, "new")):
             n = int(np.sum(is_copy == flag))
             if n:
@@ -79,7 +80,7 @@ def detect_rows(ctx: Context) -> list[Change]:
 
     removed = ctx.rows.unmatched_old
     if len(removed):
-        is_copy = np.isin(old_rows[removed], new_rows)
+        is_copy = pd.Series(old_rows[removed]).isin(new_rows).to_numpy()
         if is_copy.any():
             n = int(is_copy.sum())
             out.append(change("C422", subtype="duplicate_removed"))

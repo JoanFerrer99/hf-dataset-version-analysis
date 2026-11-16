@@ -7,8 +7,10 @@ Pas 3a i 3c: aparellar les columnes de dues versions (quina columna nova és qui
    aparellades: valors idèntics, una correspondència u a u entre categories
    (`Male` → `True`), una transformació numèrica (×1000, logaritme…) o una
    codificació one-hot. Si la versió nova és una altra mostra de files, també
-   val compartir la majoria de valors amb la mateixa distribució. Totes les
-   parelles es trien alhora amb l'algorisme hongarès; el nom només desempata.
+   val compartir la majoria de valors amb la mateixa distribució. Les cel·les
+   buides no compten: dues columnes buides a les mateixes files no són per
+   això la mateixa columna. Totes les parelles es trien alhora amb
+   l'algorisme hongarès; el nom només desempata.
 3. El que encara queda: columnes afegides (C221, `derived` si es poden
    calcular a partir d'una que ja hi era) i eliminades (C222).
 """
@@ -21,7 +23,7 @@ import pandas as pd
 from scipy.optimize import linear_sum_assignment
 
 from diffengine.config import EngineConfig
-from diffengine.load import NUMERIC, OPAQUE, Table
+from diffengine.load import NULL_TOKEN, NUMERIC, OPAQUE, Table
 from diffengine.rows import RowAlignment, cell_tokens, paired_values, value_overlap
 from diffengine.transforms import distribution_distance, fit_numeric, is_bijection
 
@@ -111,19 +113,19 @@ def _score(old: Table, new: Table, o: str, n: str, rows: RowAlignment, config: E
     if old.columns[o].kind == OPAQUE or new.columns[n].kind == OPAQUE:
         return 0.0, ""
     ta_all, tb_all = cell_tokens(old, o), cell_tokens(new, n)
-    many_values = min(ta_all.nunique(), tb_all.nunique()) >= 20
+    # Els buits no diuen si dues columnes són la mateixa: només compten els valors.
+    ta_vals, tb_vals = ta_all[ta_all != NULL_TOKEN], tb_all[tb_all != NULL_TOKEN]
+    many_values = min(ta_vals.nunique(), tb_vals.nunique()) >= 20
     if many_values:
         # Molts valors distints i el mateix multiconjunt: és la mateixa columna,
         # encara que les files no s'hagin pogut aparellar bé.
-        overlap = value_overlap(ta_all, tb_all)
+        overlap = value_overlap(ta_vals, tb_vals)
         if overlap >= config.column_match_min_validity:
             return overlap, "identical"
     found = _score_on_pairs(old, new, o, n, rows, config, ta_all, tb_all)
     if found[0] or not many_values:
         return found
-    # Una altra mostra de files (p.e. Census D3): la majoria de valors distints
-    # nous ja hi eren i la distribució no canvia segons el criteri de C530.
-    shared = len(set(ta_all) & set(tb_all)) / tb_all.nunique()
+    shared = len(set(ta_vals) & set(tb_vals)) / tb_vals.nunique()
     same_kind = (old.columns[o].kind == NUMERIC) == (new.columns[n].kind == NUMERIC)
     if same_kind and shared >= config.same_column_min_shared_values:
         distance, _, _ = distribution_distance(old.values[o].dropna(), new.values[n].dropna(),
@@ -136,8 +138,9 @@ def _score(old: Table, new: Table, o: str, n: str, rows: RowAlignment, config: E
 def _score_on_pairs(old: Table, new: Table, o: str, n: str, rows: RowAlignment, config: EngineConfig,
                     ta_all: pd.Series, tb_all: pd.Series) -> tuple[float, str]:
     """
-    Puntua dues columnes comparant-les fila a fila sobre les files aparellades.
-    Si no hi ha prou files aparellades, compara les freqüències dels valors.
+    Puntua dues columnes comparant-les fila a fila sobre les files aparellades
+    on alguna de les dues té valor: dues cel·les buides no diuen res. Si no hi
+    ha prou files aparellades, compara les freqüències dels valors.
 
     :param old: taula de la versió antiga.
     :param new: taula de la versió nova.
@@ -152,7 +155,13 @@ def _score_on_pairs(old: Table, new: Table, o: str, n: str, rows: RowAlignment, 
     reliable = rows.reliable_pairs
     if len(reliable) >= 10:
         a_idx, b_idx = reliable[:, 0], reliable[:, 1]
-        same = float(np.mean(ta_all.iloc[a_idx].to_numpy() == tb_all.iloc[b_idx].to_numpy()))
+        ta, tb = ta_all.iloc[a_idx].to_numpy(), tb_all.iloc[b_idx].to_numpy()
+        # P.e. dues columnes buides a totes les files comunes coincidien al 100% (Carlos, P09).
+        informative = (ta != NULL_TOKEN) | (tb != NULL_TOKEN)
+        if informative.sum() < 10:
+            return 0.0, ""
+        a_idx, b_idx = a_idx[informative], b_idx[informative]
+        same = float(np.mean(ta[informative] == tb[informative]))
         if same >= config.column_match_min_validity:
             return same, "identical"
         x, y = paired_values(old, o, a_idx), paired_values(new, n, b_idx)

@@ -36,6 +36,8 @@ ENV PATH="/opt/venv/bin:${PATH}" \
 
 WORKDIR /app
 COPY --chown=app:app src/ ./src/
+# Els formats tabulars i el seu ordre (decisió T-36). docker-compose.yml munta la carpeta de l'arrel a sobre.
+COPY --chown=app:app config/ ./config/
 # El projecte dbt (Fase 3). dbt hi escriu target/ i logs/: l'usuari app n'és el propietari.
 COPY --chown=app:app warehouse/ ./warehouse/
 # La interfície (Streamlit), que només llegeix el magatzem.

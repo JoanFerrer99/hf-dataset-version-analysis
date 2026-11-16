@@ -45,7 +45,7 @@ def test_home_shows_the_key_figures_of_the_run(app):
     assert {card["label"]: card["value"] for card in figures} == {
         "Datasets de la mostra": "12", "Elegibles": "3", "Comparacions fetes": "3 de 4", "Canvis detectats": "7"}
     # Fixture: cada codi surt en una sola comparació; 1 de les 3 fetes té un canvi trencador (C222, C223);
-    # org/tags-c no s'ha pogut comparar (taula massa gran); org/tags-a té 5 dels 7 canvis.
+    # org/tags-c no s'ha pogut comparar (dataset massa gran); org/tags-a té 5 dels 7 canvis.
     assert [(card["label"], card["value"], card["target"]) for card in highlights] == [
         ("Codi a més comparacions", "C221", "Canvis"),
         ("Comparacions amb algun canvi trencador", "33,3 %", "Canvis"),
@@ -53,7 +53,7 @@ def test_home_shows_the_key_figures_of_the_run(app):
         ("Dataset amb més canvis", "5", "Explorador"),
     ]
     assert "org/tags-a" in highlights[3]["hint"]
-    assert app.dataframe[0].value.shape[0] == 14  # la taxonomia, plegada
+    assert app.dataframe[0].value.shape[0] == 15  # la taxonomia, plegada
 
 
 def test_the_shell_draws_the_navigation_and_the_page_header(app):
@@ -132,7 +132,7 @@ def test_changes_page_applies_perspective_and_breaking_filters(app):
 
     frequency = app.dataframe[0].value
     assert frequency["code"].tolist() == ["C421", "C422"]
-    assert frequency["n_changes"].tolist() == [1, 0]
+    assert frequency["n_units"].tolist() == [1, 0]
 
 
 def test_explorer_drills_down_from_a_dataset_to_its_codes(app):
@@ -141,7 +141,7 @@ def test_explorer_drills_down_from_a_dataset_to_its_codes(app):
     units, changes = app.dataframe[0].value, app.dataframe[1].value
     assert units["label_to"].tolist() == ["v1.1", "v2.0"]
     assert changes["code"].tolist() == ["C222", "C223", "C510"]
-    assert set(changes["table_path"]) == {"default/train"}
+    assert units["n_files_to"].tolist() == [2, 2]
 
 
 def test_explorer_says_why_a_comparison_has_no_codes(app):
@@ -264,9 +264,8 @@ def test_coverage_page_says_why_each_incomplete_comparison_was_not_made(app):
         "org/tags-a": {"units_compared": 2, "units_not_compared": 0},
         "org/tags-c": {"units_compared": 0, "units_not_compared": 1},
     }
-    assert incomplete[["dataset_id", "status_label", "reason"]].values.tolist() == [
-        ["org/sessions-b", "Feta", "1 taula que no s'ha pogut llegir (de 2)"],
-        ["org/tags-c", "No feta", "1 taula massa gran (de 1)"],
+    assert incomplete[["dataset_id", "status_label", "reason", "size"]].values.tolist() == [
+        ["org/tags-c", "No feta", "Massa gran (per sobre del límit, --max-dataset-mb)", "1,7 GB"],
     ]
 
 

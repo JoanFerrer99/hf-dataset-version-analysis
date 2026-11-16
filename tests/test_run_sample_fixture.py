@@ -39,9 +39,9 @@ def test_committed_fixture_is_what_the_pipeline_writes(make_run_sample, tmp_path
 def test_n_codes_matches_the_classification_rows():
     status = pd.read_csv(os.path.join(RUN_SAMPLE, "comparison_status.csv"))
     changes = pd.read_csv(os.path.join(RUN_SAMPLE, "change_classification.csv"))
-    per_table = changes.groupby(["dataset_id", "version_from", "version_to", "table"]).size()
-    keys = zip(status["dataset_id"], status["version_from"], status["version_to"], status["table"])
-    assert [per_table.get(k, 0) for k in keys] == status["n_codes"].tolist()
+    per_pair = changes.groupby(["dataset_id", "version_from", "version_to"]).size()
+    keys = zip(status["dataset_id"], status["version_from"], status["version_to"])
+    assert [per_pair.get(k, 0) for k in keys] == status["n_codes"].tolist()
 
 
 def test_every_compared_version_is_in_versions_and_every_dataset_is_eligible():

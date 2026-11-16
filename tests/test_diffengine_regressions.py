@@ -2,7 +2,8 @@
 Casos FP/FN coneguts del motor antic (prompt del motor v2) i casos reals trobats
 després (Census Income, execucions del pipeline), un test per cas. Les decisions
 que en canvien l'expectativa (una transformació no genera també C530, cas 15; C100 fora
-d'abast, cas 8; C530 sense target, casos 16 i 17) són a `docs/decisions_tfg.txt` (T-20).
+d'abast, cas 8; C530 sense target, cas 17) són a `docs/decisions_tfg.txt` (T-20). Els C5xx
+només miren les files aparellades (casos 16, 25 i 36-41, T-43).
 Els casos 11 i 13 (fallada de descàrrega, dos fitxers) són del pas 1 (trobar les taules):
 `tests/test_diffengine_pairs.py`.
 """
@@ -143,11 +144,11 @@ def test_15_standardized_feature_is_c322_without_c530(base):
     assert not {"C530", "C321"} & {c for c, _ in got}
 
 
-def test_16_oversampled_minority_is_c421_duplicate_plus_c530(base):
+def test_16_oversampled_minority_is_only_c421_duplicate(base):
+    """T-43: duplicar la classe minoritària canvia la distribució de la taula, però les files que hi eren no
+    canvien. És C421, sense C530 (abans de T-43, també C530)."""
     new = pd.concat([base, base[base["label"] == "yes"]], ignore_index=True)
-    got = labels(csv_bytes(base), csv_bytes(new))
-    assert ("C421", "duplicate_of_existing") in got
-    assert "C530" in {c for c, _ in got}
+    assert labels(csv_bytes(base), csv_bytes(new)) == {("C421", "duplicate_of_existing")}
 
 
 def test_17_flipped_labels_for_a_subgroup(base):
@@ -196,9 +197,9 @@ def test_21_renumbered_row_index_is_not_a_key_nor_a_value_change():
     new.insert(0, "index", np.arange(len(new)))
     got = labels(parquet_bytes(old), parquet_bytes(new), ".parquet", ".parquet")
     assert ("C421", "new") in got
-    # Sense C322 (index renumerat), C410 ni C422 (files mal aparellades). C530 a
-    # `episode_index` sí que hi és: apareix un episodi nou.
-    assert {c for c, _ in got} <= {"C421", "C530"}
+    # Sense C322 (index renumerat), C410 ni C422 (files mal aparellades). L'episodi nou és
+    # C421, i no C530 a `episode_index`: les files que hi eren no canvien (T-43).
+    assert {c for c, _ in got} == {"C421"}
 
 
 def _lerobot(episodes: list[int], lengths: list[int], seed: int) -> pd.DataFrame:
@@ -251,14 +252,15 @@ def test_24_rename_on_another_sample_of_rows_is_c223():
     assert not {"C221", "C222"} & {c for c, _ in got}
 
 
-def test_25_null_rate_change_caused_only_by_removed_rows_is_still_c510(base):
-    """Paper §4: C510 "can be a consequence of the addition/removal of rows. However, we consider them separately"."""
+def test_25_null_rate_change_caused_only_by_removed_rows_is_only_c422(base):
+    """T-43: eliminar les files amb buits és C422 `had_nulls`. A les files que queden no es buida ni s'omple cap
+    cel·la: sense C5xx (abans de T-43, també C510 `rate`, seguint el paper, §4)."""
     old = base.copy()
     old.loc[old.index[::10], "workclass"] = None
     new = old.dropna(subset=["workclass"]).reset_index(drop=True)
     got = labels(csv_bytes(old), csv_bytes(new))
     assert ("C422", "had_nulls") in got
-    assert ("C510", "rate") in got
+    assert not {"C510", "C520", "C530"} & {c for c, _ in got}
 
 
 def test_26_label_encoding_is_a_type_change_and_a_recoding(base):
@@ -292,7 +294,9 @@ def test_28_removed_null_rows_matching_new_rows_are_not_a_reorder(base):
     new["workclass"] = new["workclass"].map({"Private": 0, "Gov": 1, "Self": 2, "Unknown": 3})
     got = codes(csv_bytes(old), csv_bytes(new))
     assert "C410" not in got
-    assert {"C422", "C510"} <= got
+    # Les files eliminades són C422, no C510 (T-43). Les tres que s'aparellen amb una fila nova no donen
+    # C520: `workclass` canvia de tipus i les seves cel·les no es comparen.
+    assert "C422" in got and not {"C510", "C520"} & got
 
 
 def test_29_rows_removed_by_a_rule_are_c422_predicate(base):
@@ -309,3 +313,160 @@ def test_30_removal_rule_on_a_sample_of_kept_rows(base, rule, expected):
     config = replace(DEFAULT_CONFIG, max_rule_rows=50)
     result = diff_bytes(csv_bytes(base), ".csv", csv_bytes(base[~removed]), ".csv", config)
     assert [c.subtype for c in result.changes if c.code == "C422"] == [expected]
+
+
+def test_31_a_csv_per_year_that_adds_a_column_is_one_dataset(tmp_path):
+    """Reunió de seguiment (T-37): un CSV per any és un sol dataset. L'any nou afegeix files i una columna, que
+    als anys anteriors queda buida."""
+    from diffengine.engine import diff_tables
+    from diffengine.load import load_files
+
+    rng = np.random.default_rng(0)
+
+    def year(y, extra=False):
+        df = pd.DataFrame({"id": range(y * 1000, y * 1000 + 60), "region": rng.choice(["N", "S", "E"], 60),
+                           "sales": rng.integers(10, 99, 60)})
+        if extra:
+            df["channel"] = rng.choice(["web", "shop"], 60)
+        path = tmp_path / f"sales_{y}.csv"
+        df.to_csv(path, index=False)
+        return str(path)
+
+    old = [year(2019), year(2020)]
+    result = diff_tables(load_files(old), load_files(old + [year(2021, extra=True)]))
+    assert {(c.code, c.column) for c in result.changes} == {("C221", "channel"), ("C421", None)}
+
+
+def test_32_decimal_comma_is_c323(base):
+    """Taxonomia revisada (T-38): els mateixos valors escrits amb coma decimal són C323, no C322."""
+    assert labels(csv_bytes(base), csv_bytes(base, sep=";", decimal=",")) == {("C323", "representation")}
+
+
+def test_33_scientific_notation_is_c323_unless_the_values_change(base):
+    old = csv_bytes(base)
+    assert labels(old, csv_bytes(base, float_format="%.10e")) == {("C323", "representation")}
+    got = labels(old, csv_bytes(base.assign(score=base["score"] * 2.5), float_format="%.10e"))
+    assert ("C322", "factor") in got and "C323" not in {c for c, _ in got}
+
+
+def test_34_columns_empty_on_every_paired_row_are_not_a_rename():
+    """Carlos, P09 (PDL-Bench): s'eliminen `Pz` i `HM`, s'afegeixen `task_version` i `TASK FILES`, i a les files
+    comunes totes quatre són buides. Buit contra buit no fa que siguin la mateixa columna: ni C223 ni C210."""
+    def version(ids):
+        return pd.DataFrame({"ID": [f"t{i:03d}" for i in ids], "SOURCE": [["web", "book"][i % 2] for i in ids],
+                             "PROMPT": [f"prompt {i}" for i in ids]})
+
+    old = version(range(60))
+    old.insert(1, "Pz", np.where(np.arange(60) >= 40, "Y", None))  # les marques, en files que no continuen
+    old.insert(2, "HM", None)
+    new = version(list(range(33)) + list(range(100, 160)))
+    filled = np.arange(len(new)) >= 40  # només les files noves tenen valor
+    new["task_version"] = np.where(filled, [str(1 + i % 3) for i in range(len(new))], "")
+    new["TASK FILES"] = np.where(filled, [f"tasks/{i}/files" for i in range(len(new))], "")
+    result = diff_bytes(parquet_bytes(old), ".parquet", parquet_bytes(new), ".parquet")
+    got = {(c.code, c.old_column or c.column) for c in result.changes if c.code in ("C210", "C221", "C222", "C223")}
+    assert got == {("C222", "Pz"), ("C222", "HM"), ("C221", "task_version"), ("C221", "TASK FILES")}
+
+
+def test_35_lerobot_rows_that_move_to_the_next_file_are_one_dataset(tmp_path):
+    """Carlos, P20 (armnetbench, LeRobot): s'afegeixen episodis i, a partir d'un fitxer, les files passen al
+    següent. Fitxer a fitxer sortien C410, C422 i C520 (llavors, correlacions) falsos; com un sol dataset (T-37),
+    només hi ha files noves."""
+    from diffengine.datafiles import dataset_files
+    from diffengine.engine import diff_tables
+    from diffengine.load import load_files
+
+    rng = np.random.default_rng(0)
+
+    def episode(e, n=40):
+        last = np.arange(n) == n - 1
+        return pd.DataFrame({"action": np.round(rng.normal(size=n), 4),
+                             "observation.state": np.round(rng.normal(size=n), 4), "timestamp": np.arange(n) / 30,
+                             "frame_index": np.arange(n), "episode_index": e, "next.reward": last.astype(float),
+                             "next.done": last, "task_index": 0})
+
+    def version(name, episodes):
+        df = pd.concat(episodes, ignore_index=True)
+        df.insert(0, "index", np.arange(len(df)))
+        paths = ["meta/tasks.parquet"]
+        for i, start in enumerate(range(0, len(df), 100)):  # fitxers de 100 files
+            paths.append(f"data/chunk-000/file-{i:03d}.parquet")
+            (tmp_path / name / "data" / "chunk-000").mkdir(parents=True, exist_ok=True)
+            df.iloc[start:start + 100].to_parquet(tmp_path / name / paths[-1], index=False)
+        (tmp_path / name / "meta").mkdir()
+        pd.DataFrame({"task_index": [0], "task": ["pick"]}).to_parquet(tmp_path / name / paths[0], index=False)
+        files = dataset_files(paths).files
+        assert not any(f.startswith("meta/") for f in files)
+        return load_files([str(tmp_path / name / f) for f in files])
+
+    old_episodes = [episode(e) for e in range(10)]
+    new_episodes = old_episodes[:3] + [episode(e) for e in range(10, 14)] + old_episodes[3:]
+    result = diff_tables(version("a", old_episodes), version("b", new_episodes))
+    got = {c.code for c in result.changes}
+    assert "C421" in got and not {"C410", "C422", "C520", "C530"} & got
+
+
+def _changes(old: bytes, new: bytes, config=DEFAULT_CONFIG) -> set[tuple[str, str | None, str | None]]:
+    """Canvis detectats: `(codi, columna, subtipus sense el detall)`."""
+    result = diff_bytes(old, ".csv", new, ".csv", config)
+    return {(c.code, c.column, c.subtype.split(":")[0] if c.subtype else None) for c in result.changes}
+
+
+def test_36_emptied_cells_are_c510_and_filled_cells_are_c520(base):
+    """T-43 (Data Value): a les files aparellades, una cel·la que es buida és C510 (Add missing) i una que
+    s'omple, C520 (Remove missing). No són canvis de valor (C312/C322) ni de distribució (C530)."""
+    old, new = base.copy(), base.copy()
+    old.loc[10:14, "workclass"] = None
+    new.loc[:4, "score"] = np.nan
+    assert _changes(csv_bytes(old), csv_bytes(new)) == {("C510", "score", "masking"),
+                                                        ("C520", "workclass", "imputed")}
+
+
+def test_37_a_column_can_gain_and_lose_missing_values_at_once(base):
+    """T-43: per cel·les, una columna on unes cel·les es buiden i d'altres s'omplen té C510 i C520. Amb
+    `missing_by_cell = False`, només compta el percentatge net de buits de les files aparellades."""
+    old, new = base.copy(), base.copy()
+    old.loc[10:12, "age"] = np.nan
+    new.loc[:4, "age"] = np.nan
+    old_csv, new_csv = csv_bytes(old), csv_bytes(new)
+    assert {c for c, *_ in _changes(old_csv, new_csv)} == {"C510", "C520"}
+    by_rate = replace(DEFAULT_CONFIG, missing_by_cell=False)
+    assert _changes(old_csv, new_csv, by_rate) == {("C510", "age", "rate")}
+    assert _changes(old_csv, csv_bytes(old), by_rate) == set()
+
+
+def test_38_added_rows_with_missing_values_are_only_c421(base):
+    """T-43: les files noves, encara que tinguin buits, són C421. Les que hi eren no canvien: sense C510."""
+    extra = base.head(60).assign(id=lambda d: d["id"] + 10_000, workclass=None)
+    got = labels(csv_bytes(base), csv_bytes(pd.concat([base, extra], ignore_index=True)))
+    assert {c for c, _ in got} == {"C421"}
+
+
+def test_39_c530_only_looks_at_cells_with_a_value_in_both_versions(base):
+    """T-43: si es buiden les edats grans, la distribució de les edats que queden canvia, però és la
+    conseqüència del C510. El C530 només mira les cel·les amb valor a totes dues versions, que no canvien."""
+    new = base.copy()
+    new["age"] = new["age"].where(new["age"] <= 60)
+    assert _changes(csv_bytes(base), csv_bytes(new)) == {("C510", "age", "masking")}
+
+
+def test_40_shuffled_values_change_the_correlation_not_the_distribution(base):
+    """T-43: barrejar els valors d'una columna entre files no en canvia la distribució, però sí la relació
+    amb les altres columnes: C530 `correlation` (abans de T-43, C520), a més dels valors editats (C322)."""
+    old = base.assign(id=base["id"] + 1000)  # una clau que no és el número de fila
+    new = old.assign(score=np.random.default_rng(5).permutation(old["score"].to_numpy()))
+    got = _changes(csv_bytes(old), csv_bytes(new))
+    assert ("C530", "age|score", "correlation") in got
+    assert not {c for c in got if c[2] == "distribution"}
+
+
+def test_41_without_paired_rows_the_whole_table_decides():
+    """T-43: si cap fila no es pot aparellar, es mira la taula sencera. La proporció de buits de `x` puja (C510
+    `rate`) i, per això, no s'hi busca C530; `y` canvia de distribució (C530)."""
+    rng = np.random.default_rng(4)
+    old = pd.DataFrame({"x": rng.normal(0, 1, 300).round(4), "y": rng.normal(0, 1, 300).round(4)})
+    new = pd.DataFrame({"x": rng.normal(0, 1, 300).round(4), "y": rng.normal(2, 1, 300).round(4)})
+    new.loc[new.index[::3], "x"] = np.nan
+    got = _changes(csv_bytes(old), csv_bytes(new))
+    assert {c for c in got if c[0].startswith("C5")} == {("C510", "x", "rate"), ("C530", "y", "distribution")}
+    assert {"C421", "C422"} <= {c for c, *_ in got}

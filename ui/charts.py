@@ -174,7 +174,7 @@ def stacked_by_quarter(df: pd.DataFrame, palette: dict) -> alt.Chart:
 def units_by_status(df: pd.DataFrame, statuses: list[str], labels: dict[str, str], palette: dict) -> alt.Chart:
     """
     Les comparacions de cada dataset, apilades per estat (fetes, no fetes, sense
-    cap taula en comú...), en barres horitzontals. Cada estat té sempre el mateix color.
+    dades...), en barres horitzontals. Cada estat té sempre el mateix color.
 
     :param df: `data.coverage_by_dataset` (dataset_id i una columna `units_<estat>` per estat).
     :param statuses: els estats, en l'ordre de la pila.

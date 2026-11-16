@@ -15,12 +15,17 @@ vol dir "absent". Per això `load_table`:
   es comparen.
 - Llegeix com a nombre una columna d'arrays d'un sol element (LeRobot desa
   així els escalars).
+
+Un dataset repartit en diversos fitxers es llegeix sencer amb `load_files`:
+les files de cada fitxer a continuació de les de l'anterior, amb les
+columnes de tots (decisió T-37).
 """
 
 import csv
 import hashlib
 import io
 import json
+import os
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -241,16 +246,13 @@ def _sniff(text: str) -> dict:
         return {"delimiter": ",", "skipinitialspace": False}
 
 
-def _from_csv(data: bytes, ext: str, config: EngineConfig) -> Table:
+def _read_csv(data: bytes, ext: str) -> tuple[pd.DataFrame, dict]:
     """
-    Llegeix un CSV o TSV com a text i decideix el tipus de cada columna pels
-    valors. Els tokens de valor absent (`?`, `NA`, buit...) es converteixen en
-    buits.
+    Llegeix un CSV o TSV com a text, sense decidir-ne encara els tipus.
 
     :param data: contingut del fitxer, en bytes.
     :param ext: `.csv` o `.tsv`.
-    :param config: llindars del motor.
-    :return: la taula preparada per comparar.
+    :return: `(cel·les com a text, dialecte)`.
     :raises ParseError: si pandas no el pot llegir.
     """
     for encoding in ("utf-8-sig", "latin-1"):
@@ -268,7 +270,19 @@ def _from_csv(data: bytes, ext: str, config: EngineConfig) -> Table:
                           na_filter=False, skipinitialspace=dialect["skipinitialspace"])
     except Exception as exc:
         raise ParseError(str(exc)) from exc
+    return raw, dialect
 
+
+def _from_csv(raw: pd.DataFrame, dialect: dict, config: EngineConfig) -> Table:
+    """
+    Decideix el tipus de cada columna d'un CSV o TSV pels valors. Els tokens
+    de valor absent (`?`, `NA`, buit...) es converteixen en buits.
+
+    :param raw: cel·les com a text (`_read_csv`).
+    :param dialect: dialecte del fitxer (`_read_csv`).
+    :param config: llindars del motor.
+    :return: la taula preparada per comparar.
+    """
     tokens = set(config.missing_tokens)
     values, columns = {}, {}
     for name in raw.columns:
@@ -296,6 +310,44 @@ def _from_csv(data: bytes, ext: str, config: EngineConfig) -> Table:
     return Table("csv", pd.DataFrame(values, columns=list(raw.columns)), columns, raw=raw_view, dialect=dialect)
 
 
+def _read(data: bytes, ext: str) -> tuple[pd.DataFrame, dict]:
+    """
+    Llegeix un fitxer tabular, sense decidir-ne encara els tipus.
+
+    :param data: contingut del fitxer, en bytes.
+    :param ext: extensió, en minúscules.
+    :return: `(taula, dialecte)`: text per als CSV, i els tipus del fitxer per a parquet i JSON (sense dialecte).
+    :raises ParseError: si no es pot llegir o el format no és compatible.
+    """
+    try:
+        if ext in (".csv", ".tsv"):
+            return _read_csv(data, ext)
+        if ext == ".parquet":
+            return pd.read_parquet(io.BytesIO(data)), {}
+        if ext in (".json", ".jsonl"):
+            return pd.read_json(io.BytesIO(data), lines=(ext == ".jsonl")), {}
+    except ParseError:
+        raise
+    except Exception as exc:
+        raise ParseError(f"{type(exc).__name__}: {exc}") from exc
+    raise ParseError(f"format no suportat: {ext}")
+
+
+def _prepare(df: pd.DataFrame, ext: str, dialect: dict, config: EngineConfig) -> Table:
+    """
+    Decideix el tipus de cada columna d'una taula llegida amb `_read`.
+
+    :return: la taula preparada per comparar.
+    :raises ParseError: si no es pot preparar.
+    """
+    try:
+        if ext in (".csv", ".tsv"):
+            return _from_csv(df, dialect, config)
+        return _from_typed(df, "parquet" if ext == ".parquet" else "json", config)
+    except Exception as exc:
+        raise ParseError(f"{type(exc).__name__}: {exc}") from exc
+
+
 def load_table(data: bytes, ext: str, config: EngineConfig = DEFAULT_CONFIG) -> Table:
     """
     Llegeix un fitxer tabular i el prepara per comparar: valors i tipus de cada
@@ -308,16 +360,35 @@ def load_table(data: bytes, ext: str, config: EngineConfig = DEFAULT_CONFIG) -> 
     :raises ParseError: si no es pot llegir o el format no és compatible.
     """
     ext = ext.lower()
-    try:
-        if ext in (".csv", ".tsv"):
-            return _from_csv(data, ext, config)
-        if ext == ".parquet":
-            return _from_typed(pd.read_parquet(io.BytesIO(data)), "parquet", config)
-        if ext in (".json", ".jsonl"):
-            df = pd.read_json(io.BytesIO(data), lines=(ext == ".jsonl"))
-            return _from_typed(df, "json", config)
-    except ParseError:
-        raise
-    except Exception as exc:
-        raise ParseError(f"{type(exc).__name__}: {exc}") from exc
-    raise ParseError(f"format no suportat: {ext}")
+    df, dialect = _read(data, ext)
+    return _prepare(df, ext, dialect, config)
+
+
+def load_files(paths: list[str], config: EngineConfig = DEFAULT_CONFIG) -> Table:
+    """
+    Llegeix els fitxers d'un dataset (`datafiles.dataset_files`) com una sola
+    taula.
+
+    Les files de cada fitxer van a continuació de les de l'anterior, en ordre.
+    Les columnes són les de tots els fitxers, en l'ordre en què surten: on un
+    fitxer no en té una, les seves files hi queden buides. El tipus de cada
+    columna es decideix amb tots els valors, com si fos un sol fitxer.
+
+    :param paths: fitxers locals, tots del mateix format, en ordre.
+    :param config: llindars del motor.
+    :return: la taula preparada per comparar.
+    :raises ParseError: si algun no es pot llegir.
+    """
+    ext = os.path.splitext(paths[0])[1].lower()
+    parts, dialect = [], {}
+    for i, path in enumerate(paths):
+        with open(path, "rb") as f:
+            df, part_dialect = _read(f.read(), ext)
+        parts.append(df)
+        dialect = dialect if i else part_dialect  # el del primer fitxer
+    if len(parts) == 1:
+        return _prepare(parts[0], ext, dialect, config)
+    df = pd.concat(parts, ignore_index=True, sort=False)
+    if ext in (".csv", ".tsv"):
+        df = df.fillna("")  # cel·la d'una columna que el seu fitxer no té: buida, com un camp buit
+    return _prepare(df, ext, dialect, config)

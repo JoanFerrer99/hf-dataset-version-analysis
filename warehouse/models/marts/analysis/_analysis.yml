@@ -36,42 +36,42 @@ models:
     description: >
       Pregunta: quantes comparacions (unitats de canvi, una versió contra la
       següent) s'han fet per dataset, i quantes no s'han pogut fer? Una fila
-      per unitat de canvi, amb el recompte de taules per estat. Les
+      per unitat de canvi: cada una compara el dataset sencer (T-37). Les
       proporcions dels altres marts es calculen només sobre `is_compared`.
     data_tests:
       - unique_combination:
           arguments:
             columns: ["dataset_id", "version_from", "version_to"]
     columns:
+      - name: comparison_status
+        description: L'estat de comparison_status.csv; buit si no n'hi ha (`failed`, `not_run`).
       - name: unit_status
         description: >
-          `compared` (alguna taula comparada), `not_compared` (cap, i alguna massa
-          gran o que no s'ha pogut baixar o llegir), `no_common_table` (només
-          taules afegides, eliminades o excloses), `no_tables` o `failed`.
+          `compared` (ok o identical_content), `not_compared` (massa gran, o no
+          s'ha pogut baixar o llegir), `no_data` (una de les versions no té cap
+          fitxer de dades), `failed` (la Fase 2 va fallar en el dataset) o
+          `not_run` (no hi ha l'estat).
         data_tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ["compared", "not_compared", "no_common_table", "no_tables", "failed"]
+                values: ["compared", "not_compared", "no_data", "failed", "not_run"]
       - name: is_compared
-        description: Alguna taula de la unitat s'ha comparat.
-      - name: n_tables_not_compared
-        description: Taules massa grans, que no s'han pogut baixar o que no s'han pogut llegir.
-      - name: n_tables_too_large
-        description: >
-          Taules de cada estat (`n_tables_ok`, `n_tables_identical_content`, `n_tables_absent_old`,
-          `n_tables_absent_new`, `n_tables_download_failed`, `n_tables_parse_failed`,
-          `n_tables_too_large`; les excloses són `n_tables_excluded`). Sumen `n_tables`.
+        description: La unitat s'ha comparat.
+      - name: size_bytes
+        description: Mida dels fitxers del dataset a les dues versions, sumades (la que es compara amb el límit).
+      - name: n_files_from
+        description: Fitxers del dataset a la versió antiga (`n_files_to`, a la nova).
       - name: n_codes
-        description: Files de la unitat a change_classification.csv (un codi per taula).
+        description: Files de la unitat a change_classification.csv (un per codi).
       - name: has_breaking_change
         description: Algun canvi trencador a la unitat.
 
   - name: mart_code_frequency
     description: >
       Pregunta: amb quina freqüència surt cada codi i cada perspectiva? Una fila
-      per codi (els 14, també els que no surten), amb els canvis (taules), les
-      comparacions afectades i la proporció sobre les comparacions fetes.
+      per codi (els 14, també els que no surten), amb les comparacions
+      afectades i la proporció sobre les comparacions fetes.
     columns:
       - name: code
         description: Codi de la taxonomia.
@@ -79,9 +79,9 @@ models:
           - unique
           - not_null
       - name: n_changes
-        description: Files de fact_change (un canvi per taula).
+        description: Files de fact_change (un per comparació amb el codi; igual que `n_units`).
       - name: n_units
-        description: Comparacions (unitats de canvi) amb el codi en alguna taula.
+        description: Comparacions (unitats de canvi) amb el codi.
       - name: share_of_compared_units
         description: n_units / comparacions fetes.
 
@@ -134,7 +134,7 @@ models:
   - name: mart_dataset_profile
     description: >
       Pregunta: com és cada dataset elegible? Versions, comparacions fetes i no
-      fetes, taules, canvis, codis i canvis trencadors. Una fila per dataset.
+      fetes, canvis, codis i canvis trencadors. Una fila per dataset.
     columns:
       - name: dataset_id
         description: Dataset de Hugging Face.
@@ -144,7 +144,7 @@ models:
       - name: n_versions
         description: Versions de versions.csv.
       - name: n_compared_units
-        description: Comparacions fetes (alguna taula comparada).
+        description: Comparacions fetes (`mart_change_units.is_compared`).
       - name: codes
         description: Codis diferents detectats, separats per comes.
 

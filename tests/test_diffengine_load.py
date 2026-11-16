@@ -5,7 +5,7 @@ import io
 import numpy as np
 import pandas as pd
 
-from diffengine.load import CATEGORICAL, NUMERIC, OPAQUE, load_table
+from diffengine.load import CATEGORICAL, NUMERIC, OPAQUE, load_files, load_table
 
 
 def parquet(df: pd.DataFrame) -> bytes:
@@ -75,3 +75,40 @@ def test_single_element_arrays_that_are_all_nan_are_a_numeric_null_column():
     table = load_table(buf.getvalue(), ".parquet")
     assert table.columns["gripper_width"].kind == NUMERIC
     assert table.values["gripper_width"].isna().all()
+
+
+def _files(tmp_path, contents: dict[str, bytes]) -> list[str]:
+    paths = []
+    for name, data in contents.items():
+        (tmp_path / name).write_bytes(data)
+        paths.append(str(tmp_path / name))
+    return paths
+
+
+def test_files_of_a_dataset_are_read_in_order(tmp_path):
+    table = load_files(_files(tmp_path, {"a_1.csv": b"x\n1\n2\n", "a_2.csv": b"x\n3\n"}))
+    assert table.values["x"].tolist() == [1.0, 2.0, 3.0]
+    assert table.columns["x"].integer
+
+
+def test_a_column_missing_in_one_file_is_empty_in_its_rows(tmp_path):
+    """Un CSV per any que afegeix una columna, o JSON amb camps opcionals (`pulsia/fr-bench-pdf2md`)."""
+    table = load_files(_files(tmp_path, {"y_2019.csv": b"id,a\n1,x\n", "y_2020.csv": b"id,a,b\n2,y,7\n"}))
+    assert list(table.values.columns) == ["id", "a", "b"]
+    assert table.values["b"].isna().tolist() == [True, False]
+    assert table.columns["b"].kind == NUMERIC
+
+
+def test_the_type_of_a_column_is_decided_with_every_file(tmp_path):
+    # Al primer fitxer, `v` sembla numèrica; amb el segon, és de categories.
+    table = load_files(_files(tmp_path, {"p_1.jsonl": b'{"v": 1}\n', "p_2.jsonl": b'{"v": "alt"}\n{"k": 2}\n'}))
+    assert table.columns["v"].kind == CATEGORICAL
+    assert table.values["v"].tolist()[:2] == ["1", "alt"] and table.values["v"].isna().tolist() == [False, False, True]
+
+
+def test_parquet_parts_with_different_columns(tmp_path):
+    parts = {"t_0.parquet": parquet(pd.DataFrame({"a": [1, 2]})),
+             "t_1.parquet": parquet(pd.DataFrame({"a": [3], "c": ["z"]}))}
+    table = load_files(_files(tmp_path, parts))
+    assert table.values["a"].tolist() == [1.0, 2.0, 3.0]
+    assert table.values["c"].isna().tolist() == [True, True, False] and table.values["c"].iloc[2] == "z"
