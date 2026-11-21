@@ -47,8 +47,9 @@ models:
         description: L'estat de comparison_status.csv; buit si no n'hi ha (`failed`, `not_run`).
       - name: unit_status
         description: >
-          `compared` (ok o identical_content), `not_compared` (massa gran, o no
-          s'ha pogut baixar o llegir), `no_data` (una de les versions no té cap
+          `compared` (ok o identical_content), `not_compared` (massa gran, no
+          s'ha pogut baixar o llegir, o fitxers amb columnes diferents),
+          `no_data` (una de les versions no té cap
           fitxer de dades), `failed` (la Fase 2 va fallar en el dataset) o
           `not_run` (no hi ha l'estat).
         data_tests:
@@ -62,6 +63,8 @@ models:
         description: Mida dels fitxers del dataset a les dues versions, sumades (la que es compara amb el límit).
       - name: n_files_from
         description: Fitxers del dataset a la versió antiga (`n_files_to`, a la nova).
+      - name: n_files_dropped_from
+        description: Fitxers de la versió antiga que no s'han llegit perquè repetien files d'un altre (`n_files_dropped_to`, a la nova).
       - name: n_codes
         description: Files de la unitat a change_classification.csv (un per codi).
       - name: has_breaking_change
