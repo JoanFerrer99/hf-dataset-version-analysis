@@ -275,3 +275,15 @@ def test_changes_page_counts_comparisons_by_default_and_shows_each_dataset(app):
     by_dataset = app.dataframe[1].value
     assert sorted(set(by_dataset["dataset_id"])) == ["org/sessions-b", "org/tags-a"]
     assert by_dataset["n_units"].sum() == 7  # cada codi, en una sola comparació
+
+
+def test_every_comparison_status_of_the_warehouse_has_a_label(ui_data):
+    """Els estats de `stg_comparison_status` (també `mixed_columns`, T-44) tenen una etiqueta a la interfície."""
+    import yaml
+
+    with open(os.path.join(bw.REPO_ROOT, "warehouse", "models", "staging", "_staging.yml"), encoding="utf-8") as f:
+        models = {m["name"]: m for m in yaml.safe_load(f)["models"]}
+    status = next(c for c in models["stg_comparison_status"]["columns"] if c["name"] == "status")
+    accepted = next(t["accepted_values"]["arguments"]["values"] for t in status["data_tests"]
+                    if isinstance(t, dict) and "accepted_values" in t)
+    assert set(accepted) == set(ui_data.COMPARISON_STATUSES)

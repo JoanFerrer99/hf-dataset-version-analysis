@@ -420,6 +420,7 @@ COMPARISON_STATUSES = {
     "too_large": "Massa gran (per sobre del límit, --max-dataset-mb)",
     "parse_failed": "No s'ha pogut llegir algun fitxer",
     "download_failed": "No s'ha pogut descarregar algun fitxer",
+    "mixed_columns": "Fitxers amb columnes diferents (no es comparen)",
 }
 
 
