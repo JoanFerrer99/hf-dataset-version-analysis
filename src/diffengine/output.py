@@ -80,7 +80,7 @@ def classification_frame(rows: list[dict]) -> pd.DataFrame:
 
 
 STATUS_COLUMNS = ["dataset_id", "version_from", "version_to", "status", "n_codes", "format_from", "format_to",
-                  "n_files_from", "n_files_to", "size_bytes"]
+                  "n_files_from", "n_files_to", "n_files_dropped_from", "n_files_dropped_to", "size_bytes"]
 
 
 def status_frame(rows: list[dict]) -> pd.DataFrame:

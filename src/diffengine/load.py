@@ -69,6 +69,7 @@ class Table:
     :ivar values: valors normalitzats; numèriques en float64 (NaN = nul),
         la resta en text exacte (None = nul).
     :ivar raw: text cru de cada cel·la (només CSV/TSV).
+    :ivar dropped_files: fitxers que no s'han llegit perquè repetien files d'un altre més gran (`load_files`).
     """
 
     fmt: str
@@ -76,6 +77,7 @@ class Table:
     columns: dict[str, Column]
     raw: pd.DataFrame | None = None
     dialect: dict = field(default_factory=dict)
+    dropped_files: tuple[str, ...] = ()
 
     @property
     def n_rows(self) -> int:
@@ -87,6 +89,10 @@ class Table:
 
 class ParseError(Exception):
     pass
+
+
+class MixedColumns(Exception):
+    """Els fitxers d'una versió no tenen totes les mateixes columnes: no es comparen (decisió T-44)."""
 
 
 def _json_default(value):
@@ -364,6 +370,23 @@ def load_table(data: bytes, ext: str, config: EngineConfig = DEFAULT_CONFIG) -> 
     return _prepare(df, ext, dialect, config)
 
 
+def cell_tokens(table: Table, column: str) -> pd.Series:
+    """
+    Converteix els valors d'una columna en text normalitzat, per poder-los
+    comparar i fer-ne hash. Els nombres es formaten igual a totes dues versions
+    (`3` i `3.0` donen el mateix text) i els buits, amb una marca especial.
+
+    :param table: la taula.
+    :param column: nom de la columna.
+    :return: un text per fila.
+    """
+    s = table.values[column]
+    if table.columns[column].kind == NUMERIC:
+        return s.map(lambda v: NULL_TOKEN if pd.isna(v) else format(float(v), ".10g"))
+    return s.map(lambda v: NULL_TOKEN if is_missing(v) else str(v))
+
+
+
 def _as_text(values: pd.Series, kind: str) -> pd.Series:
     """
     Converteix una columna en text, per unir-la amb una altra d'un tipus diferent.
@@ -431,39 +454,90 @@ def _load_same_format(parts: list[pd.DataFrame], ext: str, dialect: dict, config
     return _prepare(df, ext, dialect, config)
 
 
+def _row_hashes(table: Table) -> set[int]:
+    """
+    Hash de cada fila amb els valors normalitzats (`cell_tokens`): el mateix
+    valor dona el mateix hash en qualsevol format. Les columnes van per nom.
+
+    :param table: la taula d'un fitxer.
+    :return: el conjunt de hashos de les seves files.
+    """
+    names = sorted(table.values.columns)
+    tokens = pd.DataFrame({i: cell_tokens(table, name) for i, name in enumerate(names)}, index=table.values.index)
+    return set(pd.util.hash_pandas_object(tokens, index=False).tolist())
+
+
+def files_to_keep(tables: list[Table]) -> list[int]:
+    """
+    Quins fitxers es llegeixen quan n'hi ha que repeteixen files d'altres
+    (decisió T-44). Es recorren del que té més files al que en té menys (en
+    cas d'empat, en ordre natural) i es conserva cada fitxer que no comparteix
+    cap fila amb els ja conservats. Les files repetides dins d'un mateix
+    fitxer no compten.
+
+    :param tables: la taula de cada fitxer, en ordre natural.
+    :return: les posicions dels fitxers que es conserven, en ordre natural.
+    """
+    kept, seen = [], set()
+    for i in sorted(range(len(tables)), key=lambda i: (-tables[i].n_rows, i)):
+        rows = _row_hashes(tables[i])
+        if rows.isdisjoint(seen):
+            kept.append(i)
+            seen |= rows
+    return sorted(kept)
+
+
 def load_files(paths: list[str], config: EngineConfig = DEFAULT_CONFIG) -> Table:
     """
     Llegeix els fitxers d'un dataset (`datafiles.dataset_files`) com una sola
-    taula.
+    taula, amb les regles de la decisió T-44:
 
-    Les files de cada fitxer van a continuació de les de l'anterior, en ordre.
-    Les columnes són les de tots els fitxers, en l'ordre en què surten: on un
-    fitxer no en té una, les seves files hi queden buides. El tipus de cada
-    columna es decideix amb tots els valors del mateix format, com si fos un
-    sol fitxer. Si hi ha fitxers de més d'un format, cada format es prepara
-    pel seu compte i després s'uneixen (`_merge_tables`, decisió T-44).
+    - Tots els fitxers han de tenir les mateixes columnes (el mateix conjunt de
+      noms, en qualsevol ordre); si no, no es comparen (`MixedColumns`).
+    - Si un fitxer repeteix files d'un altre de més gran, no es llegeix
+      (`files_to_keep`): així un fitxer que agrega els altres (p.e. `overall`)
+      no duplica les files.
+    - Les files de cada fitxer van a continuació de les de l'anterior, en
+      ordre. El tipus de cada columna es decideix amb tots els valors del
+      mateix format, com si fos un sol fitxer. Si hi ha fitxers de més d'un
+      format, cada format es prepara pel seu compte i després s'uneixen
+      (`_merge_tables`).
 
-    :param paths: fitxers locals, en ordre.
+    :param paths: fitxers locals, en ordre natural.
     :param config: llindars del motor.
-    :return: la taula preparada per comparar.
+    :return: la taula preparada per comparar; `dropped_files`, els fitxers que no s'han llegit.
     :raises ParseError: si algun no es pot llegir.
+    :raises MixedColumns: si els fitxers no tenen totes les mateixes columnes.
     """
-    groups: dict[str, list[int]] = {}
-    read, dialects = [], {}
-    for i, path in enumerate(paths):
+    exts, read, dialects = [], [], []
+    for path in paths:
         ext = os.path.splitext(path)[1].lower()
         with open(path, "rb") as f:
             df, dialect = _read(f.read(), ext)
+        exts.append(ext)
         read.append(df)
+        dialects.append(dialect)
+    dropped: tuple[str, ...] = ()
+    if len(paths) > 1:
+        if len({frozenset(map(str, df.columns)) for df in read}) > 1:
+            raise MixedColumns(f"{len(paths)} fitxers amb columnes diferents")
+        tables = [_prepare(df, ext, dialect, config) for df, ext, dialect in zip(read, exts, dialects)]
+        keep = files_to_keep(tables)
+        dropped = tuple(paths[i] for i in range(len(paths)) if i not in keep)
+        exts, read, dialects = [exts[i] for i in keep], [read[i] for i in keep], [dialects[i] for i in keep]
+    groups: dict[str, list[int]] = {}
+    for i, ext in enumerate(exts):
         groups.setdefault(ext, []).append(i)
-        dialects.setdefault(ext, dialect)  # el del primer fitxer de cada format
+    first = {ext: dialects[idx[0]] for ext, idx in groups.items()}  # el dialecte del primer fitxer de cada format
     if len(groups) == 1:
         ext = next(iter(groups))
-        return _load_same_format(read, ext, dialects[ext], config)
-    tables = [_load_same_format([read[i] for i in idx], ext, dialects[ext], config) for ext, idx in groups.items()]
-    merged = _merge_tables(tables, config)
-    # les files, en l'ordre dels fitxers i no agrupades per format
-    starts = np.cumsum([0] + [len(df) for df in read])
-    order = np.concatenate([np.arange(starts[i], starts[i + 1]) for idx in groups.values() for i in idx])
-    merged.values = merged.values.iloc[np.argsort(order, kind="stable")].reset_index(drop=True)
-    return merged
+        table = _load_same_format(read, ext, first[ext], config)
+    else:
+        tables = [_load_same_format([read[i] for i in idx], ext, first[ext], config) for ext, idx in groups.items()]
+        table = _merge_tables(tables, config)
+        # les files, en l'ordre dels fitxers i no agrupades per format
+        starts = np.cumsum([0] + [len(df) for df in read])
+        order = np.concatenate([np.arange(starts[i], starts[i + 1]) for idx in groups.values() for i in idx])
+        table.values = table.values.iloc[np.argsort(order, kind="stable")].reset_index(drop=True)
+    table.dropped_files = dropped
+    return table

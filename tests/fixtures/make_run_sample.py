@@ -122,7 +122,8 @@ def main(out: str = OUT) -> None:
         pair = {"dataset_id": ds, "version_from": sha(f"{ds}@{old}"), "version_to": sha(f"{ds}@{new}")}
         changes += [{**pair, "code": code} for code in codes]
         statuses.append({**pair, "status": status, "n_codes": len(codes), "format_from": fmt, "format_to": fmt,
-                         "n_files_from": files_from, "n_files_to": files_to, "size_bytes": size})
+                         "n_files_from": files_from, "n_files_to": files_to, "n_files_dropped_from": 0,
+                         "n_files_dropped_to": 0, "size_bytes": size})
     classification_frame(changes).to_csv(os.path.join(out, "change_classification.csv"), index=False)
     status_frame(statuses).to_csv(os.path.join(out, "comparison_status.csv"), index=False)
 

@@ -917,7 +917,8 @@ def run_classification(versions_csv: str, config: EngineConfig = DEFAULT_CONFIG)
       (`dataset_id, version_from, version_to, code, description, is_breaking`);
     - `comparison_status.csv`: una fila per parell de versions, també sense
       cap codi (`dataset_id, version_from, version_to, status, n_codes,
-      format_from, format_to, n_files_from, n_files_to, size_bytes`).
+      format_from, format_to, n_files_from, n_files_to, n_files_dropped_from,
+      n_files_dropped_to, size_bytes`).
 
     Per a cada dataset, `version_pairs` en forma les parelles de revisions i
     `compare_change_units` les compara amb el motor. Una fallada d'un dataset

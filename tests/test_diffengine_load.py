@@ -1,11 +1,13 @@
 """Tests del pas 2 del motor: llegir una taula (`diffengine.load`)."""
 
 import io
+import os
 
 import numpy as np
 import pandas as pd
+import pytest
 
-from diffengine.load import CATEGORICAL, NUMERIC, OPAQUE, load_files, load_table
+from diffengine.load import CATEGORICAL, NUMERIC, OPAQUE, MixedColumns, load_files, load_table
 
 
 def parquet(df: pd.DataFrame) -> bytes:
@@ -80,6 +82,7 @@ def test_single_element_arrays_that_are_all_nan_are_a_numeric_null_column():
 def _files(tmp_path, contents: dict[str, bytes]) -> list[str]:
     paths = []
     for name, data in contents.items():
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / name).write_bytes(data)
         paths.append(str(tmp_path / name))
     return paths
@@ -91,27 +94,56 @@ def test_files_of_a_dataset_are_read_in_order(tmp_path):
     assert table.columns["x"].integer
 
 
-def test_a_column_missing_in_one_file_is_empty_in_its_rows(tmp_path):
-    """Un CSV per any que afegeix una columna, o JSON amb camps opcionals (`pulsia/fr-bench-pdf2md`)."""
-    table = load_files(_files(tmp_path, {"y_2019.csv": b"id,a\n1,x\n", "y_2020.csv": b"id,a,b\n2,y,7\n"}))
-    assert list(table.values.columns) == ["id", "a", "b"]
-    assert table.values["b"].isna().tolist() == [True, False]
-    assert table.columns["b"].kind == NUMERIC
+def test_files_with_different_columns_are_not_compared(tmp_path):
+    """Decisió T-44: un CSV per any que afegeix una columna, o JSON amb camps opcionals (`pulsia/fr-bench-pdf2md`)."""
+    with pytest.raises(MixedColumns):
+        load_files(_files(tmp_path, {"y_2019.csv": b"id,a\n1,x\n", "y_2020.csv": b"id,a,b\n2,y,7\n"}))
+    parts = {"t_0.parquet": parquet(pd.DataFrame({"a": [1, 2]})),
+             "t_1.parquet": parquet(pd.DataFrame({"a": [3], "c": ["z"]}))}
+    with pytest.raises(MixedColumns):
+        load_files(_files(tmp_path, parts))
+
+
+def test_the_same_columns_in_another_order_are_the_same_columns(tmp_path):
+    table = load_files(_files(tmp_path, {"p_1.csv": b"id,a\n1,x\n", "p_2.csv": b"a,id\ny,2\n"}))
+    assert table.values["id"].tolist() == [1.0, 2.0] and table.values["a"].tolist() == ["x", "y"]
 
 
 def test_the_type_of_a_column_is_decided_with_every_file(tmp_path):
     # Al primer fitxer, `v` sembla numèrica; amb el segon, és de categories.
-    table = load_files(_files(tmp_path, {"p_1.jsonl": b'{"v": 1}\n', "p_2.jsonl": b'{"v": "alt"}\n{"k": 2}\n'}))
+    table = load_files(_files(tmp_path, {"p_1.jsonl": b'{"v": 1}\n', "p_2.jsonl": b'{"v": "alt"}\n{"v": null}\n'}))
     assert table.columns["v"].kind == CATEGORICAL
     assert table.values["v"].tolist()[:2] == ["1", "alt"] and table.values["v"].isna().tolist() == [False, False, True]
 
 
-def test_parquet_parts_with_different_columns(tmp_path):
-    parts = {"t_0.parquet": parquet(pd.DataFrame({"a": [1, 2]})),
-             "t_1.parquet": parquet(pd.DataFrame({"a": [3], "c": ["z"]}))}
+def _questions(ids):
+    return pd.DataFrame({"ID": [f"Q{i}" for i in ids], "PROMPT": [f"question {i}" for i in ids]})
+
+
+def test_a_file_that_repeats_rows_of_a_bigger_one_is_not_read(tmp_path):
+    """PDL-Bench v1: un fitxer per categoria (algunes preguntes en diverses) i `overall`, amb una pregunta pròpia."""
+    parts = {"algebra.parquet": parquet(_questions([1, 2, 3])), "geometry.parquet": parquet(_questions([3, 4])),
+             "overall.parquet": parquet(_questions([1, 2, 3, 4, 5]))}
     table = load_files(_files(tmp_path, parts))
-    assert table.values["a"].tolist() == [1.0, 2.0, 3.0]
-    assert table.values["c"].isna().tolist() == [True, True, False] and table.values["c"].iloc[2] == "z"
+    assert table.values["ID"].tolist() == ["Q1", "Q2", "Q3", "Q4", "Q5"]
+    assert [os.path.basename(p) for p in table.dropped_files] == ["algebra.parquet", "geometry.parquet"]
+
+
+def test_of_two_identical_files_the_first_is_kept(tmp_path):
+    table = load_files(_files(tmp_path, {"a/dev.jsonl": b'{"x": 1}\n{"x": 2}\n', "b/dev.jsonl": b'{"x": 1}\n{"x": 2}\n'}))
+    assert table.n_rows == 2 and [os.path.basename(os.path.dirname(p)) for p in table.dropped_files] == ["b"]
+
+
+def test_the_same_table_in_csv_and_parquet_is_read_once(tmp_path):
+    df = pd.DataFrame({"id": [1, 2], "score": [0.5, 1.25], "name": ["ann", None]})
+    table = load_files(_files(tmp_path, {"data.csv": b"id,score,name\n1,0.5,ann\n2,1.25,\n", "data.parquet": parquet(df)}))
+    assert table.n_rows == 2 and [os.path.basename(p) for p in table.dropped_files] == ["data.parquet"]
+
+
+def test_files_without_shared_rows_are_all_read(tmp_path):
+    table = load_files(_files(tmp_path, {"p_1.csv": b"x\n1\n1\n", "p_2.csv": b"x\n2\n"}))
+    assert table.values["x"].tolist() == [1.0, 1.0, 2.0]  # la repetició dins d'un fitxer es conserva
+    assert table.dropped_files == ()
 
 
 def test_files_of_different_formats_are_one_dataset(tmp_path):

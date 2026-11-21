@@ -139,9 +139,36 @@ class TestCompareRevisions:
         assert pairs.status_row("org/ds", "a", "b", comparison) == {
             "dataset_id": "org/ds", "version_from": "a", "version_to": "b", "status": "ok", "n_codes": 1,
             "format_from": "csv", "format_to": "csv", "n_files_from": 1, "n_files_to": 2,
-            "size_bytes": len(years[2019]) * 2 + len(years[2020])}
+            "n_files_dropped_from": 0, "n_files_dropped_to": 0, "size_bytes": len(years[2019]) * 2 + len(years[2020])}
         assert pairs.revision_rows("org/ds", "a", "b", comparison) == [
             {"dataset_id": "org/ds", "version_from": "a", "version_to": "b", "code": "C421"}]
+
+    def test_files_with_different_columns_give_mixed_columns(self, monkeypatch, tmp_path):
+        """Decisió T-44: taules diferents al mateix repositori no es comparen."""
+        self._hub(monkeypatch, tmp_path, {
+            "a": {"ledger.csv": b"game,steps\nx,3\n", "episodes.csv": b"turn,action\n1,up\n"},
+            "b": {"ledger.csv": b"game,steps\nx,4\n", "episodes.csv": b"turn,action\n1,up\n"},
+        })
+
+        comparison = pairs.compare_revisions("org/ds", "a", "b", None)
+
+        assert (comparison.status, comparison.result) == ("mixed_columns", None)
+
+    def test_a_file_that_repeats_a_bigger_one_is_counted_as_dropped(self, monkeypatch, tmp_path):
+        """PDL-Bench: un fitxer per categoria i `overall`, que les repeteix."""
+        cat = {k: _csv(pd.DataFrame({"ID": range(k * 10, k * 10 + 10), "q": [f"q{i}" for i in range(10)]}))
+               for k in (1, 2)}
+        overall = _csv(pd.DataFrame({"ID": range(10, 30), "q": [f"q{i}" for i in range(10)] * 2}))
+        self._hub(monkeypatch, tmp_path, {
+            "a": {"cat_1.csv": cat[1], "cat_2.csv": cat[2], "overall.csv": overall},
+            "b": {"overall.csv": overall},
+        })
+
+        comparison = pairs.compare_revisions("org/ds", "a", "b", None)
+
+        assert (comparison.status, comparison.result.codes) == ("ok", set())
+        row = pairs.status_row("org/ds", "a", "b", comparison)
+        assert (row["n_files_dropped_from"], row["n_files_dropped_to"]) == (2, 0)
 
     def test_uses_the_formats_of_the_config(self, monkeypatch, tmp_path):
         self._hub(monkeypatch, tmp_path, {"a": {"data.csv": b"x\n1\n", "data.parquet": b"?"}})
@@ -162,5 +189,6 @@ def test_status_row_of_a_comparison_that_was_not_made():
     comparison = pairs.pair_datasets(revision("a", {"README.md": "r"}), revision("b", {"t.csv": "1", "u.csv": "2"}))
     assert pairs.status_row("org/ds", "a", "b", comparison) == {
         "dataset_id": "org/ds", "version_from": "a", "version_to": "b", "status": "absent_old", "n_codes": 0,
-        "format_from": None, "format_to": "csv", "n_files_from": 0, "n_files_to": 2, "size_bytes": 200}
+        "format_from": None, "format_to": "csv", "n_files_from": 0, "n_files_to": 2, "n_files_dropped_from": 0,
+        "n_files_dropped_to": 0, "size_bytes": 200}
     assert pairs.revision_rows("org/ds", "a", "b", comparison) == []
