@@ -14,8 +14,8 @@ Els fitxers del dataset (`dataset_files`) són els fitxers de dades tabulars de
 la revisió, amb la mateixa regla que l'elegibilitat de la Fase 0:
 
 - d'un dels formats de `EngineConfig.formats` (`config/formats.toml` o
-  `--formats`); si n'hi ha de més d'un, només els del primer de la llista que
-  hi surt (T-36, T-42);
+  `--formats`, T-36 i T-42); si n'hi ha de més d'un, tots formen el dataset:
+  cada fitxer es llegeix en un DataFrame i el format ja no importa (T-44);
 - que no siguin metadades: res de dins de `meta/`, `meta_data/` o `.github/`
   (p.e. els índexs d'episodis de LeRobot), ni els JSON de metadades del Hub.
 """
@@ -45,11 +45,18 @@ class DatasetFiles:
     Els fitxers del dataset en una revisió.
 
     :ivar files: els fitxers que es comparen, en ordre natural (`file_2` abans de `file_10`).
-    :ivar fmt: el format que es compara (`preferred_format`), o `None` si la revisió no té cap fitxer de dades.
+    :ivar formats: els formats d'aquests fitxers, en l'ordre de la llista de formats.
     """
 
     files: tuple[str, ...]
-    fmt: str | None
+    formats: tuple[str, ...] = ()
+
+    @property
+    def fmt(self) -> str | None:
+        """
+        :return: els formats units amb `+` (p.e. `csv+parquet`), o `None` si la revisió no té cap fitxer de dades.
+        """
+        return "+".join(self.formats) or None
 
 
 def file_format(path: str) -> str:
@@ -79,18 +86,6 @@ def is_tabular_path(path: str, formats: tuple[str, ...] = READABLE_FORMATS) -> b
     return file_format(path) in formats and not is_metadata_path(path)
 
 
-def preferred_format(paths: list[str], formats: tuple[str, ...]) -> str | None:
-    """
-    El format que es compara en una revisió.
-
-    :param paths: fitxers de la revisió.
-    :param formats: formats tabulars, en ordre de preferència.
-    :return: el primer de `formats` que té algun fitxer de dades a `paths`, o `None` si no n'hi ha cap.
-    """
-    present = {file_format(p) for p in paths if is_tabular_path(p, formats)}
-    return next((f for f in formats if f in present), None)
-
-
 def natural_order(path: str) -> list:
     """Clau d'ordenació que compara els números pel valor: `file_2` va abans de `file_10`."""
     return [int(part) if part.isdigit() else part for part in _NUMBERS.split(path)]
@@ -101,9 +96,9 @@ def dataset_files(paths: list[str], formats: tuple[str, ...] = DEFAULT_CONFIG.fo
     Els fitxers que formen el dataset en una revisió, sense descarregar res.
 
     :param paths: tots els fitxers del repositori en aquella revisió.
-    :param formats: formats tabulars, en ordre de preferència (`EngineConfig.formats`).
-    :return: els fitxers de dades del format preferit, en ordre natural, i el format.
+    :param formats: formats tabulars (`EngineConfig.formats`).
+    :return: els fitxers de dades de qualsevol d'aquests formats, en ordre natural, i els formats que hi surten.
     """
-    fmt = preferred_format(paths, formats)
-    files = [p for p in paths if is_tabular_path(p, formats) and file_format(p) == fmt]
-    return DatasetFiles(tuple(sorted(files, key=natural_order)), fmt)
+    files = sorted((p for p in paths if is_tabular_path(p, formats)), key=natural_order)
+    present = {file_format(p) for p in files}
+    return DatasetFiles(tuple(files), tuple(f for f in formats if f in present))

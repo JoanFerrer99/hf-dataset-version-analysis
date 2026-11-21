@@ -149,7 +149,7 @@ def check_formats(order, source: str = "") -> tuple[str, ...]:
     Comprova una llista de formats tabulars i la normalitza: en minúscules i
     sense el punt (`.CSV` és `csv`).
 
-    :param order: els formats, en ordre de preferència.
+    :param order: els formats.
     :param source: d'on surten (p.e. el fitxer), per al missatge d'error.
     :return: els formats, p.e. `("csv", "tsv", "parquet", "jsonl", "json")`.
     :raises ValueError: si la llista és buida, té formats repetits o algun que el motor no sap llegir.
@@ -169,7 +169,7 @@ def check_formats(order, source: str = "") -> tuple[str, ...]:
 
 def load_formats(path: str = FORMATS_FILE) -> tuple[str, ...]:
     """
-    Els formats tabulars de `config/formats.toml`, en ordre de preferència (decisió T-36).
+    Els formats tabulars de `config/formats.toml` (decisions T-36 i T-44).
 
     :param path: el fitxer de configuració.
     :return: els formats (`check_formats`).
@@ -180,8 +180,8 @@ def load_formats(path: str = FORMATS_FILE) -> tuple[str, ...]:
     return check_formats(order, f"{path}, `order`")
 
 
-# Formats tabulars de l'execució, en ordre de preferència: els de `--formats` o, si no se'n donen, els de
-# `config/formats.toml` (decisions T-36 i T-42). Es fixen en començar (`use_formats`); fins llavors, `None`.
+# Formats tabulars de l'execució: els de `--formats` o, si no se'n donen, els de `config/formats.toml`
+# (decisions T-36, T-42 i T-44). Es fixen en començar (`use_formats`); fins llavors, `None`.
 TABULAR_FORMATS: tuple[str, ...] | None = None
 
 
@@ -197,7 +197,7 @@ def use_formats(formats: tuple[str, ...] | None = None) -> tuple[str, ...]:
     """
     global TABULAR_FORMATS
     TABULAR_FORMATS = formats if formats is not None else load_formats()
-    log.info(f"Formats tabulars, per ordre de preferència: {', '.join(TABULAR_FORMATS)} "
+    log.info(f"Formats tabulars: {', '.join(TABULAR_FORMATS)} "
              f"({'--formats' if formats is not None else 'config/formats.toml'})")
     return TABULAR_FORMATS
 
@@ -996,8 +996,8 @@ def fraction(text: str) -> float:
 
 def format_list(text: str) -> tuple[str, ...]:
     """
-    Tipus d'argument de la CLI: formats tabulars separats per comes, en ordre
-    de preferència (p.e. `json,csv`).
+    Tipus d'argument de la CLI: formats tabulars separats per comes (p.e.
+    `json,csv`).
 
     :raises argparse.ArgumentTypeError: si la llista és buida, té formats repetits o algun que el motor no sap llegir.
     """
@@ -1008,7 +1008,7 @@ def format_list(text: str) -> tuple[str, ...]:
 
 
 FORMATS_HELP = (
-    "Formats tabulars de l'execució, separats per comes i en ordre de preferència (p.e. json,csv). Substitueixen "
+    "Formats tabulars de l'execució, separats per comes (p.e. json,csv). Substitueixen "
     "la llista de config/formats.toml, que llavors no es llegeix: només compten com a tabulars els formats que s'hi "
     "donen, a totes les fases. Sense l'opció, els del fitxer."
 )

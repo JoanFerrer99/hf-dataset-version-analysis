@@ -13,11 +13,10 @@ from dataclasses import dataclass
 class EngineConfig:
     # --- Pas 1: quins fitxers formen el dataset ------------------------------
     formats: tuple[str, ...] = ("csv", "tsv", "parquet", "jsonl", "json")
-    """Formats tabulars, en ordre de preferència. Només els fitxers d'aquests
-    formats són dades. Si una revisió en té de més d'un, només es compara el
-    primer de la llista que hi surt. El pipeline els llegeix de
-    `config/formats.toml` o, per a una execució, de `--formats` (decisions
-    T-36 i T-42)."""
+    """Formats tabulars. Només els fitxers d'aquests formats són dades. Si una
+    revisió en té de més d'un, tots formen el dataset (decisió T-44). El
+    pipeline els llegeix de `config/formats.toml` o, per a una execució, de
+    `--formats` (decisions T-36 i T-42)."""
     max_dataset_bytes: int = 500 * 1024**2
     """Mida màxima del dataset, sumant tots els seus fitxers de la versió
     antiga i de la nova. Per sobre, no es descarrega ni es compara: la

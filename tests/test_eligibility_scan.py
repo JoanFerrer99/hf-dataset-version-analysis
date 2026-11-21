@@ -885,7 +885,7 @@ class TestCompareChangeUnits:
         from diffengine.pairs import Comparison
 
         def files(paths):
-            return DatasetFiles(paths, file_format(paths[0]) if paths else None)
+            return DatasetFiles(paths, (file_format(paths[0]),) if paths else ())
         return Comparison(files(old), files(new), size, status, result)
 
     def test_returns_one_row_per_change(self, monkeypatch):

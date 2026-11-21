@@ -146,9 +146,16 @@ class TestCompareRevisions:
     def test_uses_the_formats_of_the_config(self, monkeypatch, tmp_path):
         self._hub(monkeypatch, tmp_path, {"a": {"data.csv": b"x\n1\n", "data.parquet": b"?"}})
 
-        rev = pairs.list_revision("org/ds", "a", None, config=replace(DEFAULT_CONFIG, formats=("parquet", "csv")))
+        rev = pairs.list_revision("org/ds", "a", None, config=replace(DEFAULT_CONFIG, formats=("parquet",)))
 
         assert (rev.data.files, rev.data.fmt) == (("data.parquet",), "parquet")
+
+    def test_every_listed_format_is_part_of_the_dataset(self, monkeypatch, tmp_path):
+        self._hub(monkeypatch, tmp_path, {"a": {"data.csv": b"x\n1\n", "data.parquet": b"?"}})
+
+        rev = pairs.list_revision("org/ds", "a", None, config=replace(DEFAULT_CONFIG, formats=("parquet", "csv")))
+
+        assert (rev.data.files, rev.data.fmt) == (("data.csv", "data.parquet"), "parquet+csv")
 
 
 def test_status_row_of_a_comparison_that_was_not_made():

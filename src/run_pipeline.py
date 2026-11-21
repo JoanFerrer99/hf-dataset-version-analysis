@@ -16,7 +16,7 @@ carpeta, no hi ha Fase 3.
   python run_pipeline.py --sample-size 2000 --skip-warehouse                         # sense Fase 3
   python run_pipeline.py --sample-size 2000 --max-dataset-mb 1000                    # datasets de fins a 1 GB
   python run_pipeline.py --sample-size 2000 --min-distribution-distance 0.2          # C530 amb canvis més grans
-  python run_pipeline.py --sample-size 2000 --formats json,csv                       # només JSON i CSV, primer JSON
+  python run_pipeline.py --sample-size 2000 --formats json,csv                       # només JSON i CSV
   python eligibility_scan.py --classify-versions ../data/run_8/versions.csv          # només Fase 2
 
 Output: tot dins d'una carpeta nova, `data/run_<id>/` (mai sobreescriu):
@@ -73,8 +73,8 @@ def run_full_pipeline(
         (`es.engine_config`).
     :param min_distribution_distance: per a la Fase 2: distància mínima entre
         distribucions per reportar C530 (`es.engine_config`).
-    :param formats: per a les Fases 0, 1 i 2: els formats tabulars, en ordre
-        de preferència, en lloc dels de `config/formats.toml`
+    :param formats: per a les Fases 0, 1 i 2: els formats tabulars, en lloc
+        dels de `config/formats.toml`
         (`es.use_formats`). `None` per fer servir els del fitxer.
     :return: `run_dir`, `eligibility_csv`, `eligible`, `versions_csv`,
         `change_classification_csv`, `warehouse_path` (`None` si la fase no

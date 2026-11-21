@@ -112,3 +112,21 @@ def test_parquet_parts_with_different_columns(tmp_path):
     table = load_files(_files(tmp_path, parts))
     assert table.values["a"].tolist() == [1.0, 2.0, 3.0]
     assert table.values["c"].isna().tolist() == [True, True, False] and table.values["c"].iloc[2] == "z"
+
+
+def test_files_of_different_formats_are_one_dataset(tmp_path):
+    """Decisió T-44: cada format es prepara pel seu compte; les files segueixen l'ordre dels fitxers."""
+    parts = {"p_1.csv": b"id,name\n1,ann\n", "p_2.parquet": parquet(pd.DataFrame({"id": [2], "name": ["bob"]})),
+             "p_3.csv": b"id,name\n3,cat\n"}
+    table = load_files(_files(tmp_path, parts))
+    assert table.values["id"].tolist() == [1.0, 2.0, 3.0]
+    assert table.values["name"].tolist() == ["ann", "bob", "cat"]
+    assert table.columns["id"].kind == NUMERIC and table.columns["id"].integer
+    assert table.fmt == "csv+parquet"
+
+
+def test_a_column_with_different_types_in_two_formats_becomes_text(tmp_path):
+    parts = {"a.csv": b"v\n1\n2\n", "b.jsonl": b'{"v": "x"}\n'}
+    table = load_files(_files(tmp_path, parts))
+    assert table.columns["v"].kind == CATEGORICAL
+    assert table.values["v"].tolist() == ["1", "2", "x"]

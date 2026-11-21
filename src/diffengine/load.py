@@ -18,7 +18,7 @@ vol dir "absent". Per això `load_table`:
 
 Un dataset repartit en diversos fitxers es llegeix sencer amb `load_files`:
 les files de cada fitxer a continuació de les de l'anterior, amb les
-columnes de tots (decisió T-37).
+columnes de tots (decisió T-37), també si són de formats diferents (T-44).
 """
 
 import csv
@@ -26,7 +26,7 @@ import hashlib
 import io
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 import pandas as pd
@@ -364,6 +364,73 @@ def load_table(data: bytes, ext: str, config: EngineConfig = DEFAULT_CONFIG) -> 
     return _prepare(df, ext, dialect, config)
 
 
+def _as_text(values: pd.Series, kind: str) -> pd.Series:
+    """
+    Converteix una columna en text, per unir-la amb una altra d'un tipus diferent.
+
+    :param values: valors de la columna.
+    :param kind: tipus de la columna.
+    :return: els valors com a text (`None` = buit); els nombres enters, sense `.0`.
+    """
+    if kind == NUMERIC:
+        return values.map(lambda v: None if pd.isna(v) else format(float(v), ".15g")).astype(object)
+    return values.map(lambda v: None if is_missing(v) else str(v)).astype(object)
+
+
+def _merge_tables(tables: list[Table], config: EngineConfig) -> Table:
+    """
+    Uneix taules de formats diferents, ja preparades, en una sola (decisió T-44).
+
+    Les columnes són les de totes, en l'ordre en què surten. Si una columna té
+    el mateix tipus a totes, es manté; si no, passa a text (o a `opaque`, si
+    alguna ho és). Entre text i categòrica es torna a decidir amb tots els valors.
+
+    :param tables: taules preparades, cadascuna d'un format.
+    :param config: llindars del motor.
+    :return: la taula unida, amb les files en l'ordre de `tables`.
+    """
+    names = list(dict.fromkeys(name for t in tables for name in t.values.columns))
+    sizes = [t.n_rows for t in tables]
+    values, columns = {}, {}
+    for name in names:
+        present = [t.columns[name] for t in tables if name in t.columns]
+        kinds = {c.kind for c in present}
+        if kinds == {NUMERIC}:
+            parts = [t.values[name] if name in t.columns else pd.Series(np.nan, index=range(n), dtype="float64")
+                     for t, n in zip(tables, sizes)]
+            merged = pd.concat(parts, ignore_index=True).astype("float64")
+            csv_column = next((c for c in present if c.raw_dtype == "str"), present[0])
+            columns[name] = replace(csv_column, integer=_integral(merged))
+        else:
+            kind = OPAQUE if OPAQUE in kinds else None
+            parts = [_as_text(t.values[name], t.columns[name].kind) if name in t.columns
+                     else pd.Series([None] * n, dtype=object) for t, n in zip(tables, sizes)]
+            merged = pd.concat(parts, ignore_index=True).astype(object)
+            kind = kind or _text_or_categorical(merged, config)
+            raw_dtypes = sorted({c.raw_dtype for c in present})
+            columns[name] = Column(name, kind, raw_dtype="|".join(raw_dtypes))
+        values[name] = merged
+    return Table("+".join(dict.fromkeys(t.fmt for t in tables)), pd.DataFrame(values, columns=names), columns)
+
+
+def _load_same_format(parts: list[pd.DataFrame], ext: str, dialect: dict, config: EngineConfig) -> Table:
+    """
+    Uneix fitxers del mateix format i en decideix els tipus amb tots els valors.
+
+    :param parts: els fitxers llegits (`_read`), en ordre.
+    :param ext: extensió comuna.
+    :param dialect: dialecte del primer fitxer (CSV).
+    :param config: llindars del motor.
+    :return: la taula preparada.
+    """
+    if len(parts) == 1:
+        return _prepare(parts[0], ext, dialect, config)
+    df = pd.concat(parts, ignore_index=True, sort=False)
+    if ext in (".csv", ".tsv"):
+        df = df.fillna("")  # cel·la d'una columna que el seu fitxer no té: buida, com un camp buit
+    return _prepare(df, ext, dialect, config)
+
+
 def load_files(paths: list[str], config: EngineConfig = DEFAULT_CONFIG) -> Table:
     """
     Llegeix els fitxers d'un dataset (`datafiles.dataset_files`) com una sola
@@ -372,23 +439,31 @@ def load_files(paths: list[str], config: EngineConfig = DEFAULT_CONFIG) -> Table
     Les files de cada fitxer van a continuació de les de l'anterior, en ordre.
     Les columnes són les de tots els fitxers, en l'ordre en què surten: on un
     fitxer no en té una, les seves files hi queden buides. El tipus de cada
-    columna es decideix amb tots els valors, com si fos un sol fitxer.
+    columna es decideix amb tots els valors del mateix format, com si fos un
+    sol fitxer. Si hi ha fitxers de més d'un format, cada format es prepara
+    pel seu compte i després s'uneixen (`_merge_tables`, decisió T-44).
 
-    :param paths: fitxers locals, tots del mateix format, en ordre.
+    :param paths: fitxers locals, en ordre.
     :param config: llindars del motor.
     :return: la taula preparada per comparar.
     :raises ParseError: si algun no es pot llegir.
     """
-    ext = os.path.splitext(paths[0])[1].lower()
-    parts, dialect = [], {}
+    groups: dict[str, list[int]] = {}
+    read, dialects = [], {}
     for i, path in enumerate(paths):
+        ext = os.path.splitext(path)[1].lower()
         with open(path, "rb") as f:
-            df, part_dialect = _read(f.read(), ext)
-        parts.append(df)
-        dialect = dialect if i else part_dialect  # el del primer fitxer
-    if len(parts) == 1:
-        return _prepare(parts[0], ext, dialect, config)
-    df = pd.concat(parts, ignore_index=True, sort=False)
-    if ext in (".csv", ".tsv"):
-        df = df.fillna("")  # cel·la d'una columna que el seu fitxer no té: buida, com un camp buit
-    return _prepare(df, ext, dialect, config)
+            df, dialect = _read(f.read(), ext)
+        read.append(df)
+        groups.setdefault(ext, []).append(i)
+        dialects.setdefault(ext, dialect)  # el del primer fitxer de cada format
+    if len(groups) == 1:
+        ext = next(iter(groups))
+        return _load_same_format(read, ext, dialects[ext], config)
+    tables = [_load_same_format([read[i] for i in idx], ext, dialects[ext], config) for ext, idx in groups.items()]
+    merged = _merge_tables(tables, config)
+    # les files, en l'ordre dels fitxers i no agrupades per format
+    starts = np.cumsum([0] + [len(df) for df in read])
+    order = np.concatenate([np.arange(starts[i], starts[i + 1]) for idx in groups.values() for i in idx])
+    merged.values = merged.values.iloc[np.argsort(order, kind="stable")].reset_index(drop=True)
+    return merged
