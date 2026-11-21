@@ -69,10 +69,22 @@ a parquet del Hub.
 **Per al projecte, un repositori és un dataset** (decisió T-37). Subsets,
 splits i shards són maneres de repartir-lo en fitxers, com ho poden ser un
 CSV per any o un fitxer per document. A la Fase 2, tots els fitxers de dades
-del repositori s'uneixen en ordre i es comparen com un sol dataset: si la
-versió nova reparteix les mateixes files en més o menys fitxers, no surt cap
-canvi. Les columnes són les de tots els fitxers: on un fitxer no en té una,
-les seves files hi queden buides.
+del repositori, de qualsevol dels formats de la llista, s'uneixen en ordre i
+es comparen com un sol dataset: si la versió nova reparteix les mateixes
+files en més o menys fitxers, no surt cap canvi. Per a cada versió, amb el
+diagrama acordat amb el director (decisió T-44):
+
+- **Columnes diferents.** Si els fitxers no tenen tots el mateix conjunt de
+  columnes (taules diferents, o camps opcionals), la versió no es compara:
+  la comparació queda amb l'estat `mixed_columns`.
+- **Files repetides entre fitxers.** Si un fitxer repeteix files d'un altre
+  més gran (p.e. un `overall` amb les files de tots els fitxers per
+  categoria), s'ignora el més petit. Els fitxers es recorren de més files a
+  menys i es conserva cada fitxer que no comparteix cap fila amb els ja
+  conservats. Les repeticions dins d'un mateix fitxer són dades.
+- **Formats diferents.** Cada format es prepara pel seu compte (el CSV
+  decideix el tipus pels valors; parquet i JSON ja el porten) i després
+  s'uneixen.
 
 ### 2.3 Git LFS i el "clon bare" sense contingut
 
@@ -209,9 +221,9 @@ Termes que defineix aquest codi:
 | **Criteri B** | ≥2 branques i commits tabulars repartits en ≥2 sessions. | funció `eligibility_criterion` (sessions: `has_time_dispersed_substantive_commits`) |
 | **Versió** | Criteri A: cada tag. Criteri B: cada sessió (representada pel seu commit més recent). | extracció a `version_extractor.extract_versions_for_dataset` |
 | **Unitat de canvi** | Què es compara a la Fase 2: cada versió contra la següent. Criteri A: cada tag contra el tag següent. Criteri B: el final de cada sessió contra el final de la sessió següent. | funció `version_pairs` |
-| **Fitxer tabular** | D'un dels formats de l'execució (els de `config/formats.toml`, per defecte `.csv`, `.tsv`, `.parquet`, `.jsonl` i `.json`, o els de `--formats`) i fora de les carpetes de metadades (`meta/`...). L'únic tipus que es descarrega i es compara. Si una versió en té de més d'un format, només es compara el primer de la llista (decisions T-36 i T-42). | es defineix a la funció `diffengine.datafiles.is_tabular_path` |
+| **Fitxer tabular** | D'un dels formats de l'execució (els de `config/formats.toml`, per defecte `.csv`, `.tsv`, `.parquet`, `.jsonl` i `.json`, o els de `--formats`) i fora de les carpetes de metadades (`meta/`...). L'únic tipus que es descarrega i es compara. Si una versió en té de més d'un format, tots formen el dataset (decisions T-36, T-42 i T-44). | es defineix a la funció `diffengine.datafiles.is_tabular_path` |
 | **Shard** | Fitxer amb només una part de les files d'un split. |  |
-| **Dataset** | Un repositori del Hub. A la Fase 2, tots els seus fitxers tabulars s'uneixen en ordre i es comparen com un de sol (secció 2.2, decisió T-37). | funció `diffengine.datafiles.dataset_files` |
+| **Dataset** | Un repositori del Hub. A la Fase 2, tots els seus fitxers tabulars s'uneixen en ordre i es comparen com un de sol, si tenen les mateixes columnes (secció 2.2, decisions T-37 i T-44). | funció `diffengine.datafiles.dataset_files` |
 
 
 ### Identificadors que es troben al codi i als documents
@@ -254,7 +266,7 @@ python src/build_warehouse.py --run-dir data/run_9                              
 
 ```
 src/                Codi del pipeline: un script per fase i el motor de detecció de canvis
-config/             formats.toml: els formats tabulars i el seu ordre de preferència (T-36)
+config/             formats.toml: els formats tabulars (T-36, T-44)
   diffengine/       El motor, com a paquet de Python (s'explica a docs/validacio_census_income.md, secció 1)
 warehouse/          Magatzem de la Fase 3: projecte dbt sobre DuckDB (docs/warehouse.md)
 ui/                 Interfície de consulta (Streamlit): un visualitzador de l'execució, de només lectura sobre el magatzem (T-33, T-34)
@@ -298,7 +310,7 @@ xarxa ni token. `conftest.py` afegeix `src/` al camí d'importació.
 |---|---|
 | `requirements.txt` | Dependències amb versió fixada |
 | `ruff.toml` | Regles de lint |
-| `config/formats.toml` | Els formats tabulars, en ordre de preferència (decisió T-36). `docker-compose.yml` el munta a sobre del de la imatge, de manera que es pot canviar sense reconstruir-la. Per a una execució, `--formats` el substitueix (decisió T-42) |
+| `config/formats.toml` | Els formats tabulars (decisions T-36 i T-44). `docker-compose.yml` el munta a sobre del de la imatge, de manera que es pot canviar sense reconstruir-la. Per a una execució, `--formats` el substitueix (decisió T-42) |
 | `Dockerfile`, `docker-compose.yml` | Imatge per executar el pipeline sense instal·lar res; `docker-compose` hi defineix un servei per script (`run-pipeline`, `eligibility-scan`, `version-extractor`, `warehouse`) |
 | `.github/workflows/ci.yml` | A cada push: lint, tests i construcció de la imatge |
 | `.github/workflows/docker-publish.yml` | Publica la imatge |
@@ -555,18 +567,20 @@ mostra baixaria centenars de GB).
    unitat (`pairs.compare_revisions`). El motor:
    - de cada revisió en treu els **fitxers del dataset**
      (`datafiles.dataset_files`): els fitxers tabulars, amb la mateixa
-     regla que l'elegibilitat de la Fase 0 (secció 7.3), i si n'hi ha de
-     més d'un format, només els del primer de la llista de formats
-     (`config/formats.toml` o `--formats`) que hi surt (decisions T-36 i
-     T-42);
+     regla que l'elegibilitat de la Fase 0 (secció 7.3), de tots els
+     formats de la llista (`config/formats.toml` o `--formats`; decisions
+     T-36, T-42 i T-44);
    - si els fitxers són els mateixos i tenen el mateix contingut, no es
      descarrega res;
-   - si no, es descarreguen tots, s'uneixen en ordre en un sol dataset per
-     revisió (secció 2.2) i es comparen (decisió T-37).
+   - si no, es descarreguen tots; si tenen les mateixes columnes, s'ignoren
+     els que repeteixen files d'un altre més gran, s'uneixen en ordre en un
+     sol dataset per revisió (secció 2.2) i es comparen (decisions T-37 i
+     T-44).
 3. Cada comparació acaba amb un **estat** (`ok`, `identical_content`,
    `absent_old`/`absent_new` si una de les versions no té cap fitxer de
    dades, `no_data` si no en té cap de les dues, `download_failed`,
-   `parse_failed` o `too_large`). Una fallada de descàrrega no es
+   `parse_failed`, `too_large` o `mixed_columns` si els fitxers d'alguna
+   versió no tenen totes les mateixes columnes). Una fallada de descàrrega no es
    converteix mai en codis. L'estat, amb quants codis té, queda a
    `comparison_status.csv`, també el de les comparacions sense cap codi:
    així es distingeix "sense canvis" de "no s'ha pogut comparar" (decisió
@@ -603,7 +617,7 @@ incremental, mai sobreescriu) i hi desa tot:
 | `funnel_summary.json` | 0 | Resum de l'embut (secció 7.4): població recorreguda, quants passen cada filtre, elegibles per criteri, inaccessibles, errors, proporcions. |
 | `versions.csv` | 1 | Una fila per versió: `dataset_id, version_label, version_order, version_source, commit_sha, commit_date, authors, approx_size_bytes, session_commit_count, status`. |
 | `change_classification.csv` | 2 | Una fila per parell de versions i codi: `dataset_id, version_from, version_to, code, description, is_breaking`. `version_from`/`version_to` són SHA de commit (els `commit_sha` de `versions.csv`). |
-| `comparison_status.csv` | 2 | Una fila per parell de versions, també sense cap codi: `dataset_id, version_from, version_to, status, n_codes, format_from, format_to, n_files_from, n_files_to, size_bytes`. `status` és l'estat de la comparació (secció 9.1); `n_codes`, quants codis diferents té, que són les seves files a `change_classification.csv`. `format_*` i `n_files_*`: el format comparat i quants fitxers té el dataset a cada versió. `size_bytes`: la mida de les dues versions, sumades, que és la que es compara amb `--max-dataset-mb`. |
+| `comparison_status.csv` | 2 | Una fila per parell de versions, també sense cap codi: `dataset_id, version_from, version_to, status, n_codes, format_from, format_to, n_files_from, n_files_to, n_files_dropped_from, n_files_dropped_to, size_bytes`. `status` és l'estat de la comparació (secció 9.1); `n_codes`, quants codis diferents té, que són les seves files a `change_classification.csv`. `format_*` i `n_files_*`: els formats (p.e. `csv+parquet`) i quants fitxers té el dataset a cada versió; `n_files_dropped_*`, quants no s'han llegit perquè repetien files d'un altre (decisió T-44). `size_bytes`: la mida de les dues versions, sumades, que és la que es compara amb `--max-dataset-mb`. |
 | `failures.csv` | totes | Només si hi ha fallades: `timestamp, source, dataset_id, error_category, error_message, retries_attempted`. `source` indica la fase. |
 
 **Magatzem (Fase 3).** No va dins de la carpeta, que és immutable, sinó a

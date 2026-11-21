@@ -1601,7 +1601,8 @@ Estat: Fet
 DECISIÓ T-36: els formats tabulars i el seu ordre es configuren en un fitxer
 Data: novembre 2026
 Responsable: Joan (acordat amb el director a la reunió de seguiment)
-Estat: Fet (revisada: per a una execució, `--formats` substitueix el fitxer, T-42)
+Estat: Fet (revisada: per a una execució, `--formats` substitueix el fitxer, T-42; l'ordre ja no tria
+       cap format, T-44)
 
   MOTIU: quan una versió tenia fitxers tabulars de més d'un format, el motor
   comparava el més freqüent (la regla de la llibreria `datasets`; en cas
@@ -1634,7 +1635,8 @@ Estat: Fet (revisada: per a una execució, `--formats` substitueix el fitxer, T-
 DECISIÓ T-37: un repositori és un dataset
 Data: novembre 2026
 Responsable: Joan
-Estat: Fet (la Fase 2 de run_9 s'ha de tornar a fer)
+Estat: Fet (la Fase 2 de run_9 s'ha de tornar a fer; revisada a T-44: fitxers amb columnes diferents i
+       fitxers que repeteixen files)
 
   MOTIU: la Fase 2 comparava "taules": cada (subset, split) que trobava la
   llibreria `datasets`, i fitxer per fitxer els que no hi encaixaven. Per a
@@ -1768,7 +1770,7 @@ Estat: Fet
 DECISIÓ T-41: dues cel·les buides no fan que dues columnes siguin la mateixa
 Data: novembre 2026
 Responsable: Joan
-Estat: Fet
+Estat: Fet (la repetició de files de PDL-Bench es resol a T-44)
 
   MOTIU: Carlos va revisar a mà l'eina (`develop`, commit cb8e4ce) amb 20
   parelles de versions i va trobar falsos positius en dues:
@@ -1819,7 +1821,7 @@ Estat: Fet
 DECISIÓ T-42: els formats es poden canviar per a una execució (`--formats`)
 Data: novembre 2026
 Responsable: Joan
-Estat: Fet
+Estat: Fet (revisada a T-44: l'opció diu quins formats compten, i l'ordre ja no prioritza cap format)
 
   MOTIU: Carlos va provar l'eina amb 20 parelles de versions i, per
   usabilitat, proposa poder fixar per paràmetre quin format es compara quan
@@ -1938,7 +1940,8 @@ Estat: Fet (substitueix el punt de C510 de T-20)
   - Fitxers units (T-37). Si un fitxer del dataset guanya una columna que
     abans no tenia, les cel·les de les seves files passen de buides a tenir
     valor: C520. És un canvi real de la taula, però ve de com estan
-    organitzats els fitxers.
+    organitzats els fitxers. Des de T-44 aquest cas no es compara: els
+    fitxers d'una versió han de tenir totes les mateixes columnes.
   - C530. Com que les files són les mateixes, només surt si algun valor
     canvia. Pot ser un fals positiu si el canvi ve de parelles
     equivocades (els valors de dues files diferents), o si és un canvi de
@@ -1982,6 +1985,111 @@ Estat: Fet (substitueix el punt de C510 de T-20)
   mateixa columna, per percentatge net, files afegides amb buits, C530
   només amb cel·les amb valor, correlació d'una columna barrejada i el cas
   sense files aparellades).
+
+DECISIÓ T-44: repositoris amb diversos fitxers (diagrama del director)
+Data: novembre 2026
+Responsable: Joan (acordat amb el director per correu)
+Estat: Fet (revisa T-36, T-37 i T-42)
+
+  MOTIU: T-37 unia tots els fitxers del format preferit. Amb les dades
+  reals, això falla de dues maneres:
+  - Un fitxer que repeteix els altres. PDL-Bench (P09 de Carlos, T-41) té
+    un fitxer per categoria i `overall`, amb totes les preguntes: la unió
+    té cada fila dues vegades o més (163 files i 60 ID a la v1). L'ID
+    deixa de ser clau, les files s'aparellen pel contingut i surt C422
+    `duplicate_removed` per l'organització dels fitxers.
+  - Taules diferents al mateix repositori. `arc-agi3-cc-glm5.2-ft09`
+    (run_10) té registres, episodis i prediccions sense cap columna en
+    comú; IndustryBench-MIPU, metadades i dos nivells d'imatge. Unir-les
+    dona codis sense sentit (C421 i C221 per cada fitxer nou).
+  El director va proposar un diagrama, determinista i fàcil d'explicar:
+  formats diferents → triar-ne un; mateix format i columnes diferents →
+  no es compara; mateixes columnes i files repetides entre fitxers →
+  ignorar el fitxer més petit; si no, unir-los. Després va afegir que el
+  format no cal triar-lo: tot acaba en un DataFrame.
+
+  DECISIÓ (`load.load_files`, per a cada versió per separat):
+  1. Es llegeixen tots els fitxers de dades dels formats de la llista
+     (`config/formats.toml` o `--formats`). L'ordre de la llista ja no
+     tria cap format; només diu quins compten.
+  2. Un sol fitxer: es compara tal com és.
+  3. Columnes diferents (el conjunt de noms, sense mirar l'ordre, no és el
+     mateix a tots els fitxers): la versió no es compara. La comparació
+     queda amb l'estat `mixed_columns` i sense codis, i compta com a no
+     feta (`not_compared`) al magatzem.
+  4. Mateixes columnes: es fa un hash de cada fila amb els valors
+     normalitzats (`cell_tokens`: el mateix valor dona el mateix hash en
+     CSV i en parquet). Els fitxers es recorren de més files a menys (en
+     cas d'empat, en ordre natural) i es conserva cada fitxer que no
+     comparteix cap fila amb els ja conservats (`files_to_keep`). Fa el
+     mateix que el bucle del diagrama ("ignorar el més petit i tornar a
+     començar"), en una sola passada. Les files repetides dins d'un mateix
+     fitxer no compten: són dades.
+  5. Els fitxers conservats s'uneixen en ordre natural. Si són de formats
+     diferents, cada format es prepara pel seu compte (el CSV decideix el
+     tipus pels valors; parquet i JSON ja el porten) i després s'uneixen;
+     una columna amb tipus diferents segons el format passa a text.
+  - Sortida: `comparison_status.csv` té `n_files_dropped_from` i
+    `n_files_dropped_to` (fitxers que no s'han llegit), i `format_from` /
+    `format_to` tenen tots els formats de la versió (p.e. `csv+parquet`).
+    El magatzem les llegeix també dels runs anteriors, que no les tenen
+    (0). La interfície mostra l'estat nou com "Fitxers amb columnes
+    diferents (no es comparen)".
+
+  DADES (recalculat fora de línia amb la caché local, sense xarxa):
+  - PDL-Bench v1 → v2.0: queda `overall` (60 i 99 files; s'ignoren 9 i 6
+    fitxers de categoria) i no es perd cap fila diferent. A la v1,
+    `overall` té una pregunta (PDS089) que no és a cap categoria i 29
+    preguntes surten en 2-5 categories: una regla "l'agregat és la unió
+    exacta dels altres" no hauria funcionat. Les files s'aparellen per la
+    clau ID (33 parelles, totes les comunes) i desapareix el C422
+    `duplicate_removed`. Surten codis de cel·la que abans quedaven amagats
+    (C312 `cell_edits`, C410, C510, C520).
+  - run_10 (11 comparacions fetes): arc-agi3 (6) i IndustryBench (1)
+    passen a `mixed_columns`; les altres 4 donen els mateixos codis.
+  - run_9: `pulsia/fr-bench-pdf2md` (12 comparacions) passa a
+    `mixed_columns`. És la mateixa taula amb camps opcionals segons el
+    tipus de test (8-15 conjunts de columnes): és la pèrdua acceptada amb
+    el director. `cambridgeltl/xcopa` ignora 2 fitxers de prova copiats en
+    dues carpetes. La resta, igual.
+
+  ALTERNATIVES DESCARTADES per als camps opcionals:
+  - Comparar el grup de fitxers amb més files (la "taula principal"): a
+    fr-bench el grup canvia en 4 de les 13 versions i sortirien canvis de
+    columnes falsos; a més, només en recull un 40% de les files.
+  - Unir els fitxers que comparteixen un nucli de columnes: a les primeres
+    versions de fr-bench no n'hi ha cap, i IndustryBench, que són taules
+    diferents, en comparteix 7. Caldria un llindar arbitrari.
+  - Agrupar pel nom del fitxer o per la declaració `configs` del README:
+    fr-bench té tres noms (`tests`, `tests_graphics`, `tests_tiny_text`) i
+    el README no declara cap taula.
+
+  RISCOS:
+  - Solapament parcial: si dos fitxers comparteixen només algunes files
+    (p.e. unes quantes de `test` que també són a `train`), s'ignora el més
+    petit sencer i es perden les seves files pròpies. No s'ha vist a les
+    dades; `n_files_dropped_*` ho fa visible.
+  - Còpies en dos formats que no es normalitzen igual (dates escrites
+    d'una altra manera, booleans `true`/`True`): no es reconeixen com a
+    repetides i cada fila surt dues vegades.
+  - Un fitxer d'un altre format que no són dades (p.e. un JSON de
+    configuració que no és a la llista de metadades): abans la prioritat
+    l'ignorava; ara fa que la versió sigui `mixed_columns`.
+
+  COST: només amb més d'un fitxer. Cada fitxer es prepara una vegada per
+  fer-ne el hash (una passada per cel·la) i els fitxers conservats es
+  tornen a preparar junts, perquè el tipus de cada columna depèn de quins
+  fitxers entren (p.e. PROMPT de PDL-Bench semblava categòrica per les
+  repeticions).
+
+  TESTS: `tests/test_diffengine_load.py` (columnes diferents, mateixes
+  columnes en un altre ordre, cas PDL-Bench, dues còpies idèntiques, la
+  mateixa taula en CSV i parquet, repeticions dins d'un fitxer, formats
+  barrejats i tipus incompatibles), `tests/test_diffengine_pairs.py`
+  (`mixed_columns` i fitxers ignorats), `tests/test_diffengine_datafiles.py`
+  (tots els formats) i, a `tests/test_diffengine_regressions.py`, `test_31`
+  (un CSV per any amb una columna nova ja no es compara) i `test_42`
+  (PDL-Bench: clau ID i cap C422 `duplicate_removed`).
 
 
 ================================================================================
