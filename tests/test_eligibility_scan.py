@@ -1240,7 +1240,8 @@ class TestRunClassification:
         status = pd.read_csv(tmp_path / "comparison_status.csv")
         assert list(status.columns) == ["dataset_id", "version_from", "version_to", "status", "n_codes", "format_from",
                                         "format_to", "n_files_from", "n_files_to", "n_files_dropped_from",
-                                        "n_files_dropped_to", "size_bytes"]
+                                        "n_files_dropped_to", "n_rows_from", "n_rows_to", "n_columns_from",
+                                        "n_columns_to", "size_bytes"]
         assert status[["version_to", "status", "n_codes"]].values.tolist() == [["sha2", "ok", 2], ["sha3", "ok", 0]]
         # n_codes és el nombre de files de la parella de versions a change_classification.csv.
         changes = pd.read_csv(tmp_path / "change_classification.csv")

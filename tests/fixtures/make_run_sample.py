@@ -94,6 +94,13 @@ COMPARISONS = {
 # Fitxers que no es llegeixen perquè repeteixen files d'un altre més gran (T-44): (versió antiga, versió nova)
 DROPPED = {("org/sessions-b", "session-1", "session-2"): (1, 1)}
 
+# (files, columnes) del dataset llegit a cada versió; les comparacions no fetes no en tenen
+SHAPES = {
+    ("org/tags-a", "v1.0", "v1.1"): ((100, 5), (120, 6)),
+    ("org/tags-a", "v1.1", "v2.0"): ((120, 6), (120, 5)),
+    ("org/sessions-b", "session-1", "session-2"): ((500, 8), (500, 8)),
+}
+
 FAILURES = [
     ("2026-01-15T09:10:00+00:00", "sampling", "org/gated", "access_restricted", "403 Client Error", 0),
     ("2026-01-15T09:20:00+00:00", "sampling", "org/busy", "rate_limited", "429 Client Error", 5),
@@ -128,11 +135,13 @@ def main(out: str = OUT) -> None:
     changes, statuses = [], []
     for (ds, old, new), (status, codes, fmt, (files_from, files_to), size) in COMPARISONS.items():
         dropped_from, dropped_to = DROPPED.get((ds, old, new), (0, 0))
+        (rows_from, cols_from), (rows_to, cols_to) = SHAPES.get((ds, old, new), ((None, None), (None, None)))
         pair = {"dataset_id": ds, "version_from": sha(f"{ds}@{old}"), "version_to": sha(f"{ds}@{new}")}
         changes += [{**pair, "code": code} for code in codes]
         statuses.append({**pair, "status": status, "n_codes": len(codes), "format_from": fmt, "format_to": fmt,
                          "n_files_from": files_from, "n_files_to": files_to, "n_files_dropped_from": dropped_from,
-                         "n_files_dropped_to": dropped_to, "size_bytes": size})
+                         "n_files_dropped_to": dropped_to, "n_rows_from": rows_from, "n_rows_to": rows_to,
+                         "n_columns_from": cols_from, "n_columns_to": cols_to, "size_bytes": size})
     classification_frame(changes).to_csv(os.path.join(out, "change_classification.csv"), index=False)
     status_frame(statuses).to_csv(os.path.join(out, "comparison_status.csv"), index=False)
 

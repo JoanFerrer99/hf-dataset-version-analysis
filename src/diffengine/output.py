@@ -76,7 +76,8 @@ def classification_frame(rows: list[dict]) -> pd.DataFrame:
 
 
 STATUS_COLUMNS = ["dataset_id", "version_from", "version_to", "status", "n_codes", "format_from", "format_to",
-                  "n_files_from", "n_files_to", "n_files_dropped_from", "n_files_dropped_to", "size_bytes"]
+                  "n_files_from", "n_files_to", "n_files_dropped_from", "n_files_dropped_to", "n_rows_from", "n_rows_to",
+                  "n_columns_from", "n_columns_to", "size_bytes"]
 
 
 def status_frame(rows: list[dict]) -> pd.DataFrame:
@@ -85,6 +86,10 @@ def status_frame(rows: list[dict]) -> pd.DataFrame:
     de versions d'un dataset, també les que no tenen cap codi.
 
     :param rows: una fila per parell de versions (`pairs.status_row`).
-    :return: la taula, amb les columnes de `STATUS_COLUMNS`.
+    :return: la taula, amb les columnes de `STATUS_COLUMNS`; les files i columnes, enters (buits si no
+        s'ha llegit el dataset).
     """
-    return pd.DataFrame(rows, columns=STATUS_COLUMNS)
+    out = pd.DataFrame(rows, columns=STATUS_COLUMNS)
+    shape = ["n_rows_from", "n_rows_to", "n_columns_from", "n_columns_to"]
+    out[shape] = out[shape].astype("Int64")
+    return out
