@@ -1,4 +1,4 @@
-# Magatzem de la Fase 3: DuckDB + dbt (docs/warehouse.md).
+# Magatzem de la Fase 3: DuckDB + dbt (docs/architecture.md, secció 10).
 # Bronze = una carpeta data/run_<id>/ (variable run_dir); silver = staging;
 # gold = l'esquema en estrella (marts/core) i els marts de consulta (marts/analysis).
 # S'executa des de l'arrel del repositori:

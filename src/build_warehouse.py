@@ -1,5 +1,5 @@
 """
-Fase 3: construeix el magatzem (DuckDB + dbt, `docs/warehouse.md`) a partir
+Fase 3: construeix el magatzem (DuckDB + dbt, `docs/architecture.md`, secció 10) a partir
 d'una carpeta `data/run_<id>/`.
 
 

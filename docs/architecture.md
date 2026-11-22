@@ -237,7 +237,7 @@ python src/build_warehouse.py --run-dir data/run_9                              
 
 - Cal `git` al sistema (la imatge Docker ja l'inclou).
 - La Fase 3 fa servir el `dbt` del mateix entorn (`requirements.txt`) i
-  s'executa des de l'arrel del repositori (`docs/warehouse.md`).
+  s'executa des de l'arrel del repositori (secció 10).
 - Sense arguments, els scripts mostren l'ajuda i surten, perquè una
   crida accidental no engegui una execució de diverses hores.
 - Una execució real de 2000 datasets recorre tota la població de HF:
@@ -251,10 +251,10 @@ python src/build_warehouse.py --run-dir data/run_9                              
 src/                Codi del pipeline: un script per fase i el motor de detecció de canvis
 config/             formats.toml: els formats tabulars (T-36, T-44)
   diffengine/       El motor, com a paquet de Python (s'explica a docs/validacio_census_income.md, secció 1)
-warehouse/          Magatzem de la Fase 3: projecte dbt sobre DuckDB (docs/warehouse.md)
+warehouse/          Magatzem de la Fase 3: projecte dbt sobre DuckDB (secció 10)
 ui/                 Interfície de consulta (Streamlit): un visualitzador de l'execució, de només lectura sobre el magatzem
 tests/              Tests automàtics (pytest), sense xarxa; fixtures/run_sample/ és una execució sintètica
-data/               Resultats de les execucions (secció 10)
+data/               Resultats de les execucions (secció 11)
 docs/               Documentació (ordre de lectura: docs/README.md)
 ```
 
@@ -596,7 +596,81 @@ Compara dues versions d'un dataset en 5 passos. `engine.py` n'és l'índex.
 
 ---
 
-## 10. Fitxers que es generen
+## 10. Fase 3 — Magatzem de dades
+
+Un fitxer DuckDB construït amb dbt a partir d'una carpeta `data/run_<id>/`.
+La interfície i les figures només llegeixen la capa gold.
+
+```
+bronze  data/run_<id>/*.csv, funnel_summary.json        el que escriu el pipeline (no es toca mai)
+  │     warehouse/models/staging/_sources.yml           es llegeix com a text
+  ▼
+silver  warehouse/models/staging/stg_*.sql              vistes: tipus, noms en snake_case, cap filtre
+  ▼
+gold    warehouse/models/marts/core/                    esquema en estrella (taules)
+        warehouse/models/marts/analysis/                marts de consulta (taules)
+```
+
+### 10.1 Com es regenera
+
+Des de l'arrel del repositori (les vistes de staging llegeixen els CSV amb
+rutes relatives a l'arrel; les taules gold porten les dades a dins):
+
+```bash
+python src/build_warehouse.py --run-dir data/<run_id>           # data/warehouse/<run_id>.duckdb
+dbt build --project-dir warehouse --profiles-dir warehouse      # fixture sintètica (la de la CI)
+```
+
+- `build_warehouse.py` fa `dbt build --full-refresh` (models i tests) amb la
+  carpeta com a variable `run_dir`, i desa el `.duckdb` fora de la carpeta,
+  que és immutable. El crida `run_pipeline.py` després de la Fase 2.
+- Variables dbt: `run_dir` (per defecte, `tests/fixtures/run_sample/`) i
+  `census_dir` (la validació de Census Income, `data/census_income/run_2/`).
+  Variable d'entorn `WAREHOUSE_PATH`: on es desa el `.duckdb` (fora de git).
+- Les columnes que els runs antics no tenen (p.e. `n_files_dropped_*` o les
+  durades) surten buides o a 0: no cal tornar a executar el pipeline per
+  construir-ne el magatzem.
+
+### 10.2 Capes
+
+- **Silver (staging):** una vista per fitxer de bronze (`stg_eligibility_report`,
+  `stg_funnel_summary`, `stg_versions`, `stg_change_classification`,
+  `stg_comparison_status`, `stg_failures`, `stg_census_validation`). Hi
+  posa el tipus de cada columna; les dates amb zona passen a UTC.
+- **Gold, estrella:** el gra de `fact_change` és un codi de la taxonomia
+  entre dues versions consecutives d'un dataset (una fila de
+  `change_classification.csv`). Les claus subrogades són l'md5 de la clau
+  natural (macro `surrogate_key`).
+
+| Model | Clau natural | Columnes |
+|---|---|---|
+| `fact_change` | dataset, versió antiga, versió nova, codi | claus `dataset_key`, `kind_key`, `version_from_key`, `version_to_key`, `date_key` (dia de la versió nova); mesures `change_count` (= 1) i `age_days` (dies des de la creació del dataset) |
+| `dim_dataset` | `dataset_id` | `owner`, `eligibility_criterion` (A/B), `num_tags`, `num_branches`, `num_tabular_commits`, `num_data_files`, `tabular_file_share`, `created_at`, `license`, `downloads`. Només els elegibles. |
+| `dim_version` | `dataset_id`, `commit_sha` | `version_label`, `version_order`, `version_source`, `commit_date`. Fa dos rols al fet: *from* i *to*. |
+| `dim_date` | `date` | `year`, `quarter`, `year_quarter`, `month`, `weekday`. Només els dies amb alguna versió. |
+| `dim_kind_of_change` | `code` | `name`, `perspective`, `level_1` a `level_3` (les xifres del codi). Ve del seed `warehouse/seeds/taxonomy.csv`. |
+
+- **Gold, marts:** una taula per pregunta (`mart_funnel`, `mart_change_units`,
+  `mart_code_frequency`, `mart_change_share`, `mart_changes_by_quarter`,
+  `mart_criterion_comparison`, `mart_dataset_profile`,
+  `mart_census_validation`). Cada model té la pregunta i les columnes
+  descrites al seu `_analysis.yml`. `mart_change_units` (una fila per
+  comparació, amb l'estat) és la base de les proporcions: només compten les
+  comparacions fetes (`is_compared`).
+
+### 10.3 Tests i limitacions
+
+- `dbt build` passa els tests genèrics (claus, relacions i valors admesos) i
+  els de `warehouse/tests/`: conciliació amb el que va escriure el pipeline
+  (`reconcile_*.sql`) i coherència dels marts (`assert_*.sql`).
+- `tests/test_warehouse_seed.py` comprova que el seed diu el mateix que el
+  motor, i `tests/test_run_sample_fixture.py`, que la fixture és el que
+  escriu el pipeline.
+- Els runs sense data de creació dels datasets tenen `age_days` buit.
+
+---
+
+## 11. Fitxers que es generen
 
 Cada execució de `run_pipeline.py` crea **`data/run_<id>/`** (número
 incremental, mai sobreescriu) i hi desa tot:
@@ -612,8 +686,7 @@ incremental, mai sobreescriu) i hi desa tot:
 
 **Magatzem (Fase 3).** No va dins de la carpeta, que és immutable, sinó a
 `data/warehouse/run_<id>.duckdb` (un fitxer DuckDB, fora de git). El
-construeix `build_warehouse.py` amb dbt: capes, models i tests a
-`docs/warehouse.md`.
+construeix `build_warehouse.py` amb dbt (secció 10).
 
 L'únic número és el de la carpeta: a dins, els noms són fixos. Els scripts
 executats sols (`eligibility_scan.py`, `version_extractor.py`) també creen
@@ -624,7 +697,7 @@ La validació de Census Income escriu a `data/census_income/run_<id>/`.
 
 ---
 
-## 11. Gestió d'errors de l'API Hugging Face (`errors.py`)
+## 12. Gestió d'errors de l'API Hugging Face (`errors.py`)
 
 - `with_retry(fn, ...)` embolcalla **totes** les crides a HF. Reintenta
   només els 429 i els errors de xarxa, fins a 5 intents, amb espera. Qualsevol altre error es propaga a la primera. Configurable amb `--retry-*`.
@@ -643,7 +716,7 @@ La validació de Census Income escriu a `data/census_income/run_<id>/`.
 
 ---
 
-## 12. Cost (Ordre - O(cost)) i complexitat
+## 13. Cost (Ordre - O(cost)) i complexitat
 
 El cost no el posa el càlcul local, sinó **les crides a l'API i els
 bytes descarregats**. Per això les decisions limiten *quantes* crides i
@@ -690,14 +763,14 @@ I els formats tabulars: `--formats`, a `run_pipeline.py`, `eligibility_scan.py` 
 
 ---
 
-## 13. Validació i resultats
+## 14. Validació i resultats
 
-### 13.1 Tests
+### 14.1 Tests
 
 210 tests (secció 5.4). Cap necessita xarxa ni token: l'API de Hugging Face
 se simula amb `monkeypatch`.
 
-### 13.2 Validació del motor amb Census Income
+### 14.2 Validació del motor amb Census Income
 
 `validate_census_income.py` compara D1-D7 amb D0 (secció 2.7) amb el
 mateix motor de la Fase 2 i contrasta el resultat amb la Taula 1 del
@@ -731,7 +804,7 @@ paper. Cal tornar a executar `validate_census_income.py` per confirmar-ho.
 
 ---
 
-## 14. Convencions i on trobar més informació
+## 15. Convencions i on trobar més informació
 
 ### Convencions
 - **Git Flow** (`docs/GIT_FLOW.md`): branques `main` i `develop`
