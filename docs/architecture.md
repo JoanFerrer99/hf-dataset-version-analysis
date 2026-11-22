@@ -73,6 +73,8 @@ del repositori, de qualsevol dels formats de la llista, s'uneixen en ordre i
 es comparen com un sol dataset: si la versió nova reparteix les mateixes
 files en més o menys fitxers, no surt cap canvi. Per a cada versió:
 
+- **Documents JSON.** Un `.json` que no és una taula (p.e. `croissant.json`,
+  `metadata.json`) no és dades: no es llegeix i compta com a fitxer ignorat.
 - **Columnes diferents.** Si els fitxers no tenen tots el mateix conjunt de
   columnes (taules diferents, o camps opcionals), la versió no es compara:
   la comparació queda amb l'estat `mixed_columns`.
@@ -83,7 +85,8 @@ files en més o menys fitxers, no surt cap canvi. Per a cada versió:
   conservats. Les repeticions dins d'un mateix fitxer són dades.
 - **Formats diferents.** Cada format es prepara pel seu compte (el CSV
   decideix el tipus pels valors; parquet i JSON ja el porten) i després
-  s'uneixen.
+  s'uneixen. Una columna numèrica en un format és numèrica a la taula unida
+  si tots els seus valors, de tots els formats, són números; si no, text.
 
 ### 2.3 Git LFS i el "clon bare" sense contingut
 
@@ -560,7 +563,8 @@ mostra baixaria centenars de GB).
      formats de la llista (`config/formats.toml` o `--formats`);
    - si els fitxers són els mateixos i tenen el mateix contingut, no es
      descarrega res;
-   - si no, es descarreguen tots; si tenen les mateixes columnes, s'ignoren
+   - si no, es descarreguen tots; els documents JSON que no són taules no es
+     llegeixen; si tenen les mateixes columnes, s'ignoren
      els que repeteixen files d'un altre més gran, s'uneixen en ordre en un
      sol dataset per revisió i es comparen
 3. Cada comparació acaba amb un **estat** (`ok`, `identical_content`,
@@ -603,7 +607,7 @@ incremental, mai sobreescriu) i hi desa tot:
 | `funnel_summary.json` | 0 | Resum de l'embut (secció 7.4): població recorreguda, quants passen cada filtre, elegibles per criteri, inaccessibles, errors, proporcions; i la durada de cada fase (`duration_*_s`, secció 6). |
 | `versions.csv` | 1 | Una fila per versió: `dataset_id, version_label, version_order, version_source, commit_sha, commit_date, authors, approx_size_bytes, session_commit_count, status`. |
 | `change_classification.csv` | 2 | Una fila per parell de versions i codi: `dataset_id, version_from, version_to, code, description, is_breaking`. `version_from`/`version_to` són SHA de commit (els `commit_sha` de `versions.csv`). |
-| `comparison_status.csv` | 2 | Una fila per parell de versions, també sense cap codi: `dataset_id, version_from, version_to, status, n_codes, format_from, format_to, n_files_from, n_files_to, n_files_dropped_from, n_files_dropped_to, size_bytes`. `status` és l'estat de la comparació (secció 9.1); `n_codes`, quants codis diferents té, que són les seves files a `change_classification.csv`. `format_*` i `n_files_*`: els formats (p.e. `csv+parquet`) i quants fitxers té el dataset a cada versió; `n_files_dropped_*`, quants no s'han llegit perquè repetien files d'un altre (decisió T-44). `size_bytes`: la mida de les dues versions, sumades, que és la que es compara amb `--max-dataset-mb`. |
+| `comparison_status.csv` | 2 | Una fila per parell de versions, també sense cap codi: `dataset_id, version_from, version_to, status, n_codes, format_from, format_to, n_files_from, n_files_to, n_files_dropped_from, n_files_dropped_to, size_bytes`. `status` és l'estat de la comparació (secció 9.1); `n_codes`, quants codis diferents té, que són les seves files a `change_classification.csv`. `format_*` i `n_files_*`: els formats (p.e. `csv+parquet`) i quants fitxers té el dataset a cada versió; `n_files_dropped_*`, quants no s'han llegit perquè no són taules o repetien files d'un altre. `size_bytes`: la mida de les dues versions, sumades, que és la que es compara amb `--max-dataset-mb`. |
 | `failures.csv` | totes | Només si hi ha fallades: `timestamp, source, dataset_id, error_category, error_message, retries_attempted`. `source` indica la fase. |
 
 **Magatzem (Fase 3).** No va dins de la carpeta, que és immutable, sinó a

@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from diffengine.load import CATEGORICAL, NUMERIC, OPAQUE, MixedColumns, load_files, load_table
+from diffengine.load import CATEGORICAL, NUMERIC, OPAQUE, MixedColumns, ParseError, load_files, load_table
 
 
 def parquet(df: pd.DataFrame) -> bytes:
@@ -162,3 +162,31 @@ def test_a_column_with_different_types_in_two_formats_becomes_text(tmp_path):
     table = load_files(_files(tmp_path, parts))
     assert table.columns["v"].kind == CATEGORICAL
     assert table.values["v"].tolist() == ["1", "2", "x"]
+
+
+def test_numbers_written_as_text_in_another_format_are_numbers(tmp_path):
+    """Un CSV numèric i un JSON amb `"3"`: tots els valors són números, i la columna és numèrica."""
+    table = load_files(_files(tmp_path, {"a.csv": b"v\n1\n2\n", "b.jsonl": b'{"v": "3"}\n{"v": null}\n'}))
+    assert table.columns["v"].kind == NUMERIC and table.columns["v"].integer
+    assert table.values["v"].iloc[:3].tolist() == [1.0, 2.0, 3.0] and np.isnan(table.values["v"].iloc[3])
+
+
+def test_a_json_document_next_to_the_data_is_not_read(tmp_path):
+    """run_11: `metadata.json`, `croissant.json` o `subtasks.json` al costat dels parquet no són taules."""
+    parts = {"data/train.parquet": parquet(pd.DataFrame({"id": [1, 2]})),
+             "metadata.json": b'{"name": "opera", "splits": ["train", "test"], "files": ["a", "b", "c"]}'}
+    table = load_files(_files(tmp_path, parts))
+    assert table.values["id"].tolist() == [1.0, 2.0]
+    assert [os.path.basename(p) for p in table.dropped_files] == ["metadata.json"]
+
+
+def test_a_json_document_alone_cannot_be_read(tmp_path):
+    with pytest.raises(ParseError):
+        load_files(_files(tmp_path, {"metadata.json": b'{"name": "opera", "splits": ["train", "test"], "files": ["a", "b", "c"]}'}))
+
+
+def test_a_broken_data_file_is_still_a_parse_error(tmp_path):
+    """Només es deixen de banda els documents JSON: un fitxer de dades que no es pot llegir no s'amaga."""
+    parts = {"a.parquet": parquet(pd.DataFrame({"id": [1]})), "b.jsonl": b'{"id": 2\n'}
+    with pytest.raises(ParseError):
+        load_files(_files(tmp_path, parts))

@@ -2064,6 +2064,21 @@ Estat: Fet (revisa T-36, T-37 i T-42)
     el director. `cambridgeltl/xcopa` ignora 2 fitxers de prova copiats en
     dues carpetes. La resta, igual.
 
+  DOCUMENTS JSON I TIPUS (run_11): els 10 `parse_failed` del run_11 venien
+  d'un sol `.json` que és un document i no una taula
+  (`candywrapper_plugins/subtask/subtasks.json`, `metadata.json`,
+  `croissant.json`): pandas no el pot llegir i fallava tota la versió.
+  - Un `.json` que no es pot llegir com a taula no és dades: no es llegeix i
+    compta a `n_files_dropped_*`. Si és l'únic fitxer, la versió continua
+    sent `parse_failed`; un CSV, parquet o JSONL que no es pot llegir també,
+    perquè un fitxer de dades malmès no s'ha d'amagar.
+  - Una columna numèrica en un format és numèrica a la taula unida si tots
+    els seus valors, de tots els formats, són números (p.e. `"3"` en un
+    JSON), la mateixa regla que el CSV; si no, passa a text.
+  - Recalculat des de la caché: agilex_push_max_chip (4) passa a `ok`,
+    moldata-opera_km (5) a `mixed_columns` (té dues taules diferents) i la
+    resta dona els mateixos codis.
+
   ALTERNATIVES DESCARTADES per als camps opcionals:
   - Comparar el grup de fitxers amb més files (la "taula principal"): a
     fr-bench el grup canvia en 4 de les 13 versions i sortirien canvis de

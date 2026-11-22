@@ -69,7 +69,8 @@ class Table:
     :ivar values: valors normalitzats; numèriques en float64 (NaN = nul),
         la resta en text exacte (None = nul).
     :ivar raw: text cru de cada cel·la (només CSV/TSV).
-    :ivar dropped_files: fitxers que no s'han llegit perquè repetien files d'un altre més gran (`load_files`).
+    :ivar dropped_files: fitxers que no s'han llegit perquè no són taules o repetien files d'un altre més gran
+        (`load_files`).
     """
 
     fmt: str
@@ -400,13 +401,30 @@ def _as_text(values: pd.Series, kind: str) -> pd.Series:
     return values.map(lambda v: None if is_missing(v) else str(v)).astype(object)
 
 
+def _all_numbers(values: pd.Series) -> pd.Series | None:
+    """
+    :param values: una columna com a text (`None` = buit).
+    :return: la columna en float64 si tots els valors no buits són números (la regla dels CSV,
+        `_from_csv`), o `None` si no.
+    """
+    present = values.dropna()
+    parsed = pd.to_numeric(present, errors="coerce")
+    if present.empty or parsed.isna().any():
+        return None
+    out = pd.Series(np.nan, index=values.index, dtype="float64")
+    out[present.index] = parsed.astype("float64")
+    return out
+
+
 def _merge_tables(tables: list[Table], config: EngineConfig) -> Table:
     """
     Uneix taules de formats diferents, ja preparades, en una sola (decisió T-44).
 
     Les columnes són les de totes, en l'ordre en què surten. Si una columna té
-    el mateix tipus a totes, es manté; si no, passa a text (o a `opaque`, si
-    alguna ho és). Entre text i categòrica es torna a decidir amb tots els valors.
+    el mateix tipus a totes, es manté. Si és numèrica en algun format i tots
+    els seus valors, de tots els formats, són números (p.e. `"1"` en un JSON),
+    és numèrica; si no, passa a text (o a `opaque`, si alguna ho és). Entre
+    text i categòrica es torna a decidir amb tots els valors.
 
     :param tables: taules preparades, cadascuna d'un format.
     :param config: llindars del motor.
@@ -429,9 +447,13 @@ def _merge_tables(tables: list[Table], config: EngineConfig) -> Table:
             parts = [_as_text(t.values[name], t.columns[name].kind) if name in t.columns
                      else pd.Series([None] * n, dtype=object) for t, n in zip(tables, sizes)]
             merged = pd.concat(parts, ignore_index=True).astype(object)
-            kind = kind or _text_or_categorical(merged, config)
-            raw_dtypes = sorted({c.raw_dtype for c in present})
-            columns[name] = Column(name, kind, raw_dtype="|".join(raw_dtypes))
+            raw_dtypes = "|".join(sorted({c.raw_dtype for c in present}))
+            numbers = _all_numbers(merged) if kind is None and NUMERIC in kinds else None
+            if numbers is not None:
+                merged = numbers
+                columns[name] = Column(name, NUMERIC, integer=_integral(merged), raw_dtype=raw_dtypes)
+            else:
+                columns[name] = Column(name, kind or _text_or_categorical(merged, config), raw_dtype=raw_dtypes)
         values[name] = merged
     return Table("+".join(dict.fromkeys(t.fmt for t in tables)), pd.DataFrame(values, columns=names), columns)
 
@@ -492,6 +514,9 @@ def load_files(paths: list[str], config: EngineConfig = DEFAULT_CONFIG) -> Table
     Llegeix els fitxers d'un dataset (`datafiles.dataset_files`) com una sola
     taula, amb les regles de la decisió T-44:
 
+    - Un fitxer `.json` que no es pot llegir com a taula (és un document, p.e.
+      `croissant.json` o `metadata.json`, i no una llista de registres) no és
+      dades i no es llegeix. Si és l'únic fitxer, la versió no es pot llegir.
     - Tots els fitxers han de tenir les mateixes columnes (el mateix conjunt de
       noms, en qualsevol ordre); si no, no es comparen (`MixedColumns`).
     - Si un fitxer repeteix files d'un altre de més gran, no es llegeix
@@ -505,26 +530,38 @@ def load_files(paths: list[str], config: EngineConfig = DEFAULT_CONFIG) -> Table
 
     :param paths: fitxers locals, en ordre natural.
     :param config: llindars del motor.
-    :return: la taula preparada per comparar; `dropped_files`, els fitxers que no s'han llegit.
-    :raises ParseError: si algun no es pot llegir.
+    :return: la taula preparada per comparar; `dropped_files`, els fitxers que no s'han llegit (no són
+        taules o repeteixen files d'un altre).
+    :raises ParseError: si algun fitxer que no és un `.json` no es pot llegir, o cap és una taula.
     :raises MixedColumns: si els fitxers no tenen totes les mateixes columnes.
     """
-    exts, read, dialects = [], [], []
+    kept, exts, read, dialects, not_tables = [], [], [], [], []
     for path in paths:
         ext = os.path.splitext(path)[1].lower()
         with open(path, "rb") as f:
-            df, dialect = _read(f.read(), ext)
+            data = f.read()
+        try:
+            df, dialect = _read(data, ext)
+        except ParseError:
+            if ext != ".json" or len(paths) == 1:
+                raise
+            not_tables.append(path)  # un document JSON (p.e. `croissant.json`), no una taula
+            continue
+        kept.append(path)
         exts.append(ext)
         read.append(df)
         dialects.append(dialect)
-    dropped: tuple[str, ...] = ()
-    if len(paths) > 1:
+    if not read:
+        raise ParseError("cap fitxer de dades és una taula")
+    repeated: list[str] = []
+    if len(read) > 1:
         if len({frozenset(map(str, df.columns)) for df in read}) > 1:
-            raise MixedColumns(f"{len(paths)} fitxers amb columnes diferents")
+            raise MixedColumns(f"{len(read)} fitxers amb columnes diferents")
         tables = [_prepare(df, ext, dialect, config) for df, ext, dialect in zip(read, exts, dialects)]
         keep = files_to_keep(tables)
-        dropped = tuple(paths[i] for i in range(len(paths)) if i not in keep)
+        repeated = [kept[i] for i in range(len(kept)) if i not in keep]
         exts, read, dialects = [exts[i] for i in keep], [read[i] for i in keep], [dialects[i] for i in keep]
+    dropped = tuple(p for p in paths if p in set(not_tables) | set(repeated))
     groups: dict[str, list[int]] = {}
     for i, ext in enumerate(exts):
         groups.setdefault(ext, []).append(i)

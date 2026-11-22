@@ -139,9 +139,10 @@ models:
           - not_null
       - name: n_files_dropped_from
         description: >
-          Fitxers de la versió antiga que no s'han llegit perquè repetien files
-          d'un altre més gran (T-44; `n_files_dropped_to`, a la nova). 0 als runs
-          anteriors, que no tenen la columna.
+          Fitxers de la versió antiga que no s'han llegit: documents JSON que no
+          són taules, o fitxers que repetien files d'un altre més gran (T-44;
+          `n_files_dropped_to`, a la nova). 0 als runs anteriors, que no tenen
+          la columna.
         data_tests:
           - not_null
       - name: size_bytes

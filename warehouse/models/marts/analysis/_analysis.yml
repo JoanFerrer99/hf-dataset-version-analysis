@@ -64,7 +64,7 @@ models:
       - name: n_files_from
         description: Fitxers del dataset a la versió antiga (`n_files_to`, a la nova).
       - name: n_files_dropped_from
-        description: Fitxers de la versió antiga que no s'han llegit perquè repetien files d'un altre (`n_files_dropped_to`, a la nova).
+        description: Fitxers de la versió antiga que no s'han llegit, perquè no són taules o repetien files d'un altre (`n_files_dropped_to`, a la nova).
       - name: n_codes
         description: Files de la unitat a change_classification.csv (un per codi).
       - name: has_breaking_change

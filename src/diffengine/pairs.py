@@ -65,7 +65,8 @@ class Comparison:
     :ivar status: `pending` fins que es compara; després `ok`, `identical_content`, `absent_old`,
         `absent_new`, `no_data`, `download_failed`, `parse_failed`, `too_large` o `mixed_columns`.
     :ivar result: els canvis, si l'estat és `ok`.
-    :ivar dropped_old: fitxers de la revisió antiga que no s'han llegit perquè repetien files d'un altre (T-44).
+    :ivar dropped_old: fitxers de la revisió antiga que no s'han llegit: no són taules o repetien files d'un
+        altre (T-44).
     :ivar dropped_new: el mateix, de la revisió nova.
     """
 
@@ -216,7 +217,7 @@ def status_row(repo_id: str, old_rev: str, new_rev: str, comparison: Comparison)
         (codis diferents), `format_from`/`format_to` i `n_files_from`/`n_files_to`
         (els formats i el nombre de fitxers del dataset a cada versió),
         `n_files_dropped_from`/`n_files_dropped_to` (els que no s'han llegit
-        perquè repetien files d'un altre, T-44) i `size_bytes` (la mida de les
+        perquè no són taules o repetien files d'un altre, T-44) i `size_bytes` (la mida de les
         dues versions, sumades).
     """
     return {"dataset_id": repo_id, "version_from": old_rev, "version_to": new_rev, "status": comparison.status,
