@@ -54,8 +54,8 @@ OE2. Dissenyar un pipeline ETL que extregui, per a cada dataset elegible,
      ESTAT: 🔲 No iniciat. Depèn de OE1 (llista d'elegibles ja disponible).
 
 OE3. Definir i implementar criteris de classificació que distingeixin canvis
-     que afecten el contingut o l'esquema de les dades (canvis substantius /
-     "breaking") dels canvis que afecten només metadades o documentació.
+     que afecten el contingut o l'esquema de les dades (canvis substantius)
+     dels canvis que afecten només metadades o documentació.
      [Fase 2 — Classificació; Fase 3 — Validació]
      ESTAT: 🔲 No iniciat pel que fa a la taxonomia de 15 codis (Fase 2),
      però el risc tècnic clau que la bloquejava (R-01, accés a la llista de
@@ -483,7 +483,7 @@ Proposta inicial del professor. Esquema bàsic:
     - Dataset (dataset_id, name, domain, license, num_downloads,
                creation_date, num_versions, ...)
     - DateOfChange (date_id, date, year, quarter, month)
-    - KindOfChange (kind_id, category, subcategory, is_breaking,
+    - KindOfChange (kind_id, category, subcategory,
                     taxonomy_level_1, taxonomy_level_2, taxonomy_level_3)
 
   La dimensió KindOfChange s'alineará directament amb la taxonomia FORMAL
@@ -583,16 +583,10 @@ Income; execució sobre la població real elegible pendent)
   `src/change_classifier.py` reutilitza `change_diff.py` (T-08)
   sense reimplementar-lo -- `classify_diffs` només tradueix els booleans
   de `compute_all_diffs` a etiquetes `(dataset_id, version_from,
-  version_to, code, is_breaking)`. Abast PROVISIONAL: les 15 categories
+  version_to, code)`. Abast PROVISIONAL: les 15 categories
   (US-303 encara no tancada amb el director, AC3/AC4 pendents) -- si
   l'abast final es redueix a Nivell 1+2, el punt de canvi és
   `classify_diffs`.
-
-  `is_breaking`: heurística PRÒPIA d'aquest estudi (el paper no en
-  defineix cap de formal) -- `C210`/`C222`/`C223`/`C311`/`C321`
-  ("trenca" un pipeline que llegeix per nom/posició/tipus sense
-  adaptar-se) són `True`; la resta (afegir columna/fila, canvis de
-  valors/distribució/correlació/missings, `C100`) són `False`.
 
   Executat de nou sobre D1-D7 (`data/census_income_classification.csv`,
   30 etiquetes): mateixos totals que T-08 (esperat, mateix motor, ara amb
@@ -666,8 +660,8 @@ Data: setembre 2026
 Responsable: Joan
 Estat: ✅ Fet
 
-  1. `change_classifier.py` ELIMINAT -- el seu contingut (`BREAKING_
-     CODES`, `ChangeLabel`, `classify_diffs`, `classify_file_change`) es
+  1. `change_classifier.py` ELIMINAT -- el seu contingut (`ChangeLabel`,
+     `classify_diffs`, `classify_file_change`) es
      va moure DINS de `change_diff.py`, al final, amb una secció pròpia
      ("Classificació"). `eligibility_scan.py` ja no importa `change_
      classifier` -- `import change_diff` n'hi ha prou; les crides
@@ -765,10 +759,6 @@ Estat: ✅ Fet
   `compute_all_diffs`: `"C410"` passa de sempre `None` a
   `diff_row_order(...)["reordered"]` (sempre `bool`, com la resta de
   codis). `classify_diffs` ja no necessita cap cas especial per a `C410`.
-  `BREAKING_CODES` guanya `"C410"` -- justificació directa de Joan: un
-  canvi d'ordre pot afectar pipelines d'ML que accedeixen a les dades per
-  posició, potencialment requerint adaptació als components d'ingesta o
-  preprocessament.
 
   RE-EXECUCIÓ REAL sobre els 11 datasets elegibles coneguts
   (`eligibility_report_2000_5.csv`, via `run_pipeline.py --input-csv
@@ -1412,7 +1402,7 @@ Estat: Fet
     codis. Cap document no definia `level_1..3`: segueixen les xifres del
     codi (perspectiva, grup de dues xifres, canvi). `perspective` és el nom
     de la categoria al paper (`docs/taxonomy.md`). Un test comprova que els
-    codis i els trencadors són els de `diffengine.output`.
+    codis són els de `diffengine.output`.
   - La fixture `tests/fixtures/run_sample/` es genera amb les mateixes
     funcions que escriuen la sortida real (`make_run_sample.py`), i un test
     falla si queda desactualitzada.
@@ -1443,8 +1433,7 @@ Data: novembre 2026
 Responsable: Joan
 Estat: Fet
 
-  MOTIU: les proporcions (comparacions amb canvis, amb canvis trencadors,
-  per perspectiva) no poden comptar les comparacions que no s'han pogut fer
+  MOTIU: les proporcions (comparacions amb canvis, per perspectiva) no poden comptar les comparacions que no s'han pogut fer
   (T-28): a run_9, 3 de les 52.
 
   DECISIÓ: `mart_change_units` (una fila per unitat de canvi: una versió
@@ -1552,7 +1541,7 @@ Estat: Fet
     `fig_census_validation.png` i `docs/validacio_census_income.md`.
   - La pàgina d'inici és un resum de l'execució: les xifres clau i quatre
     destacats (el codi que surt a més comparacions, la proporció de
-    comparacions amb canvis trencadors, les comparacions no fetes i el
+    comparacions amb canvis, les comparacions no fetes i el
     dataset amb més canvis), cada un amb un enllaç a la pàgina del detall. La
     taxonomia queda plegada, com a referència.
   - Pàgina nova de cobertura: quines comparacions s'han pogut fer, i per què
@@ -1674,8 +1663,8 @@ Estat: Fet (la Fase 2 de run_9 s'ha de tornar a fer; revisada a T-44: fitxers am
     `parse_failed`, `too_large`. Desapareix `excluded`.
   - Sortides de la Fase 2:
     - `change_classification.csv`: un codi per parell de versions
-      (`dataset_id, version_from, version_to, code, description,
-      is_breaking`); sense `table` ni `file_path`.
+      (`dataset_id, version_from, version_to, code, description`); sense
+      `table` ni `file_path`.
     - `comparison_status.csv`: una fila per parell de versions (`status`,
       `n_codes`, `format_from`/`format_to`, `n_files_from`/`n_files_to`,
       `size_bytes`).
@@ -1708,7 +1697,6 @@ Estat: Fet
     científica en més de la meitat dels valors. Subtipus `representation`.
   - Si els valors també canvien, és C322 amb el subtipus de sempre
     (`factor`, `log`, `perturbation`, `cell_edits`...), sense C323.
-  - C323 no és trencador, com no ho era C322 `representation`.
   - Espais o majúscules en una categòrica continuen sent C312
     `representation`.
   - Els codis tabulars passen de 14 a 15: motor (`output.TABULAR_CODES`),
@@ -2394,9 +2382,7 @@ US-304/US-305 trencada
     afegit a `requirements.txt` (necessari per llegir el Parquet de D2).
   - T-09 nova: US-305 implementada (`src/change_classifier.py`,
     abast provisional de 15 codis). Reutilitza `change_diff.py` sense
-    reimplementar-lo; `is_breaking` és una heurística pròpia de l'estudi
-    (5 codis estructurals -- ordre/eliminar/renom/tipus -- marcats
-    breaking). Decidit (implementació): classificació per regles
+    reimplementar-lo. Decidit (implementació): classificació per regles
     deterministes, no LLM. Executat de nou sobre Census Income D1-D7,
     mateixos totals que T-08. Pendent: córrer sobre la població real.
   - T-10 nova: US-305 integrada DINS de `classify_dataset()` (`classify_

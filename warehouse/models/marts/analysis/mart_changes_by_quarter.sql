@@ -11,8 +11,7 @@ with changes as (
         dates.quarter,
         dates.year_quarter,
         kinds.perspective,
-        kinds.level_1,
-        kinds.is_breaking
+        kinds.level_1
     from {{ ref('fact_change') }} as facts
     inner join {{ ref('dim_date') }} as dates
         on dates.date_key = facts.date_key
@@ -27,7 +26,6 @@ select
     perspective,
     level_1,
     sum(change_count) as n_changes,
-    count(*) filter (where is_breaking) as n_breaking_changes,
     count(distinct version_to_key) as n_units,
     count(distinct dataset_key) as n_datasets
 from changes

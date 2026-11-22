@@ -1,5 +1,5 @@
--- Resum per dataset elegible: versions, comparacions (fetes i no), canvis,
--- codis i canvis trencadors.
+-- Resum per dataset elegible: versions, comparacions (fetes i no), canvis i
+-- codis.
 
 with datasets as (
     select
@@ -30,7 +30,6 @@ units as (
         count(*) as n_units,
         count(*) filter (where is_compared) as n_compared_units,
         count(*) filter (where has_change) as n_units_with_change,
-        count(*) filter (where has_breaking_change) as n_units_with_breaking_change,
         count(*) filter (where unit_status = 'not_compared') as n_units_not_compared
     from {{ ref('mart_change_units') }}
     group by dataset_id
@@ -40,7 +39,6 @@ changes as (
     select
         facts.dataset_key,
         sum(facts.change_count) as n_changes,
-        count(*) filter (where kinds.is_breaking) as n_breaking_changes,
         count(distinct kinds.code) as n_distinct_codes,
         array_to_string(list_sort(list_distinct(list(kinds.code))), ', ') as codes
     from {{ ref('fact_change') }} as facts
@@ -63,10 +61,8 @@ select
     coalesce(units.n_units, 0) as n_units,
     coalesce(units.n_compared_units, 0) as n_compared_units,
     coalesce(units.n_units_with_change, 0) as n_units_with_change,
-    coalesce(units.n_units_with_breaking_change, 0) as n_units_with_breaking_change,
     coalesce(units.n_units_not_compared, 0) as n_units_not_compared,
     coalesce(changes.n_changes, 0) as n_changes,
-    coalesce(changes.n_breaking_changes, 0) as n_breaking_changes,
     coalesce(changes.n_distinct_codes, 0) as n_distinct_codes,
     changes.codes
 from datasets

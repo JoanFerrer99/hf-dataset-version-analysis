@@ -5,12 +5,8 @@ with shares as (
     select 'mart_funnel' as mart, stage as row_key, share_of_classified as share, share_low as low, share_high as high
     from {{ ref('mart_funnel') }}
     union all
-    select 'mart_breaking_share', criterion, share_with_breaking_change,
-        share_with_breaking_change_low, share_with_breaking_change_high
-    from {{ ref('mart_breaking_share') }}
-    union all
-    select 'mart_breaking_share', criterion, share_with_change, null, null
-    from {{ ref('mart_breaking_share') }}
+    select 'mart_change_share', criterion, share_with_change, share_with_change_low, share_with_change_high
+    from {{ ref('mart_change_share') }}
     union all
     select 'mart_code_frequency', code, share_of_compared_units, null, null
     from {{ ref('mart_code_frequency') }}

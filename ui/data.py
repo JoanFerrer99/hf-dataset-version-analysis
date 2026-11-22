@@ -67,8 +67,8 @@ UNIT_STATUS_LABELS = {
 }
 
 
-def _conditions(filters, dataset: str | None = None, criterion: str | None = None, perspective: str | None = None,
-                breaking: str | None = None) -> tuple[str, list]:
+def _conditions(filters, dataset: str | None = None, criterion: str | None = None,
+                perspective: str | None = None) -> tuple[str, list]:
     """
     Les condicions SQL dels filtres de la barra lateral que s'apliquen a una consulta.
 
@@ -76,7 +76,6 @@ def _conditions(filters, dataset: str | None = None, criterion: str | None = Non
     :param dataset: columna del dataset a la consulta, si s'hi filtra.
     :param criterion: columna del criteri d'elegibilitat, si s'hi filtra.
     :param perspective: columna de la perspectiva, si s'hi filtra.
-    :param breaking: columna de si és trencador, si s'hi filtra.
     :return: `(condició, paràmetres)`; `true` si no n'hi ha cap.
     """
     clauses, params = [], []
@@ -86,9 +85,6 @@ def _conditions(filters, dataset: str | None = None, criterion: str | None = Non
             if column and values:
                 clauses.append(f"{column} in ({', '.join('?' * len(values))})")
                 params += list(values)
-        if breaking and filters.breaking is not None:
-            clauses.append(f"{breaking} = ?")
-            params.append(filters.breaking)
     return (" and ".join(clauses) or "true"), params
 
 
@@ -162,10 +158,10 @@ def key_figures() -> dict:
 
 def taxonomy() -> pd.DataFrame:
     """
-    :return: els 15 codis de la taxonomia, amb la perspectiva i si trenquen.
+    :return: els 15 codis de la taxonomia, amb la perspectiva.
     """
     return _query("""
-        select code, name, perspective, level_1, is_breaking
+        select code, name, perspective, level_1
         from dim_kind_of_change
         order by code
     """)
@@ -228,7 +224,6 @@ def dataset_profiles(filters=None) -> pd.DataFrame:
             n_units_with_change,
             n_units_not_compared,
             n_changes,
-            n_breaking_changes,
             codes
         from mart_dataset_profile
         where {where}
@@ -242,13 +237,13 @@ def code_frequency(filters=None) -> pd.DataFrame:
     de la barra lateral: es calcula sobre l'estrella. Sense filtres, dona el
     mateix que el mart.
 
-    :param filters: filtres de dataset, criteri, perspectiva i trencador.
+    :param filters: filtres de dataset, criteri i perspectiva.
     :return: una fila per codi de les perspectives triades, també sense canvis.
     """
     units_where, units_params = _conditions(filters, dataset="d.dataset_id", criterion="d.eligibility_criterion")
     changes_where, changes_params = _conditions(filters, dataset="d.dataset_id", criterion="d.eligibility_criterion",
-                                                perspective="k.perspective", breaking="k.is_breaking")
-    kinds_where, kinds_params = _conditions(filters, perspective="k.perspective", breaking="k.is_breaking")
+                                                perspective="k.perspective")
+    kinds_where, kinds_params = _conditions(filters, perspective="k.perspective")
     return _query(f"""
         with compared as (
             select count(*) filter (where u.is_compared) as n_compared_units
@@ -273,7 +268,6 @@ def code_frequency(filters=None) -> pd.DataFrame:
             k.name,
             k.perspective,
             k.level_1,
-            k.is_breaking,
             cast(coalesce(sum(c.change_count), 0) as bigint) as n_changes,
             count(distinct c.version_to_key) as n_units,
             count(distinct c.dataset_key) as n_datasets,
@@ -286,21 +280,20 @@ def code_frequency(filters=None) -> pd.DataFrame:
             on c.kind_key = k.kind_key
         cross join compared
         where {kinds_where}
-        group by k.code, k.name, k.perspective, k.level_1, k.is_breaking
+        group by k.code, k.name, k.perspective, k.level_1
         order by k.code
     """, units_params + changes_params + kinds_params)
 
 
-def breaking_share(filters=None) -> pd.DataFrame:
+def change_share(filters=None) -> pd.DataFrame:
     """
     :param filters: s'hi aplica el filtre de criteri (el mart no és per dataset).
-    :return: `mart_breaking_share`: per criteri i en total (`all`), amb l'interval de Wilson.
+    :return: `mart_change_share`: per criteri i en total (`all`), amb l'interval de Wilson.
     """
     rows = _query("""
-        select criterion, n_compared_units, n_units_with_change, n_units_with_breaking_change,
-               share_with_change, share_with_breaking_change,
-               share_with_breaking_change_low, share_with_breaking_change_high
-        from mart_breaking_share
+        select criterion, n_compared_units, n_units_with_change,
+               share_with_change, share_with_change_low, share_with_change_high
+        from mart_change_share
         order by criterion
     """)
     if filters is not None and filters.criteria:
@@ -311,11 +304,11 @@ def breaking_share(filters=None) -> pd.DataFrame:
 
 def changes_by_quarter(filters=None) -> pd.DataFrame:
     """
-    :param filters: filtres de dataset, criteri, perspectiva i trencador.
+    :param filters: filtres de dataset, criteri i perspectiva.
     :return: canvis per trimestre (de la versió nova) i perspectiva, com `mart_changes_by_quarter`.
     """
     where, params = _conditions(filters, dataset="d.dataset_id", criterion="d.eligibility_criterion",
-                                perspective="k.perspective", breaking="k.is_breaking")
+                                perspective="k.perspective")
     return _query(f"""
         select
             t.year,
@@ -324,7 +317,6 @@ def changes_by_quarter(filters=None) -> pd.DataFrame:
             k.perspective,
             k.level_1,
             cast(sum(f.change_count) as bigint) as n_changes,
-            count(*) filter (where k.is_breaking) as n_breaking_changes,
             count(distinct f.version_to_key) as n_units,
             count(distinct f.dataset_key) as n_datasets
         from fact_change as f
@@ -368,7 +360,6 @@ def explorer_units(dataset_id: str) -> pd.DataFrame:
             n_files_to,
             size_bytes,
             n_codes,
-            n_breaking_codes,
             '{HF}' || dataset_id || '/commit/' || version_from as url_from,
             '{HF}' || dataset_id || '/commit/' || version_to as url_to
         from mart_change_units
@@ -384,16 +375,15 @@ def explorer_changes(dataset_id: str, version_from: str, version_to: str, filter
     :param dataset_id: el dataset.
     :param version_from: SHA de la versió antiga.
     :param version_to: SHA de la versió nova.
-    :param filters: filtres de perspectiva i trencador.
+    :param filters: filtres de perspectiva.
     :return: una fila per codi detectat entre les dues versions, amb la descripció del codi.
     """
-    where, params = _conditions(filters, perspective="k.perspective", breaking="k.is_breaking")
+    where, params = _conditions(filters, perspective="k.perspective")
     return _query(f"""
         select
             k.code,
             k.name,
-            k.level_1,
-            k.is_breaking
+            k.level_1
         from fact_change as f
         inner join dim_dataset as d
             on d.dataset_key = f.dataset_key
@@ -482,11 +472,11 @@ def incomplete_units(filters=None) -> pd.DataFrame:
 
 def changes_by_dataset(filters=None) -> pd.DataFrame:
     """
-    :param filters: filtres de dataset, criteri, perspectiva i trencador.
+    :param filters: filtres de dataset, criteri i perspectiva.
     :return: per dataset i codi, les comparacions afectades.
     """
     where, params = _conditions(filters, dataset="d.dataset_id", criterion="d.eligibility_criterion",
-                                perspective="k.perspective", breaking="k.is_breaking")
+                                perspective="k.perspective")
     return _query(f"""
         select
             d.dataset_id,
@@ -509,7 +499,7 @@ def highlights() -> dict:
     """
     Els destacats de la pàgina d'inici, tots de la capa gold.
 
-    :return: el codi que surt a més comparacions, la proporció de comparacions amb canvis trencadors (amb
+    :return: el codi que surt a més comparacions, la proporció de comparacions amb algun canvi (amb
         l'interval), les comparacions no fetes i el dataset amb més canvis.
     """
     top_code = _query("""
@@ -518,10 +508,10 @@ def highlights() -> dict:
         order by n_units desc, n_changes desc, code
         limit 1
     """).iloc[0]
-    breaking = _query("""
-        select n_compared_units, n_units_with_breaking_change, share_with_breaking_change,
-               share_with_breaking_change_low, share_with_breaking_change_high
-        from mart_breaking_share
+    changed = _query("""
+        select n_compared_units, n_units_with_change, share_with_change, share_with_change_low,
+               share_with_change_high
+        from mart_change_share
         where criterion = 'all'
     """).iloc[0]
     coverage = _query("""
@@ -535,5 +525,5 @@ def highlights() -> dict:
         order by n_changes desc, dataset_id
         limit 1
     """).iloc[0]
-    return {"top_code": top_code.to_dict(), "breaking": breaking.to_dict(), "coverage": coverage.to_dict(),
+    return {"top_code": top_code.to_dict(), "changed": changed.to_dict(), "coverage": coverage.to_dict(),
             "busiest": busiest.to_dict()}

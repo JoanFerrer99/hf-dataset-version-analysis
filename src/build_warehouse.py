@@ -59,7 +59,9 @@ def dbt_executable() -> str:
 
 def build_warehouse(run_dir: str) -> str:
     """
-    Executa `dbt build` sobre la carpeta de l'execució.
+    Executa `dbt build` sobre la carpeta de l'execució. Amb `--full-refresh`, el
+    seed de la taxonomia es torna a crear: si el magatzem ja existia, pot tenir
+    les columnes d'una versió anterior.
 
     :param run_dir: carpeta de l'execució (`data/run_<id>`).
     :return: la ruta del fitxer `.duckdb`.
@@ -72,8 +74,8 @@ def build_warehouse(run_dir: str) -> str:
         raise FileNotFoundError(f"A {run_dir} hi falten {', '.join(missing)}")
     path = warehouse_path(run_dir)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    command = [dbt_executable(), "build", "--project-dir", PROJECT_DIR, "--profiles-dir", PROJECT_DIR,
-               "--vars", json.dumps({"run_dir": run_dir})]
+    command = [dbt_executable(), "build", "--full-refresh", "--project-dir", PROJECT_DIR, "--profiles-dir",
+               PROJECT_DIR, "--vars", json.dumps({"run_dir": run_dir})]
     log.info(f"FASE 3: construint el magatzem de {os.path.basename(run_dir)} a {path}")
     subprocess.run(command, cwd=REPO_ROOT, env={**os.environ, "WAREHOUSE_PATH": path}, check=True)
     return path

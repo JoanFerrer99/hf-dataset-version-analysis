@@ -1192,10 +1192,9 @@ class TestRunClassification:
 
         out = pd.read_csv(output_csv)
         assert output_csv == str(tmp_path / "change_classification.csv")
-        assert list(out.columns) == ["dataset_id", "version_from", "version_to", "code", "description", "is_breaking"]
+        assert list(out.columns) == ["dataset_id", "version_from", "version_to", "code", "description"]
         assert out["code"].tolist() == ["C421", "C223"]
         assert out.iloc[0]["description"] == "Afegir fila"
-        assert bool(out.iloc[1]["is_breaking"]) is True
 
     def test_writes_the_status_of_every_comparison(self, monkeypatch, tmp_path):
         import pandas as pd

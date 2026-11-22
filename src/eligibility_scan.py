@@ -925,7 +925,7 @@ def run_classification(versions_csv: str, config: EngineConfig = DEFAULT_CONFIG)
     mateix dataset i escriu a `OUTPUT_DIR`:
 
     - `change_classification.csv`: una fila per parell de versions i codi
-      (`dataset_id, version_from, version_to, code, description, is_breaking`);
+      (`dataset_id, version_from, version_to, code, description`);
     - `comparison_status.csv`: una fila per parell de versions, també sense
       cap codi (`dataset_id, version_from, version_to, status, n_codes,
       format_from, format_to, n_files_from, n_files_to, n_files_dropped_from,

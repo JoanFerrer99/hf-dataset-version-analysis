@@ -1,14 +1,13 @@
 """
 La seed de la taxonomia del magatzem (`warehouse/seeds/taxonomy.csv`) ha de
-dir el mateix que el motor (`diffengine.output`): els mateixos 15 codis i els
-mateixos codis trencadors.
+dir el mateix que el motor (`diffengine.output`): els mateixos 15 codis.
 """
 
 import os
 
 import pandas as pd
 
-from diffengine.output import BREAKING_CODES, CODE_DESCRIPTIONS, TABULAR_CODES
+from diffengine.output import CODE_DESCRIPTIONS, TABULAR_CODES
 
 SEED = os.path.join(os.path.dirname(__file__), "..", "warehouse", "seeds", "taxonomy.csv")
 
@@ -20,11 +19,6 @@ def _seed() -> pd.DataFrame:
 def test_seed_has_the_15_tabular_codes_in_order():
     assert tuple(_seed()["code"]) == TABULAR_CODES
     assert "C100" not in set(_seed()["code"])
-
-
-def test_breaking_codes_match_the_engine():
-    seed = _seed()
-    assert set(seed.loc[seed["is_breaking"], "code"]) == BREAKING_CODES
 
 
 def test_levels_follow_the_digits_of_the_code():

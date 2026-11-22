@@ -16,10 +16,9 @@ for target in (opened, highlighted):
         st.switch_page(shell.page(target)["path"])
 
 with st.expander("Els 15 codis de la taxonomia", icon=":material/menu_book:"):
-    st.markdown("C100 (metadades) és fora d'abast. Un canvi **trencador** fa fallar un pipeline que llegeix el "
-                "dataset per nom, posició, tipus o ordre.")
+    st.markdown("C100 (metadades) és fora d'abast.")
     st.dataframe(
         data.taxonomy().rename(columns={"code": "Codi", "name": "Canvi", "perspective": "Categoria (paper)",
-                                        "level_1": "Perspectiva", "is_breaking": "Trencador"}),
+                                        "level_1": "Perspectiva"}),
         hide_index=True,
     )

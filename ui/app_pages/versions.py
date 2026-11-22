@@ -53,7 +53,6 @@ st.dataframe(
         "n_units_with_change": "Amb canvis",
         "n_units_not_compared": "No fetes",
         "n_changes": "Canvis",
-        "n_breaking_changes": "Trencadors",
         "codes": "Codis",
     },
 )

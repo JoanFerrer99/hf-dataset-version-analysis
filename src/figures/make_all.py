@@ -19,7 +19,6 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")))
 
 from figures import (  # noqa: E402
-    breaking_share,
     census_validation,
     changes_by_quarter,
     code_frequency,
@@ -32,8 +31,7 @@ from figures import (  # noqa: E402
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
 log = logging.getLogger(__name__)
 
-FIGURES = [funnel, versions_timeline, code_frequency, breaking_share, changes_by_quarter, criterion_comparison,
-           census_validation]
+FIGURES = [funnel, versions_timeline, code_frequency, changes_by_quarter, criterion_comparison, census_validation]
 
 
 def make(names: list[str] | None = None, warehouse: str | None = None, out_dir: str = common.FIGURES_DIR) -> list[str]:

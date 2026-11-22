@@ -78,7 +78,7 @@ que s'uneixen sense cap taula intermèdia.
 | `dim_dataset` | `dataset_id` | `dataset_key`, `owner`, `eligibility_criterion` (A/B), `num_tags`, `num_branches`, `num_tabular_commits`, `num_data_files`, `tabular_file_share`, `created_at`, `license`, `downloads`, `snapshot_date` (dia de l'execució). Només els elegibles. |
 | `dim_version` | `dataset_id`, `commit_sha` | `version_key`, `version_label`, `version_order`, `version_source` (`tag`, `commit_session`, o `commit` si només surt a les comparacions), `commit_date`. Fa dos rols al fet: *from* i *to*. Dos tags al mateix commit són una sola versió. |
 | `dim_date` | `date` | `date_key` (AAAAMMDD), `year`, `quarter`, `year_quarter` (p.e. 2025-T1), `month`, `weekday` (1 = dilluns). Només els dies amb alguna versió. |
-| `dim_kind_of_change` | `code` | `kind_key`, `name`, `perspective` (categoria del paper), `level_1` a `level_3` (les xifres del codi), `is_breaking` |
+| `dim_kind_of_change` | `code` | `kind_key`, `name`, `perspective` (categoria del paper), `level_1` a `level_3` (les xifres del codi) |
 
 
 ## Tests
@@ -86,8 +86,7 @@ que s'uneixen sense cap taula intermèdia.
 - Staging: `not_null` i unicitat de les claus naturals, `accepted_values`
   dels codis (els 14) i dels estats.
 - Estrella: `unique` i `not_null` a cada clau primària, `relationships` de
-  cada clau forana de `fact_change` (també els dos rols de `dim_version`), i
-  `accepted_values` a `is_breaking`.
+  cada clau forana de `fact_change` (també els dos rols de `dim_version`).
 - Conciliació amb el que va escriure el pipeline (`warehouse/tests/reconcile_*.sql`)
   i coherència dels marts (`assert_*.sql`): resultat a `docs/validacio_magatzem.md`.
 - `tests/test_warehouse_seed.py` comprova que la seed diu el mateix que el

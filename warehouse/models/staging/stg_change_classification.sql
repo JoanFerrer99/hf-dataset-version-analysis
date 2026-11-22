@@ -10,8 +10,7 @@ typed as (
         version_from,
         version_to,
         code,
-        description,
-        cast(is_breaking as boolean) as is_breaking
+        description
     from classification
 )
 

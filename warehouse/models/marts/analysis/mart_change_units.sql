@@ -53,16 +53,6 @@ comparisons as (
     from {{ ref('stg_comparison_status') }}
 ),
 
-codes as (
-    select
-        dataset_id,
-        version_from,
-        version_to,
-        count(*) filter (where is_breaking) as n_breaking_codes
-    from {{ ref('stg_change_classification') }}
-    group by dataset_id, version_from, version_to
-),
-
 failed_datasets as (
     select distinct dataset_id
     from {{ ref('stg_failures') }}
@@ -86,17 +76,12 @@ joined as (
         coalesce(comparisons.n_files_dropped_to, 0) as n_files_dropped_to,
         coalesce(comparisons.size_bytes, 0) as size_bytes,
         coalesce(comparisons.n_codes, 0) as n_codes,
-        coalesce(codes.n_breaking_codes, 0) as n_breaking_codes,
         failed_datasets.dataset_id is not null as dataset_failed
     from units
     left join comparisons
         on comparisons.dataset_id = units.dataset_id
         and comparisons.version_from = units.version_from
         and comparisons.version_to = units.version_to
-    left join codes
-        on codes.dataset_id = units.dataset_id
-        and codes.version_from = units.version_from
-        and codes.version_to = units.version_to
     left join failed_datasets
         on failed_datasets.dataset_id = units.dataset_id
 ),
@@ -131,8 +116,6 @@ select
     n_files_dropped_to,
     size_bytes,
     n_codes,
-    n_breaking_codes,
     unit_status = 'compared' as is_compared,
-    n_codes > 0 as has_change,
-    n_breaking_codes > 0 as has_breaking_change
+    n_codes > 0 as has_change
 from grouped

@@ -44,11 +44,11 @@ def test_home_shows_the_key_figures_of_the_run(app):
     figures, highlights = (component["cards"] for component in _components(app)["hf_cards"])
     assert {card["label"]: card["value"] for card in figures} == {
         "Datasets de la mostra": "12", "Elegibles": "3", "Comparacions fetes": "3 de 4", "Canvis detectats": "7"}
-    # Fixture: cada codi surt en una sola comparació; 1 de les 3 fetes té un canvi trencador (C222, C223);
+    # Fixture: cada codi surt en una sola comparació; les 3 fetes tenen algun canvi;
     # org/tags-c no s'ha pogut comparar (dataset massa gran); org/tags-a té 5 dels 7 canvis.
     assert [(card["label"], card["value"], card["target"]) for card in highlights] == [
         ("Codi a més comparacions", "C221", "Canvis"),
-        ("Comparacions amb algun canvi trencador", "33,3 %", "Canvis"),
+        ("Comparacions amb algun canvi", "100,0 %", "Canvis"),
         ("Comparacions que no s'han pogut fer", "1 de 4", "Cobertura"),
         ("Dataset amb més canvis", "5", "Explorador"),
     ]
@@ -127,12 +127,12 @@ def test_filters_restrict_the_data_and_are_kept_across_pages(app):
     assert set(app.dataframe[0].value["dataset_id"]) == {"org/sessions-b"}
 
 
-def test_changes_page_applies_perspective_and_breaking_filters(app):
-    _page(app, "app_pages/changes.py", filter_perspectives=["Rows Set"], filter_breaking="Només no trencadors")
+def test_changes_page_applies_the_perspective_filter(app):
+    _page(app, "app_pages/changes.py", filter_perspectives=["Rows Set"])
 
     frequency = app.dataframe[0].value
-    assert frequency["code"].tolist() == ["C421", "C422"]
-    assert frequency["n_units"].tolist() == [1, 0]
+    assert frequency["code"].tolist() == ["C410", "C421", "C422"]
+    assert frequency["n_units"].tolist() == [0, 1, 0]
 
 
 def test_explorer_drills_down_from_a_dataset_to_its_codes(app):
@@ -183,17 +183,17 @@ def test_changes_by_quarter_without_filters_is_the_mart(ui_data):
 def test_conditions_only_use_the_filters_that_apply(ui_data):
     import filters
 
-    selected = filters.Filters(datasets=("org/a",), criteria=("A", "B"), breaking=False)
+    selected = filters.Filters(datasets=("org/a",), criteria=("A", "B"), perspectives=("Rows Set",))
 
     assert ui_data._conditions(None, dataset="d") == ("true", [])
     assert ui_data._conditions(selected, criterion="c") == ("c in (?, ?)", ["A", "B"])
-    assert ui_data._conditions(selected, dataset="d", perspective="p", breaking="b") == (
-        "d in (?) and b = ?", ["org/a", False])
+    assert ui_data._conditions(selected, dataset="d", perspective="p") == (
+        "d in (?) and p in (?)", ["org/a", "Rows Set"])
 
 
 def test_the_filter_bar_says_how_many_filters_are_active(app):
     app.session_state["filter_criteria"] = ["B"]
-    app.session_state["filter_breaking"] = "Només trencadors"
+    app.session_state["filter_perspectives"] = ["Rows Set"]
     app.run()
 
     assert not app.exception

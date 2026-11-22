@@ -452,7 +452,8 @@ class TestBuildWarehouse:
 
         assert path == str(tmp_path / "data" / "warehouse" / "run_7.duckdb")
         assert not path.startswith(str(run_dir))
-        assert seen["command"][1:6] == ["build", "--project-dir", bw.PROJECT_DIR, "--profiles-dir", bw.PROJECT_DIR]
+        assert seen["command"][1:7] == ["build", "--full-refresh", "--project-dir", bw.PROJECT_DIR, "--profiles-dir",
+                                        bw.PROJECT_DIR]
         assert json.loads(seen["command"][-1]) == {"run_dir": str(run_dir)}
         assert seen["env"]["WAREHOUSE_PATH"] == path
         assert (seen["cwd"], seen["check"]) == (bw.REPO_ROOT, True)

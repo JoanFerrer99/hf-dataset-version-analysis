@@ -7,7 +7,7 @@ Pas 5: com es representa un canvi i la taula de sortida.
   (`change_classification.csv`).
 - `status_frame`: l'estat de cada parell de taules que compara la Fase 2
   (`comparison_status.csv`).
-- `TABULAR_CODES`, `CODE_DESCRIPTIONS`, `BREAKING_CODES`: la taxonomia.
+- `TABULAR_CODES`, `CODE_DESCRIPTIONS`: la taxonomia.
 """
 
 from dataclasses import dataclass, field
@@ -28,9 +28,6 @@ CODE_DESCRIPTIONS = {
     "C530": "Actualitzar valors sense absents",
 }
 
-# Trenquen l'EXECUCIÓ d'un pipeline que llegeix per nom/posició/tipus/ordre;
-# no mesura l'impacte en la qualitat del model (docs/taxonomy.md).
-BREAKING_CODES = frozenset({"C210", "C222", "C223", "C311", "C321", "C410"})
 
 @dataclass
 class Change:
@@ -60,22 +57,21 @@ class DiffResult:
         return {c.code for c in self.changes}
 
 
-CLASSIFICATION_COLUMNS = ["dataset_id", "version_from", "version_to", "code", "description", "is_breaking"]
+CLASSIFICATION_COLUMNS = ["dataset_id", "version_from", "version_to", "code", "description"]
 
 
 def classification_frame(rows: list[dict]) -> pd.DataFrame:
     """
     La taula de sortida de la Fase 2: un codi per parell de versions d'un
-    dataset, amb la descripció i si trenca. Si el mateix codi surt en diverses
+    dataset, amb la descripció. Si el mateix codi surt en diverses
     columnes, surt un sol cop.
 
     :param rows: una fila per canvi, amb `dataset_id`, `version_from`,
         `version_to` i `code` (`pairs.revision_rows`).
     :return: la taula, sense files repetides.
     """
-    out = pd.DataFrame(rows, columns=CLASSIFICATION_COLUMNS[:-2])
+    out = pd.DataFrame(rows, columns=CLASSIFICATION_COLUMNS[:-1])
     out["description"] = out["code"].map(CODE_DESCRIPTIONS)
-    out["is_breaking"] = out["code"].isin(BREAKING_CODES)
     return out.drop_duplicates().reset_index(drop=True)
 
 

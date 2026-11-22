@@ -8,7 +8,7 @@ from fmt import num, size
 
 st.markdown(
     "Tria un dataset i una de les seves comparacions (una versió contra la següent) per veure quins canvis hi "
-    "ha. S'apliquen els filtres de dataset, criteri, perspectiva i trencador."
+    "ha. S'apliquen els filtres de dataset, criteri i perspectiva."
 )
 
 selected = filters.current()
@@ -33,7 +33,7 @@ cols[2].metric("Amb canvis", num((units["n_codes"] > 0).sum()))
 st.subheader("Comparacions")
 st.dataframe(
     units[["label_from", "url_from", "label_to", "url_to", "date_to", "status_label", "format_to", "n_files_to",
-           "n_codes", "n_breaking_codes"]],
+           "n_codes"]],
     hide_index=True,
     column_config={
         "label_from": "Versió antiga",
@@ -45,7 +45,6 @@ st.dataframe(
         "format_to": "Format",
         "n_files_to": "Fitxers",
         "n_codes": "Canvis",
-        "n_breaking_codes": "Trencadors",
     },
 )
 
@@ -65,7 +64,7 @@ if changes.empty:
     if unit["unit_status"] != "compared":
         st.info("No hi ha codis perquè aquesta comparació no s'ha pogut fer.")
     elif unit["n_codes"] > 0:
-        st.info("Aquesta comparació té canvis, però cap amb els filtres de perspectiva o trencador triats.")
+        st.info("Aquesta comparació té canvis, però cap amb els filtres de perspectiva triats.")
     else:
         st.info("El dataset no ha canviat entre aquestes dues versions.")
 else:
@@ -73,5 +72,5 @@ else:
     st.dataframe(
         changes,
         hide_index=True,
-        column_config={"code": "Codi", "name": "Canvi", "level_1": "Perspectiva", "is_breaking": "Trencador"},
+        column_config={"code": "Codi", "name": "Canvi", "level_1": "Perspectiva"},
     )

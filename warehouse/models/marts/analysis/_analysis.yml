@@ -67,8 +67,6 @@ models:
         description: Fitxers de la versió antiga que no s'han llegit, perquè no són taules o repetien files d'un altre (`n_files_dropped_to`, a la nova).
       - name: n_codes
         description: Files de la unitat a change_classification.csv (un per codi).
-      - name: has_breaking_change
-        description: Algun canvi trencador a la unitat.
 
   - name: mart_code_frequency
     description: >
@@ -88,11 +86,11 @@ models:
       - name: share_of_compared_units
         description: n_units / comparacions fetes.
 
-  - name: mart_breaking_share
+  - name: mart_change_share
     description: >
-      Pregunta: quina proporció de les comparacions fetes té almenys un canvi
-      trencador? Per criteri (`A`, `B`) i en total (`all`), amb l'interval de
-      Wilson al 95%.
+      Pregunta: quina proporció de les comparacions fetes té almenys un canvi?
+      Per criteri (`A`, `B`) i en total (`all`), amb l'interval de Wilson al
+      95%.
     columns:
       - name: criterion
         description: "`A`, `B` o `all`."
@@ -103,8 +101,8 @@ models:
                 values: ["A", "B", "all"]
       - name: n_compared_units
         description: Comparacions fetes (unitats `is_compared`).
-      - name: share_with_breaking_change
-        description: Proporció amb almenys un canvi trencador.
+      - name: share_with_change
+        description: Proporció amb almenys un canvi.
 
   - name: mart_changes_by_quarter
     description: >
@@ -137,7 +135,7 @@ models:
   - name: mart_dataset_profile
     description: >
       Pregunta: com és cada dataset elegible? Versions, comparacions fetes i no
-      fetes, canvis, codis i canvis trencadors. Una fila per dataset.
+      fetes, canvis i codis. Una fila per dataset.
     columns:
       - name: dataset_id
         description: Dataset de Hugging Face.
