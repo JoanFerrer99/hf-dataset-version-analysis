@@ -225,6 +225,54 @@ def versions(filters=None) -> pd.DataFrame:
     return df
 
 
+ELIGIBILITY_LABELS = {"Si": "Elegible", "Restringit": "Restringit (403)", "NoElegible": "No elegible"}
+
+
+def sample_by_eligibility() -> pd.DataFrame:
+    """
+    La mostra de la Fase 0 per elegibilitat i interval de descàrregues (`fact_dataset`, l'estrella dels
+    datasets). Sense filtres: és tota la mostra.
+
+    :return: una fila per elegibilitat i interval (`Sense dades` si no se saben les descàrregues), amb
+        els datasets, la mediana de descàrregues i els que tenen llicència.
+    """
+    df = _query("""
+        select
+            e.eligibility,
+            coalesce(b.downloads_band, 'Sense dades') as downloads_band,
+            count(*) as n_datasets,
+            median(d.downloads) as median_downloads,
+            count(f.license_key) as n_with_license
+        from fact_dataset as f
+        inner join dim_eligibility as e
+            on e.eligibility_key = f.eligibility_key
+        inner join dim_dataset as d
+            on d.dataset_key = f.dataset_key
+        left join dim_downloads_band as b
+            on b.downloads_band_key = f.downloads_band_key
+        group by e.eligibility, b.downloads_band, b.band_rank
+        order by e.eligibility desc, coalesce(b.band_rank, 9)
+    """)
+    df["eligibility_label"] = df["eligibility"].map(ELIGIBILITY_LABELS)
+    return df
+
+
+def dataset_bands(filters=None) -> pd.DataFrame:
+    """
+    :param filters: filtres de dataset i criteri.
+    :return: els intervals k-means de cada dataset elegible (`dim_dataset`): descàrregues, mida, files i
+        columnes inicials, versions i commits tabulars.
+    """
+    where, params = _conditions(filters, dataset="dataset_id", criterion="eligibility_criterion")
+    return _query(f"""
+        select dataset_id, downloads_band, initial_size_band, initial_rows_band, initial_columns_band,
+               n_versions_band, n_tabular_commits_band
+        from dim_dataset
+        where is_eligible and {where}
+        order by dataset_id
+    """, params)
+
+
 def dataset_profiles(filters=None) -> pd.DataFrame:
     """
     :param filters: filtres de dataset i criteri.

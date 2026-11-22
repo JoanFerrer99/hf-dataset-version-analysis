@@ -107,7 +107,11 @@ def test_sampling_page_shows_the_funnel_and_both_criteria(app):
     _page(app, "app_pages/sampling.py")
 
     assert app.dataframe[0].value["Hi arriben"].tolist() == [12, 10, 6, 4, 3]
-    assert {m.label: m.value for m in app.metric} == {"Criteri A: tags": "2", "Criteri B: sessions de commits": "1"}
+    assert {m.label: m.value for m in app.metric} == {
+        "Criteri A: tags": "2", "Criteri B: sessions de commits": "1",
+        "Elegible": "3", "Restringit (403)": "1", "No elegible": "8"}
+    by_downloads = app.dataframe[-1].value
+    assert by_downloads.loc["Elegible"].sum() == 3 and by_downloads.loc["Restringit (403)", "Many"] == 1
 
 
 def test_versions_page_lists_every_version_with_its_commit_link(app):
@@ -116,6 +120,19 @@ def test_versions_page_lists_every_version_with_its_commit_link(app):
     versions = app.dataframe[0].value
     assert len(versions) == 7
     assert versions["commit_url"].str.startswith("https://huggingface.co/datasets/").all()
+
+
+def test_versions_page_shows_the_measures_of_each_version_and_the_bands(app):
+    _page(app, "app_pages/versions.py", filter_datasets=["org/tags-a"])
+
+    measures = app.dataframe[1].value
+    assert measures["differences"].tolist() == ["first_version", "C221+C421", "C222+C223+C510"]
+    assert measures["position_label"].tolist() == ["Primera", "Intermèdia", "Última"]
+    assert measures["n_rows"].tolist() == [100, 120, 120] and measures["n_columns"].tolist() == [5, 6, 5]
+    assert measures["conception_days"].isna().tolist() == [True, False, False]
+    assert measures["lifespan_days"].isna().tolist() == [False, False, True]
+    bands = app.dataframe[-1].value
+    assert bands["downloads_band"].tolist() == ["Many"]
 
 
 def test_filters_restrict_the_data_and_are_kept_across_pages(app):

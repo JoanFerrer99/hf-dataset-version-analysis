@@ -61,3 +61,19 @@ cols[0].metric("Criteri A: tags", num(eligible["n_criterion_a"]),
                help="2 tags com a mínim, i 2 commits que toquen dades tabulars com a mínim.")
 cols[1].metric("Criteri B: sessions de commits", num(eligible["n_criterion_b"]),
                help="2 branques com a mínim, i commits tabulars en 2 sessions separades més de 6 hores.")
+
+st.subheader("La mostra per elegibilitat i descàrregues")
+sample = data.sample_by_eligibility()
+by_eligibility = sample.groupby("eligibility_label", sort=False)["n_datasets"].sum()
+cols = st.columns(len(by_eligibility))
+for col, (label, count) in zip(cols, by_eligibility.items()):
+    col.metric(label, num(count))
+st.dataframe(
+    sample.pivot_table(index="eligibility_label", columns="downloads_band", values="n_datasets", aggfunc="sum",
+                       fill_value=0, sort=False)
+    .reindex(columns=[b for b in ("Few", "Medium", "Many", "Sense dades") if b in set(sample["downloads_band"])])
+    .rename_axis(index="Elegibilitat", columns="Descàrregues"),
+)
+st.caption("Tota la mostra: elegibles, restringits (l'API va respondre 403) i no elegibles (també els que van "
+           "fallar). Les descàrregues són les dels últims 30 dies, en tres intervals calculats amb k-means "
+           "(Few, Medium, Many); la data de creació, la llicència i les descàrregues surten del llistat del mostreig.")
