@@ -611,8 +611,8 @@ bronze  data/run_<id>/*.csv, funnel_summary.json        el que escriu el pipelin
   │     warehouse/models/staging/_sources.yml           es llegeix com a text
   ▼
 silver  warehouse/models/staging/stg_*.sql              vistes: tipus, noms en snake_case, cap filtre
-  ▼
-gold    warehouse/models/marts/core/                    esquema en estrella (taules)
+  ▼     warehouse/models/intermediate/                  mesures per versió i per dataset, intervals k-means
+gold    warehouse/models/marts/core/                    les dues estrelles: versions i datasets (taules)
         warehouse/models/marts/analysis/                marts de consulta (taules)
 ```
 
@@ -632,9 +632,10 @@ dbt build --project-dir warehouse --profiles-dir warehouse      # fixture sintè
 - Variables dbt: `run_dir` (per defecte, `tests/fixtures/run_sample/`) i
   `census_dir` (la validació de Census Income, `data/census_income/run_2/`).
   Variable d'entorn `WAREHOUSE_PATH`: on es desa el `.duckdb` (fora de git).
-- Les columnes que els runs antics no tenen (p.e. `n_files_dropped_*` o les
-  durades) surten buides o a 0: no cal tornar a executar el pipeline per
-  construir-ne el magatzem.
+- Les columnes que els runs antics no tenen (p.e. `n_files_dropped_*`, les
+  durades, la mida de dades i de metadades o les files i columnes de cada
+  versió) surten buides o a 0: el magatzem es construeix igual, però les
+  mesures noves només les té una execució nova.
 
 ### 10.2 Capes
 
@@ -642,23 +643,36 @@ dbt build --project-dir warehouse --profiles-dir warehouse      # fixture sintè
   `stg_funnel_summary`, `stg_versions`, `stg_change_classification`,
   `stg_comparison_status`, `stg_failures`, `stg_census_validation`). Hi
   posa el tipus de cada columna; les dates amb zona passen a UTC.
-- **Gold, estrella:** el gra de `fact_change` és un codi de la taxonomia
-  entre dues versions consecutives d'un dataset (una fila de
-  `change_classification.csv`). Les claus subrogades són l'md5 de la clau
-  natural (macro `surrogate_key`).
+- **Intermediate:** `int_version_measures` (una fila per versió, amb les
+  mesures i les diferències amb l'anterior), `int_dataset_measures` (una per
+  dataset de la mostra) i `int_dataset_bands`, un model Python que
+  discretitza les mesures dels datasets amb k-means (scikit-learn, 3
+  clústers sobre `log1p` del valor, etiquetats per l'ordre del centre):
+  `Few/Medium/Many` per a les descàrregues, sobre tota la mostra, i
+  `Low/Medium/High` per a la resta, sobre els elegibles.
+- **Gold, dues estrelles** (Star_Versions i Star_Dataset, validades pel
+  director). Les claus subrogades són l'md5 de la clau natural (macro
+  `surrogate_key`).
 
-| Model | Clau natural | Columnes |
+| Model | Gra | Mesures i claus |
 |---|---|---|
-| `fact_change` | dataset, versió antiga, versió nova, codi | claus `dataset_key`, `kind_key`, `version_from_key`, `version_to_key`, `date_key` (dia de la versió nova); mesures `change_count` (= 1) i `age_days` (dies des de la creació del dataset) |
-| `dim_dataset` | `dataset_id` | `owner`, `eligibility_criterion` (A/B), `num_tags`, `num_branches`, `num_tabular_commits`, `num_data_files`, `tabular_file_share`, `created_at`, `license`, `downloads`. Només els elegibles. |
-| `dim_version` | `dataset_id`, `commit_sha` | `version_label`, `version_order`, `version_source`, `commit_date`. Fa dos rols al fet: *from* i *to*. |
-| `dim_date` | `date` | `year`, `quarter`, `year_quarter`, `month`, `weekday`. Només els dies amb alguna versió. |
-| `dim_kind_of_change` | `code` | `name`, `perspective`, `level_1` a `level_3` (les xifres del codi). Ve del seed `warehouse/seeds/taxonomy.csv`. |
+| `fact_version` | una versió d'un dataset elegible | `lifespan_days` (fins a la següent), `conception_days` (des de l'anterior), `data_size_bytes`, `metadata_size_bytes`, `n_data_files`, `n_metadata_files`, `session_commit_count`, `n_rows`, `n_columns`; claus `dataset_key`, `differences_key`, `commit_time_key`, `version_kind_key`, `version_order_key` |
+| `fact_dataset` | un dataset de la mostra | `num_tags`, `num_branches`, `num_tabular_commits`, `n_versions`, mida i fitxers inicials i finals, columnes i files inicials (les de les versions, només dels elegibles); claus `dataset_key`, `owner_key`, `creation_time_key`, `eligibility_key`, `license_key`, `downloads_band_key` |
+
+| Dimensió | Què és |
+|---|---|
+| `dim_dataset` | Tota la mostra: autor, creació, elegibilitat (`Si`, `Restringit`, `NoElegible`), criteri, llicència, descàrregues i els intervals k-means (descàrregues, mida, files i columnes inicials, versions, commits tabulars). |
+| `dim_differences` | *Junk dimension*: les diferències d'una versió amb l'anterior. Una fila per combinació de codis (`C221+C421`) més `first_version`, `no_changes` i `not_compared`, amb un indicador per nivell de la taxonomia: perspectiva (`has_c2`), grup (`has_c22`) i codi (`has_c221`). |
+| `dim_time` | Hores amb alguna versió o creació: hora, dia, mes, trimestre i any. Rols: el commit i la creació. |
+| `dim_version_kind`, `dim_version_order` | `tag`/`commit`; `First`/`Intermediate`/`Last`. |
+| `dim_owner`, `dim_eligibility`, `dim_license`, `dim_downloads_band` | Les dimensions de l'estrella dels datasets. |
+| `dim_kind_of_change` | Els 15 codis, amb el nom i els nivells (seed `warehouse/seeds/taxonomy.csv`). |
 
 - **Gold, marts:** una taula per pregunta (`mart_funnel`, `mart_change_units`,
   `mart_code_frequency`, `mart_change_share`, `mart_changes_by_quarter`,
   `mart_criterion_comparison`, `mart_dataset_profile`,
-  `mart_census_validation`). Cada model té la pregunta i les columnes
+  `mart_census_validation`), i `mart_version_codes` (una fila per versió i
+  codi, la base de les consultes amb filtres de la interfície). Cada model té la pregunta i les columnes
   descrites al seu `_analysis.yml`. `mart_change_units` (una fila per
   comparació, amb l'estat) és la base de les proporcions: només compten les
   comparacions fetes (`is_compared`).
@@ -669,9 +683,9 @@ dbt build --project-dir warehouse --profiles-dir warehouse      # fixture sintè
   els de `warehouse/tests/`: conciliació amb el que va escriure el pipeline
   (`reconcile_*.sql`) i coherència dels marts (`assert_*.sql`).
 - `tests/test_warehouse_seed.py` comprova que el seed diu el mateix que el
-  motor, i `tests/test_run_sample_fixture.py`, que la fixture és el que
-  escriu el pipeline.
-- Els runs sense data de creació dels datasets tenen `age_days` buit.
+  motor; `tests/test_warehouse_bands.py`, els intervals k-means; i
+  `tests/test_run_sample_fixture.py`, que la fixture és el que escriu el
+  pipeline.
 
 ---
 
