@@ -2,6 +2,7 @@
 Fase 3: construeix el magatzem (DuckDB + dbt, `docs/warehouse.md`) a partir
 d'una carpeta `data/run_<id>/`.
 
+
 Executa `dbt build` (models i tests) amb la carpeta com a variable `run_dir`, i
 desa el fitxer `.duckdb` fora de la carpeta, que és immutable:
 `data/warehouse/run_<id>.duckdb`. El crida `run_pipeline.py` després de la Fase

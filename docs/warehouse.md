@@ -80,7 +80,6 @@ que s'uneixen sense cap taula intermèdia.
 | `dim_date` | `date` | `date_key` (AAAAMMDD), `year`, `quarter`, `year_quarter` (p.e. 2025-T1), `month`, `weekday` (1 = dilluns). Només els dies amb alguna versió. |
 | `dim_kind_of_change` | `code` | `kind_key`, `name`, `perspective` (categoria del paper), `level_1` a `level_3` (les xifres del codi), `is_breaking` |
 
-`is_breaking` és a la dimensió perquè només depèn del codi.
 
 ## Tests
 

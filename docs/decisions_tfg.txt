@@ -2047,6 +2047,17 @@ Estat: Fet (revisa T-36, T-37 i T-42)
     (C312 `cell_edits`, C410, C510, C520).
   - run_10 (11 comparacions fetes): arc-agi3 (6) i IndustryBench (1)
     passen a `mixed_columns`; les altres 4 donen els mateixos codis.
+  - Formats barrejats al run_10 (llistat de les 24 revisions, sense
+    descarregar dades): 5 dels 8 datasets tenen un sol format. arc-agi3
+    té JSONL i JSON (manifests i índexs), i ja era `mixed_columns`.
+    `villekuosmanen/agilex_wipe_cherry` afegeix a la sessió 2
+    `candywrapper_plugins/subtask/subtasks.json` al costat dels 20
+    parquet: la comparació 1→2, abans `identical_content`, passa a
+    `mixed_columns` (les 2→3, 3→4 i 4→5 continuen sent
+    `identical_content`). `Travor278/a2r-task-droid-bottle-to-windowsill`
+    té parquet i JSON, però els dos tags són el mateix commit i no es
+    compara. Llegir tots els formats fa perdre, doncs, 1 comparació, que
+    no tenia canvis.
   - run_9: `pulsia/fr-bench-pdf2md` (12 comparacions) passa a
     `mixed_columns`. És la mateixa taula amb camps opcionals segons el
     tipus de test (8-15 conjunts de columnes): és la pèrdua acceptada amb

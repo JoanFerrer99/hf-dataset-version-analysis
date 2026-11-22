@@ -66,13 +66,12 @@ data/test-00000-of-00001.parquet    tot el split test
 de 3". És el format de la llibreria `datasets` i de la conversió automàtica
 a parquet del Hub.
 
-**Per al projecte, un repositori és un dataset** (decisió T-37). Subsets,
+**Per al projecte, un repositori és un dataset**. Subsets,
 splits i shards són maneres de repartir-lo en fitxers, com ho poden ser un
 CSV per any o un fitxer per document. A la Fase 2, tots els fitxers de dades
 del repositori, de qualsevol dels formats de la llista, s'uneixen en ordre i
 es comparen com un sol dataset: si la versió nova reparteix les mateixes
-files en més o menys fitxers, no surt cap canvi. Per a cada versió, amb el
-diagrama acordat amb el director (decisió T-44):
+files en més o menys fitxers, no surt cap canvi. Per a cada versió:
 
 - **Columnes diferents.** Si els fitxers no tenen tots el mateix conjunt de
   columnes (taules diferents, o camps opcionals), la versió no es compara:
@@ -164,20 +163,6 @@ Cada tipus té un codi:
 | C520 | Eliminar valors absents (*Remove missing*) | Valors de les dades |
 | C530 | Actualitzar valors sense absents (*Update value not involving missing*) | Valors de les dades |
 
-Els C5xx segueixen la revisió de la taxonomia posterior al paper (*Data
-Value*, decisió T-43), i es miren només a les **files aparellades**: les
-afegides i les eliminades ja són C421/C422, així que els dos grups són
-disjunts. A cada columna, una cel·la que passa de tenir valor a estar buida
-és C510 i una que passa de buida a tenir valor, C520 (en una mateixa columna
-poden sortir tots dos). El C530 només mira les cel·les que tenen valor a
-totes dues versions: canvia la distribució de la columna (subtipus
-`distribution`) o la correlació amb una altra (`correlation`, columna
-`a|b`). Si no hi ha cap fila aparellada, es mira la taula sencera: C510 o C520
-segons si la proporció de buits puja o baixa (subtipus `rate`), i C530 només
-a les columnes on no canvia. Fins a T-43, C510 eren tots els canvis de buits,
-C520 les correlacions i C530 la distribució, també quan venien de files
-afegides o eliminades: les execucions anteriors (`run_6`…`run_9`) fan servir
-aquests significats.
 
 Decisions d'abast: **C100 no es classifica** (el director va indicar que
 no interessa), així que el projecte treballa amb els altres 15 codis. I
@@ -186,11 +171,6 @@ columnes): àudio, vídeo, imatges o tensors queden fora de la
 classificació. La taxonomia classifica el *dataset*, no l'ús que se'n
 fa: no sap quina columna és el "target" d'un model.
 
-**Canvi trencador (`is_breaking`)**: heurística pròpia del projecte.
-Un canvi és trencador si probablement fa **fallar l'execució** d'un 
-pipeline que llegeix les dades per nom, posició o tipus: C210, C222,
-C223, C311, C321 i C410. Els altres codis poden degradar un model sense
-fer fallar res, i es marquen com a no trencadors. Detall a `docs/taxonomy.md`.
 
 ### 2.7 Census Income: el cas de referència
 
@@ -269,7 +249,7 @@ src/                Codi del pipeline: un script per fase i el motor de detecci�
 config/             formats.toml: els formats tabulars (T-36, T-44)
   diffengine/       El motor, com a paquet de Python (s'explica a docs/validacio_census_income.md, secció 1)
 warehouse/          Magatzem de la Fase 3: projecte dbt sobre DuckDB (docs/warehouse.md)
-ui/                 Interfície de consulta (Streamlit): un visualitzador de l'execució, de només lectura sobre el magatzem (T-33, T-34)
+ui/                 Interfície de consulta (Streamlit): un visualitzador de l'execució, de només lectura sobre el magatzem
 tests/              Tests automàtics (pytest), sense xarxa; fixtures/run_sample/ és una execució sintètica
 data/               Resultats de les execucions (secció 10)
 docs/               Documentació (ordre de lectura: docs/README.md)
@@ -285,7 +265,7 @@ docs/               Documentació (ordre de lectura: docs/README.md)
 | `errors.py` | Reintents davant els límits de l'API, classificació dels errors i registre de fallades a `failures.csv`. És una llibreria que es fa servir totes les fases. |
 | `validate_census_income.py` | Valida el motor amb la Taula 1 del paper (Census Income). |
 | `build_warehouse.py` | Fase 3: `dbt build` sobre una carpeta d'execució; el magatzem va a `data/warehouse/run_<id>.duckdb`. |
-| `figures/` | Figures de la memòria: un mòdul per figura, que llegeix un mart; `make_all.py` les fa totes a `docs/figures/` (`docs/figures/README.md`). |
+| `figures/` | Figures de la memòria: un mòdul per figura, que llegeix un mart; `make_all.py` les fa totes a `docs/figures/`|
 | carpeta /diffengine |Compara dues versions d'un dataset en 5 passos. `engine.py` n'és l'índex. |
 
 
@@ -319,7 +299,7 @@ xarxa ni token. `conftest.py` afegeix `src/` al camí d'importació.
 
 - **La Fase 2 viu a `eligibility_scan.py`, no a `diffengine/`.** El motor
   sap comparar dues revisions; *quines* es comparen ho diuen les versions
-  de la Fase 1 (`version_pairs`, decisió T-23).
+  de la Fase 1
 - **`eligibility_scan.py` surt amb error si no troba `HF_TOKEN`.** Per això 
   la CI defineix un token fictici per als tests.
 
@@ -349,7 +329,7 @@ xarxa ni token. `conftest.py` afegeix `src/` al camí d'importació.
            sortida: data/warehouse/run_<id>.duckdb (fora de la carpeta)
 ```
 
-Les Fases 1 i 2 només treballen amb els elegibles (una desena de 2.000), no
+Les Fases 1 i 2 només treballen amb els elegibles (aproximadament una desena de 2.000), no
 amb tota la mostra. És el que fa viable descarregar contingut.
 
 Opcions útils: `--input-csv <report>` salta la Fase 0 i fa servir un report
@@ -417,8 +397,7 @@ car. Si no en passa un, no és elegible, el motiu queda al report
    (`num_data_files`, `tabular_file_share`), amb les metadades que dona la
    mateixa crida (`dataset_metadata`: `created_at`, `license` i `downloads`
    dels últims 30 dies). Només es tenen per als candidats: la resta de la
-   mostra les té buides (decisió T-25). A `run_8`, 27 dels 29 candidats
-   tenien dades tabulars.
+   mostra les té buides.
 3. **Els commits toquen dades tabulars prou vegades?**
    `list_repo_commits` dona els commits, del més nou al més vell, i se'n
    revisen els 50 més recents. `bare_clone` fa el clon sense contingut
@@ -568,14 +547,12 @@ mostra baixaria centenars de GB).
    - de cada revisió en treu els **fitxers del dataset**
      (`datafiles.dataset_files`): els fitxers tabulars, amb la mateixa
      regla que l'elegibilitat de la Fase 0 (secció 7.3), de tots els
-     formats de la llista (`config/formats.toml` o `--formats`; decisions
-     T-36, T-42 i T-44);
+     formats de la llista (`config/formats.toml` o `--formats`);
    - si els fitxers són els mateixos i tenen el mateix contingut, no es
      descarrega res;
    - si no, es descarreguen tots; si tenen les mateixes columnes, s'ignoren
      els que repeteixen files d'un altre més gran, s'uneixen en ordre en un
-     sol dataset per revisió (secció 2.2) i es comparen (decisions T-37 i
-     T-44).
+     sol dataset per revisió i es comparen
 3. Cada comparació acaba amb un **estat** (`ok`, `identical_content`,
    `absent_old`/`absent_new` si una de les versions no té cap fitxer de
    dades, `no_data` si no en té cap de les dues, `download_failed`,
@@ -583,8 +560,7 @@ mostra baixaria centenars de GB).
    versió no tenen totes les mateixes columnes). Una fallada de descàrrega no es
    converteix mai en codis. L'estat, amb quants codis té, queda a
    `comparison_status.csv`, també el de les comparacions sense cap codi:
-   així es distingeix "sense canvis" de "no s'ha pogut comparar" (decisió
-   T-28).
+   així es distingeix "sense canvis" de "no s'ha pogut comparar".
 4. Les files de cada dataset s'afegeixen a `change_classification.csv` i a
    `comparison_status.csv` en acabar-lo, i el log diu per quina parella va
    (`parella i/n`): si l'execució s'atura a mitges, es conserva el que ja

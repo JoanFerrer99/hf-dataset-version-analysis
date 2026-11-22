@@ -163,3 +163,5 @@ warehouse/logs/
 ui/styles/node_modules/
 
 agent-skills/
+
+CLAUDE.md
