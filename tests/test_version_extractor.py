@@ -117,6 +117,24 @@ class TestSumTreeSize:
         assert ve.sum_tree_size([]) == 0
 
 
+class TestSplitTree:
+    def test_data_files_are_the_dataset_files_and_the_rest_is_metadata(self):
+        from types import SimpleNamespace as F
+
+        entries = [F(path="data/train.csv", size=1000), F(path="data/test.csv", size=400), F(path="README.md", size=50),
+                   F(path="meta/info.json", size=20), F(path="images/a.png", size=300), F(path="data", size=None)]
+
+        assert ve.split_tree(entries, ("csv", "parquet")) == {
+            "approx_size_bytes": 1770, "data_size_bytes": 1400, "metadata_size_bytes": 370,
+            "n_data_files": 2, "n_metadata_files": 3}
+
+    def test_only_the_formats_of_the_run_are_data(self):
+        from types import SimpleNamespace as F
+
+        sizes = ve.split_tree([F(path="a.csv", size=10), F(path="b.json", size=5)], ("json",))
+        assert (sizes["data_size_bytes"], sizes["n_data_files"]) == (5, 1)
+
+
 class TestFormatAuthors:
     def test_joins_unique_authors_preserving_order(self):
         assert ve.format_authors(["alice", "bob", "alice"]) == "alice,bob"
@@ -250,7 +268,7 @@ class TestExtractVersionsForDataset:
         def boom_size(*a, **kw):
             raise make_http_error(500)
 
-        monkeypatch.setattr(ve, "fetch_tree_size_bytes", boom_size)
+        monkeypatch.setattr(ve, "fetch_tree_entries", boom_size)
         rows = ve.extract_versions_for_dataset(
             "org/ds", "Criteri A: tags>=2 amb commits substantius", "tok", ve.RETRY_CONFIG, compute_size=True
         )

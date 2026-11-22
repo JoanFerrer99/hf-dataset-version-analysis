@@ -529,6 +529,10 @@ mantenidor; una sessió és una inferència.
 Altres detalls:
 - `approx_size_bytes`: suma de la mida de tots els fitxers de la
   revisió (`list_repo_tree`, una crida per versió; `--skip-size` l'omet).
+  La mateixa crida la reparteix (`split_tree`): `data_size_bytes` i
+  `n_data_files` són els fitxers del dataset (els que compara la Fase 2), i
+  `metadata_size_bytes` i `n_metadata_files`, la resta (README, metadades,
+  imatges...).
 - `authors`: l'API no distingeix autor de *committer*; és l'únic camp
   disponible.
 - Errors parcials (la data d'un tag, la mida d'una versió) no fan perdre
@@ -680,7 +684,7 @@ incremental, mai sobreescriu) i hi desa tot:
 |---|---|---|
 | `eligibility_report.csv` | 0 | Una fila per dataset de la mostra: `dataset_id, num_tags, num_branches, num_tabular_commits, eligible, eligibility_reason, status, error_category, error, num_data_files, tabular_file_share, created_at, license, downloads`. `eligibility_reason` diu el criteri que es compleix o el filtre on s'ha aturat. `status` = `classified`, `access_restricted` (403) o `error`. `num_data_files` i `tabular_file_share` només es tenen per als candidats; `created_at`, `license` i `downloads` (els dels últims 30 dies, el dia de l'execució), per a tota la mostra (secció 7.2). |
 | `funnel_summary.json` | 0 | Resum de l'embut (secció 7.4): població recorreguda, quants passen cada filtre, elegibles per criteri, inaccessibles, errors, proporcions; i la durada de cada fase (`duration_*_s`, secció 6). |
-| `versions.csv` | 1 | Una fila per versió: `dataset_id, version_label, version_order, version_source, commit_sha, commit_date, authors, approx_size_bytes, session_commit_count, status`. |
+| `versions.csv` | 1 | Una fila per versió: `dataset_id, version_label, version_order, version_source, commit_sha, commit_date, authors, approx_size_bytes, session_commit_count, status, data_size_bytes, metadata_size_bytes, n_data_files, n_metadata_files`. |
 | `change_classification.csv` | 2 | Una fila per parell de versions i codi: `dataset_id, version_from, version_to, code, description`. `version_from`/`version_to` són SHA de commit (els `commit_sha` de `versions.csv`). |
 | `comparison_status.csv` | 2 | Una fila per parell de versions, també sense cap codi: `dataset_id, version_from, version_to, status, n_codes, format_from, format_to, n_files_from, n_files_to, n_files_dropped_from, n_files_dropped_to, size_bytes`. `status` és l'estat de la comparació (secció 9.1); `n_codes`, quants codis diferents té, que són les seves files a `change_classification.csv`. `format_*` i `n_files_*`: els formats (p.e. `csv+parquet`) i quants fitxers té el dataset a cada versió; `n_files_dropped_*`, quants no s'han llegit perquè no són taules o repetien files d'un altre. `size_bytes`: la mida de les dues versions, sumades, que és la que es compara amb `--max-dataset-mb`. |
 | `failures.csv` | totes | Només si hi ha fallades: `timestamp, source, dataset_id, error_category, error_message, retries_attempted`. `source` indica la fase. |

@@ -118,7 +118,10 @@ def main(out: str = OUT) -> None:
 
     versions = [VersionRow(dataset_id=ds, version_label=label, version_order=order, version_source=source,
                            commit_sha=sha(f"{ds}@{label}"), commit_date=date, authors=authors,
-                           approx_size_bytes=size, session_commit_count=count, status="ok")
+                           approx_size_bytes=size, session_commit_count=count, status="ok",
+                           # 9 de cada 10 bytes són dades; dos fitxers de dades i un README (`split_tree`)
+                           data_size_bytes=size * 9 // 10, metadata_size_bytes=size - size * 9 // 10,
+                           n_data_files=2, n_metadata_files=1)
                 for ds, label, order, source, date, authors, size, count in VERSIONS]
     pd.DataFrame([asdict(v) for v in versions]).to_csv(os.path.join(out, "versions.csv"), index=False)
 
