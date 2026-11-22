@@ -16,14 +16,6 @@ models:
           - not_null
       - name: perspective
         description: Categoria del paper.
-      - name: is_breaking
-        description: Trenca l'execució d'un pipeline que llegeix per nom, posició, tipus o ordre.
-        data_tests:
-          - not_null
-          - accepted_values:
-              arguments:
-                values: [true, false]
-                quote: false
 
   - name: dim_dataset
     description: Els datasets elegibles de l'execució.

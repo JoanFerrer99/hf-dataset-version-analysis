@@ -47,18 +47,10 @@ comparisons as (
         format_to,
         n_files_from,
         n_files_to,
+        n_files_dropped_from,
+        n_files_dropped_to,
         size_bytes
     from {{ ref('stg_comparison_status') }}
-),
-
-codes as (
-    select
-        dataset_id,
-        version_from,
-        version_to,
-        count(*) filter (where is_breaking) as n_breaking_codes
-    from {{ ref('stg_change_classification') }}
-    group by dataset_id, version_from, version_to
 ),
 
 failed_datasets as (
@@ -80,19 +72,16 @@ joined as (
         comparisons.format_to,
         coalesce(comparisons.n_files_from, 0) as n_files_from,
         coalesce(comparisons.n_files_to, 0) as n_files_to,
+        coalesce(comparisons.n_files_dropped_from, 0) as n_files_dropped_from,
+        coalesce(comparisons.n_files_dropped_to, 0) as n_files_dropped_to,
         coalesce(comparisons.size_bytes, 0) as size_bytes,
         coalesce(comparisons.n_codes, 0) as n_codes,
-        coalesce(codes.n_breaking_codes, 0) as n_breaking_codes,
         failed_datasets.dataset_id is not null as dataset_failed
     from units
     left join comparisons
         on comparisons.dataset_id = units.dataset_id
         and comparisons.version_from = units.version_from
         and comparisons.version_to = units.version_to
-    left join codes
-        on codes.dataset_id = units.dataset_id
-        and codes.version_from = units.version_from
-        and codes.version_to = units.version_to
     left join failed_datasets
         on failed_datasets.dataset_id = units.dataset_id
 ),
@@ -102,7 +91,7 @@ grouped as (
         *,
         case
             when comparison_status in ('ok', 'identical_content') then 'compared'
-            when comparison_status in ('too_large', 'download_failed', 'parse_failed') then 'not_compared'
+            when comparison_status in ('too_large', 'download_failed', 'parse_failed', 'mixed_columns') then 'not_compared'
             when comparison_status in ('absent_old', 'absent_new', 'no_data') then 'no_data'
             when dataset_failed then 'failed'
             else 'not_run'
@@ -123,10 +112,10 @@ select
     format_to,
     n_files_from,
     n_files_to,
+    n_files_dropped_from,
+    n_files_dropped_to,
     size_bytes,
     n_codes,
-    n_breaking_codes,
     unit_status = 'compared' as is_compared,
-    n_codes > 0 as has_change,
-    n_breaking_codes > 0 as has_breaking_change
+    n_codes > 0 as has_change
 from grouped

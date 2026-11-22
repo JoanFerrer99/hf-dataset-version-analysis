@@ -1,4 +1,4 @@
-"""Pàgina: quins canvis surten, en quins datasets, quants són trencadors i com evolucionen al llarg del temps."""
+"""Pàgina: quins canvis surten, en quins datasets, quantes comparacions en tenen i com evolucionen al llarg del temps."""
 
 import streamlit as st
 
@@ -11,7 +11,7 @@ from fmt import num, pct
 st.markdown(
     "Cada canvi és un codi de la taxonomia detectat entre una versió d'un dataset i la següent. Una "
     "**comparació** és un parell de versions consecutives; només compten les que s'han pogut fer. "
-    "S'apliquen tots els filtres de la barra lateral (a la proporció de trencadors, només el de criteri)."
+    "S'apliquen tots els filtres de la barra lateral (a la proporció de comparacions amb canvis, només el de criteri)."
 )
 
 selected = filters.current()
@@ -32,10 +32,10 @@ else:
     st.caption("Una barra per codi, en l'ordre de la taxonomia i del color de la seva perspectiva. Comparacions: "
                "quantes versions contra la següent tenen el codi. Datasets: quants el tenen en alguna comparació.")
     st.dataframe(
-        frequency[["code", "name", "level_1", "is_breaking", "n_units", "n_datasets", "share_of_compared_units"]],
+        frequency[["code", "name", "level_1", "n_units", "n_datasets", "share_of_compared_units"]],
         hide_index=True,
         column_config={
-            "code": "Codi", "name": "Canvi", "level_1": "Perspectiva", "is_breaking": "Trencador",
+            "code": "Codi", "name": "Canvi", "level_1": "Perspectiva",
             "n_units": "Comparacions", "n_datasets": "Datasets",
             "share_of_compared_units": st.column_config.NumberColumn("De les comparacions fetes", format="percent"),
         },
@@ -58,38 +58,37 @@ else:
                        "n_units": "Comparacions"},
     )
 
-st.subheader("Comparacions amb algun canvi trencador")
-shares = data.breaking_share(selected)
+st.subheader("Comparacions amb algun canvi")
+shares = data.change_share(selected)
 if shares.empty:
     st.info("Cap comparació amb aquests filtres.")
 else:
     total = shares.set_index("criterion").loc["all"] if "all" in set(shares["criterion"]) else None
     if total is not None:
         st.markdown(
-            f"De les {num(total['n_compared_units'])} comparacions fetes, {num(total['n_units_with_change'])} tenen "
-            f"algun canvi i **{num(total['n_units_with_breaking_change'])}** algun canvi trencador "
-            f"(**{pct(total['share_with_breaking_change'], 1)}**, interval del 95%: "
-            f"{pct(total['share_with_breaking_change_low'], 1)} a {pct(total['share_with_breaking_change_high'], 1)})."
+            f"De les {num(total['n_compared_units'])} comparacions fetes, **{num(total['n_units_with_change'])}** "
+            f"tenen algun canvi (**{pct(total['share_with_change'], 1)}**, interval del 95%: "
+            f"{pct(total['share_with_change_low'], 1)} a {pct(total['share_with_change_high'], 1)})."
         )
     st.altair_chart(
-        charts.share_with_interval(shares, "criterion_label", "share_with_breaking_change",
-                                   "share_with_breaking_change_low", "share_with_breaking_change_high", colors,
-                                   category_title="Criteri", share_title="Comparacions amb algun canvi trencador",
+        charts.share_with_interval(shares, "criterion_label", "share_with_change",
+                                   "share_with_change_low", "share_with_change_high", colors,
+                                   category_title="Criteri", share_title="Comparacions amb algun canvi",
                                    order=list(shares["criterion_label"])),
         width="stretch",
     )
-    st.caption("El punt és la proporció de comparacions fetes amb algun canvi trencador, i la línia, l'interval de "
+    st.caption("El punt és la proporció de comparacions fetes amb algun canvi, i la línia, l'interval de "
                "confiança del 95% (Wilson). Amb poques comparacions, l'interval és ample.")
     st.dataframe(
-        shares[["criterion_label", "n_compared_units", "n_units_with_change", "n_units_with_breaking_change",
-                "share_with_breaking_change", "share_with_breaking_change_low", "share_with_breaking_change_high"]],
+        shares[["criterion_label", "n_compared_units", "n_units_with_change", "share_with_change",
+                "share_with_change_low", "share_with_change_high"]],
         hide_index=True,
         column_config={
             "criterion_label": "Criteri", "n_compared_units": "Comparacions fetes",
-            "n_units_with_change": "Amb canvis", "n_units_with_breaking_change": "Amb trencadors",
-            "share_with_breaking_change": st.column_config.NumberColumn("Proporció", format="percent"),
-            "share_with_breaking_change_low": st.column_config.NumberColumn("Interval: des de", format="percent"),
-            "share_with_breaking_change_high": st.column_config.NumberColumn("fins a", format="percent"),
+            "n_units_with_change": "Amb canvis",
+            "share_with_change": st.column_config.NumberColumn("Proporció", format="percent"),
+            "share_with_change_low": st.column_config.NumberColumn("Interval: des de", format="percent"),
+            "share_with_change_high": st.column_config.NumberColumn("fins a", format="percent"),
         },
     )
 
@@ -102,8 +101,8 @@ else:
     st.caption("Canvis per trimestre de la versió nova, apilats per perspectiva. Només hi surten els trimestres "
                "amb algun canvi.")
     st.dataframe(
-        quarters[["year_quarter", "level_1", "n_changes", "n_breaking_changes", "n_units", "n_datasets"]],
+        quarters[["year_quarter", "level_1", "n_changes", "n_units", "n_datasets"]],
         hide_index=True,
         column_config={"year_quarter": "Trimestre", "level_1": "Perspectiva", "n_changes": "Canvis",
-                       "n_breaking_changes": "Trencadors", "n_units": "Comparacions", "n_datasets": "Datasets"},
+                       "n_units": "Comparacions", "n_datasets": "Datasets"},
     )

@@ -52,6 +52,12 @@ models:
         description: Datasets de la mostra.
         data_tests:
           - not_null
+      - name: duration_sampling_s
+        description: >
+          Segons del mostreig (Fase 0). També `duration_eligibility_s`
+          (elegibilitat), `duration_versions_s` (Fase 1b),
+          `duration_classification_s` (Fase 2) i `duration_total_s` (Fases 0 a
+          2). Buides si el run no les té o la fase no s'ha fet.
 
   - name: stg_versions
     description: Fase 1, una fila per versió de cada elegible (versions.csv).
@@ -113,20 +119,30 @@ models:
         description: >
           `ok`, `identical_content`, `absent_old` o `absent_new` (una de les
           versions no té cap fitxer de dades), `no_data` (cap de les dues),
-          `download_failed`, `parse_failed` o `too_large`.
+          `download_failed`, `parse_failed`, `too_large` o `mixed_columns`
+          (els fitxers d'alguna versió no tenen totes les mateixes columnes,
+          T-44).
         data_tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ["ok", "identical_content", "absent_old", "absent_new", "no_data", "download_failed", "parse_failed", "too_large"]
+                values: ["ok", "identical_content", "absent_old", "absent_new", "no_data", "download_failed", "parse_failed", "too_large", "mixed_columns"]
       - name: n_codes
         description: Codis diferents; són les files de la comparació a stg_change_classification.
         data_tests:
           - not_null
       - name: format_from
-        description: El format comparat a la versió antiga (el primer de `config/formats.toml` o de `--formats` que hi surt); buit si no té fitxers de dades.
+        description: Els formats del dataset a la versió antiga, units amb `+` (p.e. `csv+parquet`); buit si no té fitxers de dades.
       - name: n_files_from
         description: Fitxers del dataset a la versió antiga (`format_to` i `n_files_to`, a la nova).
+        data_tests:
+          - not_null
+      - name: n_files_dropped_from
+        description: >
+          Fitxers de la versió antiga que no s'han llegit: documents JSON que no
+          són taules, o fitxers que repetien files d'un altre més gran (T-44;
+          `n_files_dropped_to`, a la nova). 0 als runs anteriors, que no tenen
+          la columna.
         data_tests:
           - not_null
       - name: size_bytes

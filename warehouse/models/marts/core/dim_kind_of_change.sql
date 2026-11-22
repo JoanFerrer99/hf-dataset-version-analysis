@@ -7,8 +7,7 @@ with taxonomy as (
         perspective,
         level_1,
         level_2,
-        level_3,
-        is_breaking
+        level_3
     from {{ ref('taxonomy') }}
 )
 
@@ -19,6 +18,5 @@ select
     perspective,
     level_1,
     level_2,
-    level_3,
-    is_breaking
+    level_3
 from taxonomy

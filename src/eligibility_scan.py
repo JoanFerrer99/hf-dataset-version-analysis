@@ -72,6 +72,7 @@ from tqdm import tqdm
 from huggingface_hub import HfApi, dataset_info, list_repo_commits, list_repo_refs
 
 import errors
+import timing
 from diffengine import datafiles, pairs
 from diffengine.config import DEFAULT_CONFIG, EngineConfig
 from diffengine.output import classification_frame, status_frame
@@ -149,7 +150,7 @@ def check_formats(order, source: str = "") -> tuple[str, ...]:
     Comprova una llista de formats tabulars i la normalitza: en minúscules i
     sense el punt (`.CSV` és `csv`).
 
-    :param order: els formats, en ordre de preferència.
+    :param order: els formats.
     :param source: d'on surten (p.e. el fitxer), per al missatge d'error.
     :return: els formats, p.e. `("csv", "tsv", "parquet", "jsonl", "json")`.
     :raises ValueError: si la llista és buida, té formats repetits o algun que el motor no sap llegir.
@@ -169,7 +170,7 @@ def check_formats(order, source: str = "") -> tuple[str, ...]:
 
 def load_formats(path: str = FORMATS_FILE) -> tuple[str, ...]:
     """
-    Els formats tabulars de `config/formats.toml`, en ordre de preferència (decisió T-36).
+    Els formats tabulars de `config/formats.toml` (decisions T-36 i T-44).
 
     :param path: el fitxer de configuració.
     :return: els formats (`check_formats`).
@@ -180,8 +181,8 @@ def load_formats(path: str = FORMATS_FILE) -> tuple[str, ...]:
     return check_formats(order, f"{path}, `order`")
 
 
-# Formats tabulars de l'execució, en ordre de preferència: els de `--formats` o, si no se'n donen, els de
-# `config/formats.toml` (decisions T-36 i T-42). Es fixen en començar (`use_formats`); fins llavors, `None`.
+# Formats tabulars de l'execució: els de `--formats` o, si no se'n donen, els de `config/formats.toml`
+# (decisions T-36, T-42 i T-44). Es fixen en començar (`use_formats`); fins llavors, `None`.
 TABULAR_FORMATS: tuple[str, ...] | None = None
 
 
@@ -197,7 +198,7 @@ def use_formats(formats: tuple[str, ...] | None = None) -> tuple[str, ...]:
     """
     global TABULAR_FORMATS
     TABULAR_FORMATS = formats if formats is not None else load_formats()
-    log.info(f"Formats tabulars, per ordre de preferència: {', '.join(TABULAR_FORMATS)} "
+    log.info(f"Formats tabulars: {', '.join(TABULAR_FORMATS)} "
              f"({'--formats' if formats is not None else 'config/formats.toml'})")
     return TABULAR_FORMATS
 
@@ -789,13 +790,16 @@ def new_run_dir(parent: str | None = None) -> str:
     return run_dir
 
 
-def write_results(rows: list[dict], total_scanned: int) -> tuple[str, str, dict]:
+def write_results(rows: list[dict], total_scanned: int,
+                  durations: dict[str, float] | None = None) -> tuple[str, str, dict]:
     """
     Escriu a `OUTPUT_DIR` el report per dataset (`eligibility_report.csv`,
     sense els camps interns) i el resum de l'embut (`funnel_summary.json`).
 
     :param rows: files de `classify_dataset`.
     :param total_scanned: mida de la població recorreguda.
+    :param durations: durada de cada pas de la Fase 0, en segons (p.e.
+        `{"sampling": 61.2, "eligibility": 1803.4}`); al JSON, `duration_<pas>_s`.
     :return: `(csv_path, json_path, summary)`.
     """
     df = pd.DataFrame(rows)
@@ -825,6 +829,7 @@ def write_results(rows: list[dict], total_scanned: int) -> tuple[str, str, dict]
         "eligible_Criteri_A": int(df["eligibility_reason"].str.startswith("Criteri A").sum()),
         "eligible_Criteri_B": int(df["eligibility_reason"].str.startswith("Criteri B").sum()),
         **compute_funnel_stats(counts),
+        **{f"duration_{step}_s": round(seconds, 1) for step, seconds in (durations or {}).items()},
     }
 
     json_path = os.path.join(OUTPUT_DIR, "funnel_summary.json")
@@ -852,17 +857,19 @@ def run_sampling(
     :return: `(csv_path, json_path, summary)` de `write_results`, més els
         commits tabulars de cada elegible (`dataset_id -> commits`), per a la Fase 1.
     """
+    clock = timing.PhaseClock()
     log.info(f"FASE 1: Reservoir sampling (objectiu={sample_size}, max_scanned={max_scanned})")
-    dataset_ids, total_scanned = reservoir_sample_dataset_ids(
-        iter_all_dataset_ids(), sample_size, max_scanned
-    )
+    with clock.phase("Mostreig"):
+        dataset_ids, total_scanned = reservoir_sample_dataset_ids(
+            iter_all_dataset_ids(), sample_size, max_scanned
+        )
     log.info(f"Mostra obtinguda: {len(dataset_ids)} datasets de {total_scanned} escanejats.")
 
     log.info(f"FASE 2: Classificant elegibilitat ({num_threads} threads, tags_only={tags_only})...")
     indexed = [(i, ds_id, tags_only) for i, ds_id in enumerate(dataset_ids)]
     rows: list[dict] = []
 
-    with ThreadPoolExecutor(max_workers=num_threads) as executor:
+    with clock.phase("Elegibilitat"), ThreadPoolExecutor(max_workers=num_threads) as executor:
         futures = {executor.submit(classify_dataset_safe, item): item for item in indexed}
         with tqdm(total=len(indexed), desc="Classificant datasets", unit=" ds") as pbar:
             for future in as_completed(futures):
@@ -875,7 +882,8 @@ def run_sampling(
     log.info(f"Classificació completada: {len(rows)} datasets processats.")
 
     log.info("FASE 3: Escrivint resultats...")
-    csv_path, json_path, summary = write_results(rows, total_scanned)
+    csv_path, json_path, summary = write_results(
+        rows, total_scanned, {"sampling": clock.durations["Mostreig"], "eligibility": clock.durations["Elegibilitat"]})
 
     print(f"\n{'='*65}")
     print(f"  RESUM EMBUT — mostra de {summary['sample_size']} datasets aleatoris")
@@ -883,6 +891,9 @@ def run_sampling(
     for k, v in summary.items():
         print(f"  {k:<40} {v}")
     print(f"{'='*65}")
+    print("  Temps:")
+    for line in clock.summary_lines():
+        print(f"    {line}")
     print(f"\n  CSV:  {csv_path}")
     print(f"  JSON: {json_path}")
     print(f"  Fallades (detall): {FAILURES_LOG_PATH}\n")
@@ -914,10 +925,11 @@ def run_classification(versions_csv: str, config: EngineConfig = DEFAULT_CONFIG)
     mateix dataset i escriu a `OUTPUT_DIR`:
 
     - `change_classification.csv`: una fila per parell de versions i codi
-      (`dataset_id, version_from, version_to, code, description, is_breaking`);
+      (`dataset_id, version_from, version_to, code, description`);
     - `comparison_status.csv`: una fila per parell de versions, també sense
       cap codi (`dataset_id, version_from, version_to, status, n_codes,
-      format_from, format_to, n_files_from, n_files_to, size_bytes`).
+      format_from, format_to, n_files_from, n_files_to, n_files_dropped_from,
+      n_files_dropped_to, size_bytes`).
 
     Per a cada dataset, `version_pairs` en forma les parelles de revisions i
     `compare_change_units` les compara amb el motor. Una fallada d'un dataset
@@ -996,8 +1008,8 @@ def fraction(text: str) -> float:
 
 def format_list(text: str) -> tuple[str, ...]:
     """
-    Tipus d'argument de la CLI: formats tabulars separats per comes, en ordre
-    de preferència (p.e. `json,csv`).
+    Tipus d'argument de la CLI: formats tabulars separats per comes (p.e.
+    `json,csv`).
 
     :raises argparse.ArgumentTypeError: si la llista és buida, té formats repetits o algun que el motor no sap llegir.
     """
@@ -1008,7 +1020,7 @@ def format_list(text: str) -> tuple[str, ...]:
 
 
 FORMATS_HELP = (
-    "Formats tabulars de l'execució, separats per comes i en ordre de preferència (p.e. json,csv). Substitueixen "
+    "Formats tabulars de l'execució, separats per comes (p.e. json,csv). Substitueixen "
     "la llista de config/formats.toml, que llavors no es llegeix: només compten com a tabulars els formats que s'hi "
     "donen, a totes les fases. Sense l'opció, els del fitxer."
 )
@@ -1131,7 +1143,8 @@ if __name__ == "__main__":
     use_formats(args.formats)
     new_run_dir()
     if args.classify_versions:
-        run_classification(args.classify_versions, engine_config(args.max_dataset_mb, args.min_distribution_distance))
+        with timing.PhaseClock().phase("Fase 2 (classificació de canvis)"):
+            run_classification(args.classify_versions, engine_config(args.max_dataset_mb, args.min_distribution_distance))
     else:
         run_sampling(
             sample_size=args.sample_size,

@@ -15,17 +15,17 @@ NAME = "fig_code_frequency"
 def draw(con) -> plt.Figure:
     """
     Una barra horitzontal per codi (canvis, un per taula), en l'ordre de la
-    taxonomia i del color de la seva perspectiva. Els trencadors ho diuen a l'etiqueta.
+    taxonomia i del color de la seva perspectiva.
 
     :param con: connexió al magatzem.
     """
     df = common.query(con, """
-        select code, name, perspective, is_breaking, n_changes
+        select code, name, perspective, n_changes
         from mart_code_frequency
         order by code
     """)
     colors = dict(zip(common.PERSPECTIVES, common.COLORS["series"]))
-    labels = df["code"] + " " + df["name"] + df["is_breaking"].map({True: " (trencador)", False: ""})
+    labels = df["code"] + " " + df["name"]
     fig, ax = common.new_figure(7.5, 5.2)
     y = range(len(df))[::-1]
     ax.barh(list(y), df["n_changes"], height=0.55, color=df["perspective"].map(colors))

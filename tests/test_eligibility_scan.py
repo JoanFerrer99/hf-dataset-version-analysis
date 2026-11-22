@@ -885,7 +885,7 @@ class TestCompareChangeUnits:
         from diffengine.pairs import Comparison
 
         def files(paths):
-            return DatasetFiles(paths, file_format(paths[0]) if paths else None)
+            return DatasetFiles(paths, (file_format(paths[0]),) if paths else ())
         return Comparison(files(old), files(new), size, status, result)
 
     def test_returns_one_row_per_change(self, monkeypatch):
@@ -1192,10 +1192,9 @@ class TestRunClassification:
 
         out = pd.read_csv(output_csv)
         assert output_csv == str(tmp_path / "change_classification.csv")
-        assert list(out.columns) == ["dataset_id", "version_from", "version_to", "code", "description", "is_breaking"]
+        assert list(out.columns) == ["dataset_id", "version_from", "version_to", "code", "description"]
         assert out["code"].tolist() == ["C421", "C223"]
         assert out.iloc[0]["description"] == "Afegir fila"
-        assert bool(out.iloc[1]["is_breaking"]) is True
 
     def test_writes_the_status_of_every_comparison(self, monkeypatch, tmp_path):
         import pandas as pd
@@ -1215,7 +1214,8 @@ class TestRunClassification:
 
         status = pd.read_csv(tmp_path / "comparison_status.csv")
         assert list(status.columns) == ["dataset_id", "version_from", "version_to", "status", "n_codes", "format_from",
-                                        "format_to", "n_files_from", "n_files_to", "size_bytes"]
+                                        "format_to", "n_files_from", "n_files_to", "n_files_dropped_from",
+                                        "n_files_dropped_to", "size_bytes"]
         assert status[["version_to", "status", "n_codes"]].values.tolist() == [["sha2", "ok", 2], ["sha3", "ok", 0]]
         # n_codes és el nombre de files de la parella de versions a change_classification.csv.
         changes = pd.read_csv(tmp_path / "change_classification.csv")

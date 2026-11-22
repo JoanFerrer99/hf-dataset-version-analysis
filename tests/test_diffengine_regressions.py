@@ -315,11 +315,13 @@ def test_30_removal_rule_on_a_sample_of_kept_rows(base, rule, expected):
     assert [c.subtype for c in result.changes if c.code == "C422"] == [expected]
 
 
-def test_31_a_csv_per_year_that_adds_a_column_is_one_dataset(tmp_path):
-    """Reunió de seguiment (T-37): un CSV per any és un sol dataset. L'any nou afegeix files i una columna, que
-    als anys anteriors queda buida."""
+def test_31_a_csv_per_year_that_adds_a_column_is_not_compared(tmp_path):
+    """Reunió de seguiment (T-37 i T-44): un CSV per any és un sol dataset si tots tenen les mateixes columnes. Si
+    l'any nou n'afegeix una, la versió no es compara (`MixedColumns`)."""
+    import pytest
+
     from diffengine.engine import diff_tables
-    from diffengine.load import load_files
+    from diffengine.load import MixedColumns, load_files
 
     rng = np.random.default_rng(0)
 
@@ -333,8 +335,10 @@ def test_31_a_csv_per_year_that_adds_a_column_is_one_dataset(tmp_path):
         return str(path)
 
     old = [year(2019), year(2020)]
-    result = diff_tables(load_files(old), load_files(old + [year(2021, extra=True)]))
-    assert {(c.code, c.column) for c in result.changes} == {("C221", "channel"), ("C421", None)}
+    result = diff_tables(load_files(old), load_files(old + [year(2021)]))
+    assert {c.code for c in result.changes} == {"C421"}
+    with pytest.raises(MixedColumns):
+        load_files(old + [year(2022, extra=True)])
 
 
 def test_32_decimal_comma_is_c323(base):
@@ -470,3 +474,35 @@ def test_41_without_paired_rows_the_whole_table_decides():
     got = _changes(csv_bytes(old), csv_bytes(new))
     assert {c for c in got if c[0].startswith("C5")} == {("C510", "x", "rate"), ("C530", "y", "distribution")}
     assert {"C421", "C422"} <= {c for c, *_ in got}
+
+
+def test_42_a_file_that_repeats_the_others_does_not_hide_the_key(tmp_path):
+    """PDL-Bench (T-41, T-44): un fitxer per categoria (algunes preguntes en diverses) i `overall`. Sense `overall`
+    repetit, l'ID torna a ser la clau i no surt cap C422 `duplicate_removed`."""
+    from diffengine.engine import diff_tables, match_columns_and_rows
+    from diffengine.load import load_files
+
+    def version(name, ids, categories, edited=()):
+        rows = pd.DataFrame({"ID": [f"P{i:03d}" for i in ids],
+                             "PROMPT": [f"Solve problem number {i} with all the steps written down" +
+                                        (" (revised)" if i in edited else "") for i in ids],
+                             "level": [i % 3 for i in ids]})
+        folder = tmp_path / name
+        folder.mkdir()
+        paths = []
+        for cat, members in categories.items():
+            path = folder / f"benchmark_{cat}.csv"
+            rows[rows["ID"].isin([f"P{i:03d}" for i in members])].to_csv(path, index=False)
+            paths.append(str(path))
+        path = folder / "benchmark_overall.csv"
+        rows.to_csv(path, index=False)
+        return sorted(paths + [str(path)])
+
+    old = version("v1", range(60), {"algebra": range(0, 30), "geometry": range(20, 50)})
+    new = version("v2", range(10, 70), {"algebra": range(10, 40), "geometry": range(40, 70)}, edited={15, 16})
+    a, b = load_files(old), load_files(new)
+    assert (a.n_rows, b.n_rows, len(a.dropped_files), len(b.dropped_files)) == (60, 60, 2, 2)
+    _, rows = match_columns_and_rows(a, b, DEFAULT_CONFIG)
+    assert (rows.method, rows.key_columns) == ("key", ["ID"])
+    got = {(c.code, c.subtype) for c in diff_tables(a, b).changes}
+    assert ("C422", "duplicate_removed") not in got and {"C421", "C422"} <= {code for code, _ in got}

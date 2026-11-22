@@ -29,29 +29,22 @@ class TestDatasetFiles:
                  "meta/tasks.parquet", "meta/info.json", "dataset_infos.json", "videos/chunk-000/a.mp4"]
         assert dataset_files(files).files == ("data/chunk-000/episode_000000.parquet",)
 
-    def test_the_first_format_of_the_list_wins_not_the_most_common(self):
-        data = dataset_files(["a.parquet", "b.parquet", "c.csv"])  # per defecte, CSV primer
-        assert (data.files, data.fmt) == (("c.csv",), "csv")
+    def test_every_listed_format_is_part_of_the_dataset(self):
+        """Decisió T-44: el format ja no importa; tots els fitxers de dades es llegeixen."""
+        data = dataset_files(["b.parquet", "a.parquet", "c.csv", "README.md"])
+        assert data.files == ("a.parquet", "b.parquet", "c.csv")
+        assert (data.formats, data.fmt) == (("csv", "parquet"), "csv+parquet")
 
-    def test_the_order_is_the_one_given(self):
-        assert dataset_files(["data.csv", "data.parquet"], formats=("parquet", "csv")).files == ("data.parquet",)
+    def test_formats_follow_the_order_of_the_list(self):
+        assert dataset_files(["data.csv", "data.parquet"], formats=("parquet", "csv")).fmt == "parquet+csv"
 
     def test_a_format_left_out_of_the_list_is_not_data(self):
         assert dataset_files(["a.json", "b.parquet"], formats=("json",)).files == ("a.json",)
-        assert dataset_files(["b.parquet"], formats=("json",)) == datafiles.DatasetFiles((), None)
-
-    def test_without_the_preferred_format_the_next_one_is_used(self):
-        data = dataset_files(["a.jsonl", "b.json"], formats=("csv", "jsonl", "json"))
-        assert (data.files, data.fmt) == (("a.jsonl",), "jsonl")
+        assert dataset_files(["b.parquet"], formats=("json",)) == datafiles.DatasetFiles((), ())
+        assert dataset_files(["b.parquet"], formats=("json",)).fmt is None
 
 
 class TestFormats:
-    def test_preferred_format_is_the_first_present(self):
-        paths = ["a.json", "b.parquet", "README.md", "dataset_infos.json"]
-        assert datafiles.preferred_format(paths, ("csv", "parquet", "json")) == "parquet"
-        assert datafiles.preferred_format(paths, ("json", "parquet")) == "json"
-        assert datafiles.preferred_format(["README.md", "dataset_infos.json"], ("json",)) is None
-
     def test_a_file_is_tabular_only_in_a_listed_format_and_outside_metadata(self):
         assert datafiles.is_tabular_path("data/train.CSV")
         assert datafiles.is_tabular_path("data/train.csv", ("csv",))

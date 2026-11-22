@@ -66,13 +66,27 @@ data/test-00000-of-00001.parquet    tot el split test
 de 3". És el format de la llibreria `datasets` i de la conversió automàtica
 a parquet del Hub.
 
-**Per al projecte, un repositori és un dataset** (decisió T-37). Subsets,
+**Per al projecte, un repositori és un dataset**. Subsets,
 splits i shards són maneres de repartir-lo en fitxers, com ho poden ser un
 CSV per any o un fitxer per document. A la Fase 2, tots els fitxers de dades
-del repositori s'uneixen en ordre i es comparen com un sol dataset: si la
-versió nova reparteix les mateixes files en més o menys fitxers, no surt cap
-canvi. Les columnes són les de tots els fitxers: on un fitxer no en té una,
-les seves files hi queden buides.
+del repositori, de qualsevol dels formats de la llista, s'uneixen en ordre i
+es comparen com un sol dataset: si la versió nova reparteix les mateixes
+files en més o menys fitxers, no surt cap canvi. Per a cada versió:
+
+- **Documents JSON.** Un `.json` que no és una taula (p.e. `croissant.json`,
+  `metadata.json`) no és dades: no es llegeix i compta com a fitxer ignorat.
+- **Columnes diferents.** Si els fitxers no tenen tots el mateix conjunt de
+  columnes (taules diferents, o camps opcionals), la versió no es compara:
+  la comparació queda amb l'estat `mixed_columns`.
+- **Files repetides entre fitxers.** Si un fitxer repeteix files d'un altre
+  més gran (p.e. un `overall` amb les files de tots els fitxers per
+  categoria), s'ignora el més petit. Els fitxers es recorren de més files a
+  menys i es conserva cada fitxer que no comparteix cap fila amb els ja
+  conservats. Les repeticions dins d'un mateix fitxer són dades.
+- **Formats diferents.** Cada format es prepara pel seu compte (el CSV
+  decideix el tipus pels valors; parquet i JSON ja el porten) i després
+  s'uneixen. Una columna numèrica en un format és numèrica a la taula unida
+  si tots els seus valors, de tots els formats, són números; si no, text.
 
 ### 2.3 Git LFS i el "clon bare" sense contingut
 
@@ -152,20 +166,6 @@ Cada tipus té un codi:
 | C520 | Eliminar valors absents (*Remove missing*) | Valors de les dades |
 | C530 | Actualitzar valors sense absents (*Update value not involving missing*) | Valors de les dades |
 
-Els C5xx segueixen la revisió de la taxonomia posterior al paper (*Data
-Value*, decisió T-43), i es miren només a les **files aparellades**: les
-afegides i les eliminades ja són C421/C422, així que els dos grups són
-disjunts. A cada columna, una cel·la que passa de tenir valor a estar buida
-és C510 i una que passa de buida a tenir valor, C520 (en una mateixa columna
-poden sortir tots dos). El C530 només mira les cel·les que tenen valor a
-totes dues versions: canvia la distribució de la columna (subtipus
-`distribution`) o la correlació amb una altra (`correlation`, columna
-`a|b`). Si no hi ha cap fila aparellada, es mira la taula sencera: C510 o C520
-segons si la proporció de buits puja o baixa (subtipus `rate`), i C530 només
-a les columnes on no canvia. Fins a T-43, C510 eren tots els canvis de buits,
-C520 les correlacions i C530 la distribució, també quan venien de files
-afegides o eliminades: les execucions anteriors (`run_6`…`run_9`) fan servir
-aquests significats.
 
 Decisions d'abast: **C100 no es classifica** (el director va indicar que
 no interessa), així que el projecte treballa amb els altres 15 codis. I
@@ -174,11 +174,6 @@ columnes): àudio, vídeo, imatges o tensors queden fora de la
 classificació. La taxonomia classifica el *dataset*, no l'ús que se'n
 fa: no sap quina columna és el "target" d'un model.
 
-**Canvi trencador (`is_breaking`)**: heurística pròpia del projecte.
-Un canvi és trencador si probablement fa **fallar l'execució** d'un 
-pipeline que llegeix les dades per nom, posició o tipus: C210, C222,
-C223, C311, C321 i C410. Els altres codis poden degradar un model sense
-fer fallar res, i es marquen com a no trencadors. Detall a `docs/taxonomy.md`.
 
 ### 2.7 Census Income: el cas de referència
 
@@ -209,9 +204,9 @@ Termes que defineix aquest codi:
 | **Criteri B** | ≥2 branques i commits tabulars repartits en ≥2 sessions. | funció `eligibility_criterion` (sessions: `has_time_dispersed_substantive_commits`) |
 | **Versió** | Criteri A: cada tag. Criteri B: cada sessió (representada pel seu commit més recent). | extracció a `version_extractor.extract_versions_for_dataset` |
 | **Unitat de canvi** | Què es compara a la Fase 2: cada versió contra la següent. Criteri A: cada tag contra el tag següent. Criteri B: el final de cada sessió contra el final de la sessió següent. | funció `version_pairs` |
-| **Fitxer tabular** | D'un dels formats de l'execució (els de `config/formats.toml`, per defecte `.csv`, `.tsv`, `.parquet`, `.jsonl` i `.json`, o els de `--formats`) i fora de les carpetes de metadades (`meta/`...). L'únic tipus que es descarrega i es compara. Si una versió en té de més d'un format, només es compara el primer de la llista (decisions T-36 i T-42). | es defineix a la funció `diffengine.datafiles.is_tabular_path` |
+| **Fitxer tabular** | D'un dels formats de l'execució (els de `config/formats.toml`, per defecte `.csv`, `.tsv`, `.parquet`, `.jsonl` i `.json`, o els de `--formats`) i fora de les carpetes de metadades (`meta/`...). L'únic tipus que es descarrega i es compara. Si una versió en té de més d'un format, tots formen el dataset (decisions T-36, T-42 i T-44). | es defineix a la funció `diffengine.datafiles.is_tabular_path` |
 | **Shard** | Fitxer amb només una part de les files d'un split. |  |
-| **Dataset** | Un repositori del Hub. A la Fase 2, tots els seus fitxers tabulars s'uneixen en ordre i es comparen com un de sol (secció 2.2, decisió T-37). | funció `diffengine.datafiles.dataset_files` |
+| **Dataset** | Un repositori del Hub. A la Fase 2, tots els seus fitxers tabulars s'uneixen en ordre i es comparen com un de sol, si tenen les mateixes columnes (secció 2.2, decisions T-37 i T-44). | funció `diffengine.datafiles.dataset_files` |
 
 
 ### Identificadors que es troben al codi i als documents
@@ -242,7 +237,7 @@ python src/build_warehouse.py --run-dir data/run_9                              
 
 - Cal `git` al sistema (la imatge Docker ja l'inclou).
 - La Fase 3 fa servir el `dbt` del mateix entorn (`requirements.txt`) i
-  s'executa des de l'arrel del repositori (`docs/warehouse.md`).
+  s'executa des de l'arrel del repositori (secció 10).
 - Sense arguments, els scripts mostren l'ajuda i surten, perquè una
   crida accidental no engegui una execució de diverses hores.
 - Una execució real de 2000 datasets recorre tota la població de HF:
@@ -254,12 +249,12 @@ python src/build_warehouse.py --run-dir data/run_9                              
 
 ```
 src/                Codi del pipeline: un script per fase i el motor de detecció de canvis
-config/             formats.toml: els formats tabulars i el seu ordre de preferència (T-36)
+config/             formats.toml: els formats tabulars (T-36, T-44)
   diffengine/       El motor, com a paquet de Python (s'explica a docs/validacio_census_income.md, secció 1)
-warehouse/          Magatzem de la Fase 3: projecte dbt sobre DuckDB (docs/warehouse.md)
-ui/                 Interfície de consulta (Streamlit): un visualitzador de l'execució, de només lectura sobre el magatzem (T-33, T-34)
+warehouse/          Magatzem de la Fase 3: projecte dbt sobre DuckDB (secció 10)
+ui/                 Interfície de consulta (Streamlit): un visualitzador de l'execució, de només lectura sobre el magatzem
 tests/              Tests automàtics (pytest), sense xarxa; fixtures/run_sample/ és una execució sintètica
-data/               Resultats de les execucions (secció 10)
+data/               Resultats de les execucions (secció 11)
 docs/               Documentació (ordre de lectura: docs/README.md)
 ```
 
@@ -271,9 +266,10 @@ docs/               Documentació (ordre de lectura: docs/README.md)
 | `eligibility_scan.py` | Fase 0 (mostra aleatòria i elegibilitat) i Fase 2 (classificació de canvis dels elegibles). Conté també el clon de git i el criteri de quins fitxers compten. |
 | `version_extractor.py` | Fase 1: la llista ordenada de versions de cada elegible, amb data, autors i mida. |
 | `errors.py` | Reintents davant els límits de l'API, classificació dels errors i registre de fallades a `failures.csv`. És una llibreria que es fa servir totes les fases. |
+| `timing.py` | La durada de cada fase (`PhaseClock`, `format_duration`). |
 | `validate_census_income.py` | Valida el motor amb la Taula 1 del paper (Census Income). |
 | `build_warehouse.py` | Fase 3: `dbt build` sobre una carpeta d'execució; el magatzem va a `data/warehouse/run_<id>.duckdb`. |
-| `figures/` | Figures de la memòria: un mòdul per figura, que llegeix un mart; `make_all.py` les fa totes a `docs/figures/` (`docs/figures/README.md`). |
+| `figures/` | Figures de la memòria: un mòdul per figura, que llegeix un mart; `make_all.py` les fa totes a `docs/figures/`|
 | carpeta /diffengine |Compara dues versions d'un dataset en 5 passos. `engine.py` n'és l'índex. |
 
 
@@ -298,7 +294,7 @@ xarxa ni token. `conftest.py` afegeix `src/` al camí d'importació.
 |---|---|
 | `requirements.txt` | Dependències amb versió fixada |
 | `ruff.toml` | Regles de lint |
-| `config/formats.toml` | Els formats tabulars, en ordre de preferència (decisió T-36). `docker-compose.yml` el munta a sobre del de la imatge, de manera que es pot canviar sense reconstruir-la. Per a una execució, `--formats` el substitueix (decisió T-42) |
+| `config/formats.toml` | Els formats tabulars (decisions T-36 i T-44). `docker-compose.yml` el munta a sobre del de la imatge, de manera que es pot canviar sense reconstruir-la. Per a una execució, `--formats` el substitueix (decisió T-42) |
 | `Dockerfile`, `docker-compose.yml` | Imatge per executar el pipeline sense instal·lar res; `docker-compose` hi defineix un servei per script (`run-pipeline`, `eligibility-scan`, `version-extractor`, `warehouse`) |
 | `.github/workflows/ci.yml` | A cada push: lint, tests i construcció de la imatge |
 | `.github/workflows/docker-publish.yml` | Publica la imatge |
@@ -307,7 +303,7 @@ xarxa ni token. `conftest.py` afegeix `src/` al camí d'importació.
 
 - **La Fase 2 viu a `eligibility_scan.py`, no a `diffengine/`.** El motor
   sap comparar dues revisions; *quines* es comparen ho diuen les versions
-  de la Fase 1 (`version_pairs`, decisió T-23).
+  de la Fase 1
 - **`eligibility_scan.py` surt amb error si no troba `HF_TOKEN`.** Per això 
   la CI defineix un token fictici per als tests.
 
@@ -337,7 +333,7 @@ xarxa ni token. `conftest.py` afegeix `src/` al camí d'importació.
            sortida: data/warehouse/run_<id>.duckdb (fora de la carpeta)
 ```
 
-Les Fases 1 i 2 només treballen amb els elegibles (una desena de 2.000), no
+Les Fases 1 i 2 només treballen amb els elegibles (aproximadament una desena de 2.000), no
 amb tota la mostra. És el que fa viable descarregar contingut.
 
 Opcions útils: `--input-csv <report>` salta la Fase 0 i fa servir un report
@@ -348,6 +344,15 @@ per a proves, perquè esbiaixa la mostra). La Fase 3 només es fa si la carpeta
 té tots els fitxers de les Fases 0-2: amb `--input-csv` o amb alguna fase
 saltada, no hi és. Si falla dbt, les Fases 0-2 ja són a la carpeta i
 l'execució acaba igualment.
+
+**Temps.** Cada fase es cronometra (`timing.PhaseClock`): en acabar-ne una,
+el log diu quant ha durat i l'acumulat, i el resum final té una taula amb
+totes les fases (les saltades hi surten com a «saltada»). Les durades, en
+segons, queden també a `funnel_summary.json`: `duration_sampling_s` i
+`duration_eligibility_s` (Fase 0, també quan `eligibility_scan.py`
+s'executa sol), `duration_versions_s` (Fase 1b), `duration_classification_s`
+(Fase 2) i `duration_total_s` (Fases 0 a 2). La Fase 3 només surt al log,
+perquè llegeix aquest fitxer.
 
 ---
 
@@ -405,8 +410,7 @@ car. Si no en passa un, no és elegible, el motiu queda al report
    (`num_data_files`, `tabular_file_share`), amb les metadades que dona la
    mateixa crida (`dataset_metadata`: `created_at`, `license` i `downloads`
    dels últims 30 dies). Només es tenen per als candidats: la resta de la
-   mostra les té buides (decisió T-25). A `run_8`, 27 dels 29 candidats
-   tenien dades tabulars.
+   mostra les té buides.
 3. **Els commits toquen dades tabulars prou vegades?**
    `list_repo_commits` dona els commits, del més nou al més vell, i se'n
    revisen els 50 més recents. `bare_clone` fa el clon sense contingut
@@ -555,22 +559,22 @@ mostra baixaria centenars de GB).
    unitat (`pairs.compare_revisions`). El motor:
    - de cada revisió en treu els **fitxers del dataset**
      (`datafiles.dataset_files`): els fitxers tabulars, amb la mateixa
-     regla que l'elegibilitat de la Fase 0 (secció 7.3), i si n'hi ha de
-     més d'un format, només els del primer de la llista de formats
-     (`config/formats.toml` o `--formats`) que hi surt (decisions T-36 i
-     T-42);
+     regla que l'elegibilitat de la Fase 0 (secció 7.3), de tots els
+     formats de la llista (`config/formats.toml` o `--formats`);
    - si els fitxers són els mateixos i tenen el mateix contingut, no es
      descarrega res;
-   - si no, es descarreguen tots, s'uneixen en ordre en un sol dataset per
-     revisió (secció 2.2) i es comparen (decisió T-37).
+   - si no, es descarreguen tots; els documents JSON que no són taules no es
+     llegeixen; si tenen les mateixes columnes, s'ignoren
+     els que repeteixen files d'un altre més gran, s'uneixen en ordre en un
+     sol dataset per revisió i es comparen
 3. Cada comparació acaba amb un **estat** (`ok`, `identical_content`,
    `absent_old`/`absent_new` si una de les versions no té cap fitxer de
    dades, `no_data` si no en té cap de les dues, `download_failed`,
-   `parse_failed` o `too_large`). Una fallada de descàrrega no es
+   `parse_failed`, `too_large` o `mixed_columns` si els fitxers d'alguna
+   versió no tenen totes les mateixes columnes). Una fallada de descàrrega no es
    converteix mai en codis. L'estat, amb quants codis té, queda a
    `comparison_status.csv`, també el de les comparacions sense cap codi:
-   així es distingeix "sense canvis" de "no s'ha pogut comparar" (decisió
-   T-28).
+   així es distingeix "sense canvis" de "no s'ha pogut comparar".
 4. Les files de cada dataset s'afegeixen a `change_classification.csv` i a
    `comparison_status.csv` en acabar-lo, i el log diu per quina parella va
    (`parella i/n`): si l'execució s'atura a mitges, es conserva el que ja
@@ -592,7 +596,81 @@ Compara dues versions d'un dataset en 5 passos. `engine.py` n'és l'índex.
 
 ---
 
-## 10. Fitxers que es generen
+## 10. Fase 3 — Magatzem de dades
+
+Un fitxer DuckDB construït amb dbt a partir d'una carpeta `data/run_<id>/`.
+La interfície i les figures només llegeixen la capa gold.
+
+```
+bronze  data/run_<id>/*.csv, funnel_summary.json        el que escriu el pipeline (no es toca mai)
+  │     warehouse/models/staging/_sources.yml           es llegeix com a text
+  ▼
+silver  warehouse/models/staging/stg_*.sql              vistes: tipus, noms en snake_case, cap filtre
+  ▼
+gold    warehouse/models/marts/core/                    esquema en estrella (taules)
+        warehouse/models/marts/analysis/                marts de consulta (taules)
+```
+
+### 10.1 Com es regenera
+
+Des de l'arrel del repositori (les vistes de staging llegeixen els CSV amb
+rutes relatives a l'arrel; les taules gold porten les dades a dins):
+
+```bash
+python src/build_warehouse.py --run-dir data/<run_id>           # data/warehouse/<run_id>.duckdb
+dbt build --project-dir warehouse --profiles-dir warehouse      # fixture sintètica (la de la CI)
+```
+
+- `build_warehouse.py` fa `dbt build --full-refresh` (models i tests) amb la
+  carpeta com a variable `run_dir`, i desa el `.duckdb` fora de la carpeta,
+  que és immutable. El crida `run_pipeline.py` després de la Fase 2.
+- Variables dbt: `run_dir` (per defecte, `tests/fixtures/run_sample/`) i
+  `census_dir` (la validació de Census Income, `data/census_income/run_2/`).
+  Variable d'entorn `WAREHOUSE_PATH`: on es desa el `.duckdb` (fora de git).
+- Les columnes que els runs antics no tenen (p.e. `n_files_dropped_*` o les
+  durades) surten buides o a 0: no cal tornar a executar el pipeline per
+  construir-ne el magatzem.
+
+### 10.2 Capes
+
+- **Silver (staging):** una vista per fitxer de bronze (`stg_eligibility_report`,
+  `stg_funnel_summary`, `stg_versions`, `stg_change_classification`,
+  `stg_comparison_status`, `stg_failures`, `stg_census_validation`). Hi
+  posa el tipus de cada columna; les dates amb zona passen a UTC.
+- **Gold, estrella:** el gra de `fact_change` és un codi de la taxonomia
+  entre dues versions consecutives d'un dataset (una fila de
+  `change_classification.csv`). Les claus subrogades són l'md5 de la clau
+  natural (macro `surrogate_key`).
+
+| Model | Clau natural | Columnes |
+|---|---|---|
+| `fact_change` | dataset, versió antiga, versió nova, codi | claus `dataset_key`, `kind_key`, `version_from_key`, `version_to_key`, `date_key` (dia de la versió nova); mesures `change_count` (= 1) i `age_days` (dies des de la creació del dataset) |
+| `dim_dataset` | `dataset_id` | `owner`, `eligibility_criterion` (A/B), `num_tags`, `num_branches`, `num_tabular_commits`, `num_data_files`, `tabular_file_share`, `created_at`, `license`, `downloads`. Només els elegibles. |
+| `dim_version` | `dataset_id`, `commit_sha` | `version_label`, `version_order`, `version_source`, `commit_date`. Fa dos rols al fet: *from* i *to*. |
+| `dim_date` | `date` | `year`, `quarter`, `year_quarter`, `month`, `weekday`. Només els dies amb alguna versió. |
+| `dim_kind_of_change` | `code` | `name`, `perspective`, `level_1` a `level_3` (les xifres del codi). Ve del seed `warehouse/seeds/taxonomy.csv`. |
+
+- **Gold, marts:** una taula per pregunta (`mart_funnel`, `mart_change_units`,
+  `mart_code_frequency`, `mart_change_share`, `mart_changes_by_quarter`,
+  `mart_criterion_comparison`, `mart_dataset_profile`,
+  `mart_census_validation`). Cada model té la pregunta i les columnes
+  descrites al seu `_analysis.yml`. `mart_change_units` (una fila per
+  comparació, amb l'estat) és la base de les proporcions: només compten les
+  comparacions fetes (`is_compared`).
+
+### 10.3 Tests i limitacions
+
+- `dbt build` passa els tests genèrics (claus, relacions i valors admesos) i
+  els de `warehouse/tests/`: conciliació amb el que va escriure el pipeline
+  (`reconcile_*.sql`) i coherència dels marts (`assert_*.sql`).
+- `tests/test_warehouse_seed.py` comprova que el seed diu el mateix que el
+  motor, i `tests/test_run_sample_fixture.py`, que la fixture és el que
+  escriu el pipeline.
+- Els runs sense data de creació dels datasets tenen `age_days` buit.
+
+---
+
+## 11. Fitxers que es generen
 
 Cada execució de `run_pipeline.py` crea **`data/run_<id>/`** (número
 incremental, mai sobreescriu) i hi desa tot:
@@ -600,16 +678,15 @@ incremental, mai sobreescriu) i hi desa tot:
 | Fitxer | Fase | Contingut |
 |---|---|---|
 | `eligibility_report.csv` | 0 | Una fila per dataset de la mostra: `dataset_id, num_tags, num_branches, num_tabular_commits, eligible, eligibility_reason, status, error_category, error, num_data_files, tabular_file_share, created_at, license, downloads`. `eligibility_reason` diu el criteri que es compleix o el filtre on s'ha aturat. `status` = `classified`, `access_restricted` (403) o `error`. Els cinc últims camps només es tenen per als candidats (secció 7.2); `downloads` són els dels últims 30 dies, el dia de l'execució. |
-| `funnel_summary.json` | 0 | Resum de l'embut (secció 7.4): població recorreguda, quants passen cada filtre, elegibles per criteri, inaccessibles, errors, proporcions. |
+| `funnel_summary.json` | 0 | Resum de l'embut (secció 7.4): població recorreguda, quants passen cada filtre, elegibles per criteri, inaccessibles, errors, proporcions; i la durada de cada fase (`duration_*_s`, secció 6). |
 | `versions.csv` | 1 | Una fila per versió: `dataset_id, version_label, version_order, version_source, commit_sha, commit_date, authors, approx_size_bytes, session_commit_count, status`. |
-| `change_classification.csv` | 2 | Una fila per parell de versions i codi: `dataset_id, version_from, version_to, code, description, is_breaking`. `version_from`/`version_to` són SHA de commit (els `commit_sha` de `versions.csv`). |
-| `comparison_status.csv` | 2 | Una fila per parell de versions, també sense cap codi: `dataset_id, version_from, version_to, status, n_codes, format_from, format_to, n_files_from, n_files_to, size_bytes`. `status` és l'estat de la comparació (secció 9.1); `n_codes`, quants codis diferents té, que són les seves files a `change_classification.csv`. `format_*` i `n_files_*`: el format comparat i quants fitxers té el dataset a cada versió. `size_bytes`: la mida de les dues versions, sumades, que és la que es compara amb `--max-dataset-mb`. |
+| `change_classification.csv` | 2 | Una fila per parell de versions i codi: `dataset_id, version_from, version_to, code, description`. `version_from`/`version_to` són SHA de commit (els `commit_sha` de `versions.csv`). |
+| `comparison_status.csv` | 2 | Una fila per parell de versions, també sense cap codi: `dataset_id, version_from, version_to, status, n_codes, format_from, format_to, n_files_from, n_files_to, n_files_dropped_from, n_files_dropped_to, size_bytes`. `status` és l'estat de la comparació (secció 9.1); `n_codes`, quants codis diferents té, que són les seves files a `change_classification.csv`. `format_*` i `n_files_*`: els formats (p.e. `csv+parquet`) i quants fitxers té el dataset a cada versió; `n_files_dropped_*`, quants no s'han llegit perquè no són taules o repetien files d'un altre. `size_bytes`: la mida de les dues versions, sumades, que és la que es compara amb `--max-dataset-mb`. |
 | `failures.csv` | totes | Només si hi ha fallades: `timestamp, source, dataset_id, error_category, error_message, retries_attempted`. `source` indica la fase. |
 
 **Magatzem (Fase 3).** No va dins de la carpeta, que és immutable, sinó a
 `data/warehouse/run_<id>.duckdb` (un fitxer DuckDB, fora de git). El
-construeix `build_warehouse.py` amb dbt: capes, models i tests a
-`docs/warehouse.md`.
+construeix `build_warehouse.py` amb dbt (secció 10).
 
 L'únic número és el de la carpeta: a dins, els noms són fixos. Els scripts
 executats sols (`eligibility_scan.py`, `version_extractor.py`) també creen
@@ -620,7 +697,7 @@ La validació de Census Income escriu a `data/census_income/run_<id>/`.
 
 ---
 
-## 11. Gestió d'errors de l'API Hugging Face (`errors.py`)
+## 12. Gestió d'errors de l'API Hugging Face (`errors.py`)
 
 - `with_retry(fn, ...)` embolcalla **totes** les crides a HF. Reintenta
   només els 429 i els errors de xarxa, fins a 5 intents, amb espera. Qualsevol altre error es propaga a la primera. Configurable amb `--retry-*`.
@@ -639,7 +716,7 @@ La validació de Census Income escriu a `data/census_income/run_<id>/`.
 
 ---
 
-## 12. Cost (Ordre - O(cost)) i complexitat
+## 13. Cost (Ordre - O(cost)) i complexitat
 
 El cost no el posa el càlcul local, sinó **les crides a l'API i els
 bytes descarregats**. Per això les decisions limiten *quantes* crides i
@@ -686,14 +763,14 @@ I els formats tabulars: `--formats`, a `run_pipeline.py`, `eligibility_scan.py` 
 
 ---
 
-## 13. Validació i resultats
+## 14. Validació i resultats
 
-### 13.1 Tests
+### 14.1 Tests
 
 210 tests (secció 5.4). Cap necessita xarxa ni token: l'API de Hugging Face
 se simula amb `monkeypatch`.
 
-### 13.2 Validació del motor amb Census Income
+### 14.2 Validació del motor amb Census Income
 
 `validate_census_income.py` compara D1-D7 amb D0 (secció 2.7) amb el
 mateix motor de la Fase 2 i contrasta el resultat amb la Taula 1 del
@@ -727,7 +804,7 @@ paper. Cal tornar a executar `validate_census_income.py` per confirmar-ho.
 
 ---
 
-## 14. Convencions i on trobar més informació
+## 15. Convencions i on trobar més informació
 
 ### Convencions
 - **Git Flow** (`docs/GIT_FLOW.md`): branques `main` i `develop`

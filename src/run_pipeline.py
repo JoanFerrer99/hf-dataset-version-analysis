@@ -16,7 +16,7 @@ carpeta, no hi ha Fase 3.
   python run_pipeline.py --sample-size 2000 --skip-warehouse                         # sense Fase 3
   python run_pipeline.py --sample-size 2000 --max-dataset-mb 1000                    # datasets de fins a 1 GB
   python run_pipeline.py --sample-size 2000 --min-distribution-distance 0.2          # C530 amb canvis més grans
-  python run_pipeline.py --sample-size 2000 --formats json,csv                       # només JSON i CSV, primer JSON
+  python run_pipeline.py --sample-size 2000 --formats json,csv                       # només JSON i CSV
   python eligibility_scan.py --classify-versions ../data/run_8/versions.csv          # només Fase 2
 
 Output: tot dins d'una carpeta nova, `data/run_<id>/` (mai sobreescriu):
@@ -29,6 +29,7 @@ Al final s'imprimeix la llista de fitxers generats per fase.
 """
 
 import argparse
+import json
 import logging
 import os
 import random
@@ -40,9 +41,40 @@ import pandas as pd
 import build_warehouse as bw
 import errors
 import eligibility_scan as es
+import timing
 import version_extractor as ve
 
 log = logging.getLogger(__name__)
+
+
+PHASES = {"phase_0": "Fase 0-1 (mostreig+elegibilitat)", "versions": "Fase 1b (versions)",
+          "classification": "Fase 2 (classificació de canvis)", "warehouse": "Fase 3 (magatzem)"}
+"""Nom de cada fase al log i al resum del temps, per la clau que té a `funnel_summary.json`."""
+
+
+def save_durations(run_dir: str, clock: timing.PhaseClock) -> None:
+    """
+    Afegeix a `funnel_summary.json` la durada de la Fase 1b
+    (`duration_versions_s`), la de la Fase 2 (`duration_classification_s`) i
+    el total fins aquí (`duration_total_s`). Es fa abans de la Fase 3, que
+    llegeix el fitxer; la Fase 3 només surt al log. Si la Fase 0 s'ha saltat
+    (`--input-csv`), la carpeta no té el fitxer i no es fa res.
+
+    :param run_dir: carpeta de l'execució.
+    :param clock: el cronòmetre de l'execució.
+    """
+    path = os.path.join(run_dir, "funnel_summary.json")
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        summary = json.load(f)
+    for key in ("versions", "classification"):
+        duration = clock.durations.get(PHASES[key])
+        if duration is not None:
+            summary[f"duration_{key}_s"] = round(duration, 1)
+    summary["duration_total_s"] = round(clock.total, 1)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2, ensure_ascii=False)
 
 
 def run_full_pipeline(
@@ -73,79 +105,92 @@ def run_full_pipeline(
         (`es.engine_config`).
     :param min_distribution_distance: per a la Fase 2: distància mínima entre
         distribucions per reportar C530 (`es.engine_config`).
-    :param formats: per a les Fases 0, 1 i 2: els formats tabulars, en ordre
-        de preferència, en lloc dels de `config/formats.toml`
+    :param formats: per a les Fases 0, 1 i 2: els formats tabulars, en lloc
+        dels de `config/formats.toml`
         (`es.use_formats`). `None` per fer servir els del fitxer.
     :return: `run_dir`, `eligibility_csv`, `eligible`, `versions_csv`,
         `change_classification_csv`, `warehouse_path` (`None` si la fase no
-        s'ha executat) i `generated_files` (rutes agrupades per fase).
+        s'ha executat), `generated_files` (rutes agrupades per fase) i `clock`
+        (la durada de cada fase, `timing.PhaseClock`).
     """
     es.use_formats(formats)
     run_dir = es.new_run_dir()
     ve.FAILURES_LOG_PATH = es.FAILURES_LOG_PATH
     log.info(f"Carpeta d'aquesta execució: {run_dir}")
 
-    generated_files: dict[str, list[str]] = {"Fase 0-1 (mostreig+elegibilitat)": [], "Fase 1b (versions)": [],
-                                              "Fase 2 (classificació de canvis)": [], "Fase 3 (magatzem)": []}
+    generated_files: dict[str, list[str]] = {name: [] for name in PHASES.values()}
+    clock = timing.PhaseClock()
     outputs = {
         "run_dir": run_dir, "eligibility_csv": None, "eligible": 0, "versions_csv": None,
         "change_classification_csv": None, "warehouse_path": None, "generated_files": generated_files,
+        "clock": clock,
     }
 
     if input_csv:
         log.info(f"Fase 0-1 saltada -- reutilitzant {input_csv}")
+        clock.skip(PHASES["phase_0"])
         eligibility_csv = input_csv
         eligible = int(pd.read_csv(eligibility_csv)["eligible"].sum())
         tabular_commits = None  # la Fase 1 els torna a buscar
     else:
-        eligibility_csv, funnel_summary_json, summary, tabular_commits = es.run_sampling(
-            sample_size=sample_size, max_scanned=max_scanned, num_threads=num_threads, tags_only=tags_only,
-        )
+        with clock.phase(PHASES["phase_0"]):
+            eligibility_csv, funnel_summary_json, summary, tabular_commits = es.run_sampling(
+                sample_size=sample_size, max_scanned=max_scanned, num_threads=num_threads, tags_only=tags_only,
+            )
         eligible = summary["eligible"]
-        generated_files["Fase 0-1 (mostreig+elegibilitat)"] += [eligibility_csv, funnel_summary_json]
+        generated_files[PHASES["phase_0"]] += [eligibility_csv, funnel_summary_json]
 
     outputs["eligibility_csv"] = eligibility_csv
     outputs["eligible"] = eligible
 
     if eligible == 0:
         log.info("Cap dataset elegible -- s'omet Fase 1b (extracció de versions) i Fase 2 (classificació de canvis).")
+        for key in ("versions", "classification", "warehouse"):
+            clock.skip(PHASES[key])
+        save_durations(run_dir, clock)
         return outputs
 
     if skip_version_extraction:
         log.info("FASE 1b saltada (--skip-version-extraction).")
+        clock.skip(PHASES["versions"])
     else:
         log.info(f"FASE 1b: Extraient versions dels {eligible} datasets elegibles...")
         versions_csv = os.path.join(run_dir, "versions.csv")
-        ve.run_extraction(eligibility_csv, versions_csv, es.HF_TOKEN, ve.RETRY_CONFIG, compute_size=not skip_size,
-                          tabular_commits=tabular_commits)
+        with clock.phase(PHASES["versions"]):
+            ve.run_extraction(eligibility_csv, versions_csv, es.HF_TOKEN, ve.RETRY_CONFIG, compute_size=not skip_size,
+                              tabular_commits=tabular_commits)
         outputs["versions_csv"] = versions_csv
-        generated_files["Fase 1b (versions)"].append(versions_csv)
+        generated_files[PHASES["versions"]].append(versions_csv)
 
-    if skip_classification:
-        log.info("FASE 2 saltada (--skip-classification).")
-    elif outputs["versions_csv"] is None:
-        log.info("FASE 2 saltada: compara les versions de la Fase 1b, que s'ha saltat.")
+    if skip_classification or outputs["versions_csv"] is None:
+        log.info("FASE 2 saltada (--skip-classification)." if skip_classification
+                 else "FASE 2 saltada: compara les versions de la Fase 1b, que s'ha saltat.")
+        clock.skip(PHASES["classification"])
     else:
         log.info(f"FASE 2: Classificant canvis dels {eligible} datasets elegibles...")
-        change_classification_csv = es.run_classification(outputs["versions_csv"],
-                                                             es.engine_config(max_dataset_mb, min_distribution_distance))
+        with clock.phase(PHASES["classification"]):
+            change_classification_csv = es.run_classification(
+                outputs["versions_csv"], es.engine_config(max_dataset_mb, min_distribution_distance))
         outputs["change_classification_csv"] = change_classification_csv
-        generated_files["Fase 2 (classificació de canvis)"] += [
+        generated_files[PHASES["classification"]] += [
             change_classification_csv,
             os.path.join(os.path.dirname(change_classification_csv), es.COMPARISON_STATUS_FILE),
         ]
 
+    save_durations(run_dir, clock)
     missing = bw.missing_files(run_dir)
-    if skip_warehouse:
-        log.info("FASE 3 saltada (--skip-warehouse).")
-    elif missing:
-        log.info(f"FASE 3 saltada: a la carpeta hi falten {', '.join(missing)} (fases saltades).")
+    if skip_warehouse or missing:
+        log.info("FASE 3 saltada (--skip-warehouse)." if skip_warehouse
+                 else f"FASE 3 saltada: a la carpeta hi falten {', '.join(missing)} (fases saltades).")
+        clock.skip(PHASES["warehouse"])
     else:
-        try:
-            outputs["warehouse_path"] = bw.build_warehouse(run_dir)
-            generated_files["Fase 3 (magatzem)"].append(outputs["warehouse_path"])
-        except subprocess.CalledProcessError:
-            log.error("FASE 3: ha fallat dbt build (vegeu-ne la sortida a dalt). Les Fases 0-2 ja són a la carpeta.")
+        with clock.phase(PHASES["warehouse"]):
+            try:
+                outputs["warehouse_path"] = bw.build_warehouse(run_dir)
+                generated_files[PHASES["warehouse"]].append(outputs["warehouse_path"])
+            except subprocess.CalledProcessError:
+                log.error("FASE 3: ha fallat dbt build (vegeu-ne la sortida a dalt). "
+                          "Les Fases 0-2 ja són a la carpeta.")
 
     if os.path.exists(es.FAILURES_LOG_PATH):
         generated_files["Fallades (totes les fases)"] = [es.FAILURES_LOG_PATH]
@@ -284,4 +329,8 @@ if __name__ == "__main__":
         print(f"\n  {phase}")
         for path in paths:
             print(f"    - {os.path.basename(path)}")
+    print(f"{'=' * 65}")
+    print("  Temps per fase:")
+    for line in result["clock"].summary_lines():
+        print(f"    {line}")
     print(f"\n{'=' * 65}\n")

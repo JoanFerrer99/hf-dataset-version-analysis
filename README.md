@@ -7,7 +7,7 @@ Aquest treball té com a objectiu analitzar com canvien els datasets allotjats a
 | Carpeta | Contingut |
 |---|---|
 | `src/` | El pipeline: `run_pipeline.py` (orquestrador), les fases, el motor de detecció de canvis (`src/diffengine/`) i les figures de la memòria (`src/figures/`) |
-| `warehouse/` | El magatzem de la Fase 3: projecte dbt sobre DuckDB (`docs/warehouse.md`) |
+| `warehouse/` | El magatzem de la Fase 3: projecte dbt sobre DuckDB (`docs/architecture.md`, secció 10) |
 | `ui/` | La interfície de consulta (Streamlit), de només lectura sobre el magatzem |
 | `tests/` | Tests (`pytest`), sense xarxa; `tests/fixtures/run_sample/` és una execució sintètica |
 | `data/` | Resultats: una carpeta per execució (`data/run_<id>/`) i les de la validació de Census Income (`data/census_income/run_<id>/`) |
@@ -142,8 +142,8 @@ amb Tailwind (`ui/components/`, decisió T-33). El CSS ja és compilat a
 `ui/static/tailwind.css`; només cal tornar-lo a compilar si es canvien les
 classes dels components (cal Node 20+): `cd ui/styles && npm ci && npm run build`.
 
-Detall: `docs/warehouse.md` (capes i esquema en estrella),
-`docs/validacio_magatzem.md` (conciliació) i `docs/figures/README.md`.
+Detall: `docs/architecture.md`, secció 10 (capes i esquema en estrella), i
+`docs/figures/README.md`.
 
 ## Variables utils
 
@@ -153,7 +153,7 @@ Detall: `docs/warehouse.md` (capes i esquema en estrella),
 - `--seed`: mostra reproduible
 - `--max-dataset-mb`: mida màxima del dataset (tots els seus fitxers, de les dues versions), en MB (500 per defecte); els més grans no es comparen i queden com a `too_large`
 - `--min-distribution-distance`: distància mínima entre les distribucions d'una columna per reportar-ne el canvi (C530), entre 0 i 1 (0,1 per defecte)
-- `config/formats.toml` (fitxer, no variable): quins formats compten com a tabulars i en quin ordre de preferència; si una versió en té més d'un, només es compara el primer de la llista
-- `--formats`: els formats d'una execució, separats per comes i en ordre de preferència (p.e. `--formats json,csv`); substitueixen la llista de `config/formats.toml`, que llavors no es llegeix, i només compten els que s'hi donen
+- `config/formats.toml` (fitxer, no variable): quins formats compten com a tabulars; si una versió en té més d'un, tots formen el dataset. Els fitxers d'una versió han de tenir les mateixes columnes (si no, queden com a `mixed_columns`), i un fitxer que repeteix files d'un altre més gran no es llegeix
+- `--formats`: els formats d'una execució, separats per comes (p.e. `--formats json,csv`); substitueixen la llista de `config/formats.toml`, que llavors no es llegeix, i només compten els que s'hi donen
 - `--skip-version-extraction` / `--skip-classification` (`run_pipeline.py`): ometen una fase concreta
 - `--input-csv` (`run_pipeline.py`): salta el mostreig, reutilitza un CSV d'un run previ

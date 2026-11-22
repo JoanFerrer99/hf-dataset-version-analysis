@@ -123,15 +123,15 @@ def highlight_cards_data(found: dict, num, pct) -> list[dict]:
     :param pct: funció de format dels percentatges (`fmt.pct`).
     :return: una targeta per destacat, amb la pàgina on es veu el detall.
     """
-    top, breaking, coverage, busiest = found["top_code"], found["breaking"], found["coverage"], found["busiest"]
+    top, changed, coverage, busiest = found["top_code"], found["changed"], found["coverage"], found["busiest"]
     return [
         {"label": "Codi a més comparacions", "value": top["code"],
          "hint": f"{top['name']}: {num(top['n_units'])} de {num(top['n_compared_units'])} comparacions fetes",
          "target": "Canvis", "action": "Veure els canvis"},
-        {"label": "Comparacions amb algun canvi trencador", "value": pct(breaking["share_with_breaking_change"], 1),
-         "hint": f"{num(breaking['n_units_with_breaking_change'])} de {num(breaking['n_compared_units'])}; interval "
-                 f"del 95%: {pct(breaking['share_with_breaking_change_low'], 1)} a "
-                 f"{pct(breaking['share_with_breaking_change_high'], 1)}",
+        {"label": "Comparacions amb algun canvi", "value": pct(changed["share_with_change"], 1),
+         "hint": f"{num(changed['n_units_with_change'])} de {num(changed['n_compared_units'])}; interval "
+                 f"del 95%: {pct(changed['share_with_change_low'], 1)} a "
+                 f"{pct(changed['share_with_change_high'], 1)}",
          "target": "Canvis", "action": "Veure els canvis"},
         {"label": "Comparacions que no s'han pogut fer",
          "value": f"{num(coverage['n_not_compared'])} de {num(coverage['n_units'])}",

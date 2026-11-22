@@ -1,7 +1,17 @@
 -- Fase 2: l'estat de la comparació de cada parell de versions d'un dataset,
 -- també de les que no tenen cap codi.
 
-with comparisons as (
+with optional_columns as (
+    -- columnes que els runs anteriors a T-44 no tenen: hi queden buides
+    select
+        null::varchar as n_files_dropped_from,
+        null::varchar as n_files_dropped_to
+    where false
+),
+
+comparisons as (
+    select * from optional_columns
+    union all by name
     select * from {{ source('bronze', 'comparison_status') }}
 ),
 
@@ -16,6 +26,8 @@ typed as (
         nullif(format_to, '') as format_to,
         cast(n_files_from as integer) as n_files_from,
         cast(n_files_to as integer) as n_files_to,
+        coalesce(cast(nullif(n_files_dropped_from, '') as integer), 0) as n_files_dropped_from,
+        coalesce(cast(nullif(n_files_dropped_to, '') as integer), 0) as n_files_dropped_to,
         cast(size_bytes as bigint) as size_bytes
     from comparisons
 )

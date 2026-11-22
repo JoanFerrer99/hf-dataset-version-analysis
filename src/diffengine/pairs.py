@@ -12,8 +12,10 @@ Aquí comença una comparació de revisions (una unitat de canvi):
   li posa un estat: `ok`, `identical_content` (els mateixos fitxers, amb el
   mateix contingut: no es descarrega), `absent_old` o `absent_new` (una de
   les revisions no té cap fitxer de dades), `no_data` (no en té cap de les
-  dues), `download_failed`, `parse_failed` o `too_large`. Només les `ok` tenen
-  canvis: una fallada mai es converteix en codis.
+  dues), `download_failed`, `parse_failed`, `too_large` o `mixed_columns`
+  (els fitxers d'alguna de les dues versions no tenen totes les mateixes
+  columnes, decisió T-44). Només les `ok` tenen canvis: una fallada mai es
+  converteix en codis.
 
 Les crides al Hub passen per `call(fn, *args, **kwargs)`: qui fa servir el
 motor hi posa la seva política de reintents. Així el motor no depèn del
@@ -28,7 +30,7 @@ from huggingface_hub import hf_hub_download, list_repo_tree
 from diffengine.config import DEFAULT_CONFIG, EngineConfig
 from diffengine.datafiles import DatasetFiles, dataset_files
 from diffengine.engine import diff_tables
-from diffengine.load import ParseError, Table, load_files
+from diffengine.load import MixedColumns, ParseError, Table, load_files
 from diffengine.output import DiffResult
 
 Call = Callable[..., object]
@@ -61,8 +63,11 @@ class Comparison:
     :ivar new: els fitxers del dataset a la revisió nova.
     :ivar size_bytes: la mida dels fitxers de les dues revisions, sumades (la que es compara amb el límit).
     :ivar status: `pending` fins que es compara; després `ok`, `identical_content`, `absent_old`,
-        `absent_new`, `no_data`, `download_failed`, `parse_failed` o `too_large`.
+        `absent_new`, `no_data`, `download_failed`, `parse_failed`, `too_large` o `mixed_columns`.
     :ivar result: els canvis, si l'estat és `ok`.
+    :ivar dropped_old: fitxers de la revisió antiga que no s'han llegit: no són taules o repetien files d'un
+        altre (T-44).
+    :ivar dropped_new: el mateix, de la revisió nova.
     """
 
     old: DatasetFiles
@@ -70,6 +75,8 @@ class Comparison:
     size_bytes: int = 0
     status: str = "pending"
     result: DiffResult | None = None
+    dropped_old: int = 0
+    dropped_new: int = 0
 
 
 def list_revision(repo_id: str, revision: str, token: str | None, call: Call = direct_call,
@@ -163,7 +170,7 @@ def compare_datasets(repo_id: str, comparison: Comparison, old: Revision, new: R
         try:
             old_table = _load_files(repo_id, old.revision, comparison.old.files, token, call, config)
             new_table = _load_files(repo_id, new.revision, comparison.new.files, token, call, config)
-        except ParseError:
+        except (ParseError, MixedColumns):
             raise
         except Exception as exc:
             raise DownloadFailed(str(exc)) from exc
@@ -173,6 +180,10 @@ def compare_datasets(repo_id: str, comparison: Comparison, old: Revision, new: R
     except ParseError:
         comparison.status = "parse_failed"
         return comparison
+    except MixedColumns:
+        comparison.status = "mixed_columns"
+        return comparison
+    comparison.dropped_old, comparison.dropped_new = len(old_table.dropped_files), len(new_table.dropped_files)
     comparison.result = diff_tables(old_table, new_table, config)
     comparison.status = "ok"
     return comparison
@@ -196,7 +207,7 @@ def status_row(repo_id: str, old_rev: str, new_rev: str, comparison: Comparison)
     """
     L'estat de la comparació, també si no té cap codi: així es distingeix
     "sense canvis" (`ok` sense codis, `identical_content`) de "no s'ha pogut
-    comparar" (`too_large`, `parse_failed`...).
+    comparar" (`too_large`, `parse_failed`, `mixed_columns`...).
 
     :param repo_id: repositori de Hugging Face.
     :param old_rev: commit antic.
@@ -204,13 +215,16 @@ def status_row(repo_id: str, old_rev: str, new_rev: str, comparison: Comparison)
     :param comparison: la comparació ja feta.
     :return: `dataset_id`, `version_from`, `version_to`, `status`, `n_codes`
         (codis diferents), `format_from`/`format_to` i `n_files_from`/`n_files_to`
-        (el format i el nombre de fitxers del dataset a cada versió) i
-        `size_bytes` (la mida de les dues versions, sumades).
+        (els formats i el nombre de fitxers del dataset a cada versió),
+        `n_files_dropped_from`/`n_files_dropped_to` (els que no s'han llegit
+        perquè no són taules o repetien files d'un altre, T-44) i `size_bytes` (la mida de les
+        dues versions, sumades).
     """
     return {"dataset_id": repo_id, "version_from": old_rev, "version_to": new_rev, "status": comparison.status,
             "n_codes": len(comparison.result.codes) if comparison.result is not None else 0,
             "format_from": comparison.old.fmt, "format_to": comparison.new.fmt,
             "n_files_from": len(comparison.old.files), "n_files_to": len(comparison.new.files),
+            "n_files_dropped_from": comparison.dropped_old, "n_files_dropped_to": comparison.dropped_new,
             "size_bytes": comparison.size_bytes}
 
 

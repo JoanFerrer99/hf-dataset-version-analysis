@@ -32,7 +32,7 @@ from huggingface_hub import hf_hub_download
 
 import errors
 from diffengine.engine import diff_bytes
-from diffengine.output import BREAKING_CODES, TABULAR_CODES
+from diffengine.output import TABULAR_CODES
 import eligibility_scan as es
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
@@ -160,12 +160,11 @@ def run_validation(hf_token: str | None) -> tuple[pd.DataFrame, pd.DataFrame]:
             all_labels.append({
                 "dataset_id": f"census_income_{version}", "version_from": "D0", "version_to": version,
                 "code": c.code, "subtype": c.subtype, "column": c.column, "old_column": c.old_column,
-                "is_breaking": c.code in BREAKING_CODES,
             })
 
     detectability_df = pd.DataFrame(detectability_rows)
     labels_df = pd.DataFrame(all_labels, columns=["dataset_id", "version_from", "version_to", "code", "subtype",
-                                                  "column", "old_column", "is_breaking"])
+                                                  "column", "old_column"])
     return detectability_df, labels_df
 
 

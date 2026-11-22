@@ -19,14 +19,13 @@ by_code as (
         kinds.name,
         kinds.perspective,
         kinds.level_1,
-        kinds.is_breaking,
         coalesce(sum(changes.change_count), 0) as n_changes,
         count(distinct changes.version_to_key) as n_units,
         count(distinct changes.dataset_key) as n_datasets
     from {{ ref('dim_kind_of_change') }} as kinds
     left join changes
         on changes.kind_key = kinds.kind_key
-    group by kinds.code, kinds.name, kinds.perspective, kinds.level_1, kinds.is_breaking
+    group by kinds.code, kinds.name, kinds.perspective, kinds.level_1
 )
 
 select
@@ -34,7 +33,6 @@ select
     by_code.name,
     by_code.perspective,
     by_code.level_1,
-    by_code.is_breaking,
     by_code.n_changes,
     by_code.n_units,
     by_code.n_datasets,

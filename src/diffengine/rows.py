@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 
 from diffengine.config import EngineConfig
-from diffengine.load import NULL_TOKEN, NUMERIC, OPAQUE, Table, is_missing
+from diffengine.load import NULL_TOKEN, NUMERIC, OPAQUE, Table, cell_tokens
 
 _ID_NAMES = ("id", "_id", "uuid", "key", "index", "idx")
 
@@ -80,22 +80,6 @@ class RowAlignment:
         if self.partial is None:
             return self.reliable_pairs
         return self.pairs[~self.ambiguous & ~self.partial]
-
-
-def cell_tokens(table: Table, column: str) -> pd.Series:
-    """
-    Converteix els valors d'una columna en text normalitzat, per poder-los
-    comparar i fer-ne hash. Els nombres es formaten igual a totes dues versions
-    (`3` i `3.0` donen el mateix text) i els buits, amb una marca especial.
-
-    :param table: la taula.
-    :param column: nom de la columna.
-    :return: un text per fila.
-    """
-    s = table.values[column]
-    if table.columns[column].kind == NUMERIC:
-        return s.map(lambda v: NULL_TOKEN if pd.isna(v) else format(float(v), ".10g"))
-    return s.map(lambda v: NULL_TOKEN if is_missing(v) else str(v))
 
 
 def paired_values(table: Table, column: str, rows: np.ndarray) -> pd.Series:

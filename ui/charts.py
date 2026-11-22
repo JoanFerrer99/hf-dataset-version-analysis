@@ -128,12 +128,12 @@ def _perspective_color(palette: dict, present: set[str]) -> alt.Color:
 def code_bars(df: pd.DataFrame, measure: str, measure_title: str, palette: dict) -> alt.Chart:
     """
     Una barra horitzontal per codi, en l'ordre de la taxonomia, del color de la
-    seva perspectiva. Els codis trencadors ho diuen a l'etiqueta.
+    seva perspectiva.
 
     :param df: `data.code_frequency`.
     :param measure: columna del valor (`n_changes` o `n_units`).
     """
-    df = df.assign(label=df["code"] + " " + df["name"] + df["is_breaking"].map({True: " (trencador)", False: ""}))
+    df = df.assign(label=df["code"] + " " + df["name"])
     return _axes(alt.Chart(df).mark_bar(size=BAR, cornerRadiusEnd=4).encode(
         y=alt.Y("label:N", sort=list(df["label"]), title=None, axis=alt.Axis(labelLimit=360)),
         x=alt.X(f"{measure}:Q", title=measure_title, axis=alt.Axis(format=",d", tickMinStep=1)),

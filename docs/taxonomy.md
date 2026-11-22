@@ -26,28 +26,6 @@ deien *Data Characteristics*: C510 Missings, C520 Correlacions i C530
 Distribució de les dades. Ara la correlació i la distribució són dues maneres
 de detectar el C530, i es miren només a les files aparellades.
 
-## `is_breaking`: heurística d'execució, no de qualitat
-
-`is_breaking` (`diffengine.output.BREAKING_CODES`)
-respon NOMÉS "trenca l'execució d'un pipeline que llegeix el dataset per
-nom/posició/tipus sense adaptar-se?" -- NO "afecta la qualitat del
-model?". És una heurística pròpia d'aquest estudi, el paper no en
-defineix cap de formal.
-
-`True`: C210 (ordre de columnes), C222 (eliminar columna), C223 (renom),
-C311/C321 (canvi de tipus), C410 (ordre de files).
-
-`False` per a la resta -- C221/C421/C422 (afegir/eliminar columna o
-fila), C312/C322/C323/C510/C520/C530 (canvis de valors/format, valors absents que
-apareixen o desapareixen, valors actualitzats). Aquests **poden degradar la qualitat del model igualment**
-(data drift, concept drift), però no fan fallar un pipeline que
-simplement llegeix el dataset. La distinció és deliberada, no un
-oblit: `is_breaking` respon una pregunta d'infraestructura (crasha
-l'execució o no), separada de si el canvi afecta el resultat del
-model -- coherent amb la "Regla de disseny important" de dalt (la
-taxonomia classifica el *dataset*, no l'ús que se'n fa).
-
-
 ## Detectabilitat: 3 nivells (revisat, US-303 AC1)
 
 Només C100 és realment "metadada pura" (crida a l'API REST,

@@ -15,7 +15,6 @@ seeds:
         level_1: varchar
         level_2: varchar
         level_3: varchar
-        is_breaking: boolean
     columns:
       - name: code
         description: Codi de la taxonomia (C210...C530).
@@ -38,10 +37,3 @@ seeds:
         description: Grup de dues xifres del codi.
       - name: level_3
         description: El canvi concret (tercera xifra).
-      - name: is_breaking
-        description: >
-          Trenca l'execució d'un pipeline que llegeix per nom, posició, tipus o
-          ordre (C210, C222, C223, C311, C321, C410). Igual que
-          diffengine.output.BREAKING_CODES.
-        data_tests:
-          - not_null
