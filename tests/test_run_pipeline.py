@@ -159,6 +159,32 @@ class TestRunFullPipeline:
         assert files["Fase 2 (classificació de canvis)"] == [str(tmp_path / "run_1" / "change_classification.csv"),
                                                               str(tmp_path / "run_1" / "comparison_status.csv")]
 
+    def test_the_duration_of_each_phase_is_saved_in_the_funnel_summary(self, monkeypatch, tmp_path):
+        import json
+
+        _patch_base_output_dir(monkeypatch, tmp_path)
+        calls = []
+        def fake_run_sampling(**kwargs):
+            path = os.path.join(es.OUTPUT_DIR, "funnel_summary.json")
+            with open(path, "w") as f:
+                json.dump({"duration_sampling_s": 1.0}, f)
+            return os.path.join(es.OUTPUT_DIR, "eligibility_report.csv"), path, {"eligible": 1}, {"org/ds": ["c1"]}
+
+        monkeypatch.setattr(es, "run_sampling", fake_run_sampling)
+        _patch_run_extraction(monkeypatch, calls)
+
+        result = rp.run_full_pipeline(
+            sample_size=1, max_scanned=None, num_threads=1, tags_only=False, input_csv=None,
+            skip_version_extraction=False, skip_classification=True, skip_size=False, skip_warehouse=True,
+        )
+
+        summary = json.loads((tmp_path / "run_1" / "funnel_summary.json").read_text())
+        assert result["run_dir"] == str(tmp_path / "run_1")
+        assert {"duration_sampling_s", "duration_versions_s", "duration_total_s"} <= set(summary)
+        assert "duration_classification_s" not in summary  # la Fase 2 s'ha saltat
+        durations = result["clock"].durations
+        assert durations["Fase 2 (classificació de canvis)"] is None and durations["Fase 3 (magatzem)"] is None
+
     def test_input_csv_skips_run_sampling(self, monkeypatch, tmp_path):
         _patch_base_output_dir(monkeypatch, tmp_path)
         calls = []

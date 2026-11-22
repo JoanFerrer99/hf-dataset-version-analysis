@@ -107,10 +107,12 @@ def main(out: str = OUT) -> None:
     os.makedirs(out, exist_ok=True)
 
     es.OUTPUT_DIR = out
-    _, json_path, _ = es.write_results(REPORT, total_scanned=5_000)
+    _, json_path, _ = es.write_results(REPORT, total_scanned=5_000, durations={"sampling": 61.2, "eligibility": 1803.4})
     with open(json_path, encoding="utf-8") as f:
         summary = json.load(f)
     summary["timestamp"] = TIMESTAMP
+    # el que hi afegeix el pipeline abans de la Fase 3 (`run_pipeline.save_durations`)
+    summary.update(duration_versions_s=412.0, duration_classification_s=95.5, duration_total_s=2372.1)
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
 

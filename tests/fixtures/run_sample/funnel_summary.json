@@ -12,5 +12,10 @@
   "eligible_proportion": 0.3,
   "eligible_proportion_of_attempts": 0.25,
   "estimated_eligible_in_scanned_population": 1250,
-  "attempts_per_eligible": 4.0
+  "attempts_per_eligible": 4.0,
+  "duration_sampling_s": 61.2,
+  "duration_eligibility_s": 1803.4,
+  "duration_versions_s": 412.0,
+  "duration_classification_s": 95.5,
+  "duration_total_s": 2372.1
 }

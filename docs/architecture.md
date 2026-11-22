@@ -263,6 +263,7 @@ docs/               Documentació (ordre de lectura: docs/README.md)
 | `eligibility_scan.py` | Fase 0 (mostra aleatòria i elegibilitat) i Fase 2 (classificació de canvis dels elegibles). Conté també el clon de git i el criteri de quins fitxers compten. |
 | `version_extractor.py` | Fase 1: la llista ordenada de versions de cada elegible, amb data, autors i mida. |
 | `errors.py` | Reintents davant els límits de l'API, classificació dels errors i registre de fallades a `failures.csv`. És una llibreria que es fa servir totes les fases. |
+| `timing.py` | La durada de cada fase (`PhaseClock`, `format_duration`). |
 | `validate_census_income.py` | Valida el motor amb la Taula 1 del paper (Census Income). |
 | `build_warehouse.py` | Fase 3: `dbt build` sobre una carpeta d'execució; el magatzem va a `data/warehouse/run_<id>.duckdb`. |
 | `figures/` | Figures de la memòria: un mòdul per figura, que llegeix un mart; `make_all.py` les fa totes a `docs/figures/`|
@@ -340,6 +341,15 @@ per a proves, perquè esbiaixa la mostra). La Fase 3 només es fa si la carpeta
 té tots els fitxers de les Fases 0-2: amb `--input-csv` o amb alguna fase
 saltada, no hi és. Si falla dbt, les Fases 0-2 ja són a la carpeta i
 l'execució acaba igualment.
+
+**Temps.** Cada fase es cronometra (`timing.PhaseClock`): en acabar-ne una,
+el log diu quant ha durat i l'acumulat, i el resum final té una taula amb
+totes les fases (les saltades hi surten com a «saltada»). Les durades, en
+segons, queden també a `funnel_summary.json`: `duration_sampling_s` i
+`duration_eligibility_s` (Fase 0, també quan `eligibility_scan.py`
+s'executa sol), `duration_versions_s` (Fase 1b), `duration_classification_s`
+(Fase 2) i `duration_total_s` (Fases 0 a 2). La Fase 3 només surt al log,
+perquè llegeix aquest fitxer.
 
 ---
 
@@ -590,7 +600,7 @@ incremental, mai sobreescriu) i hi desa tot:
 | Fitxer | Fase | Contingut |
 |---|---|---|
 | `eligibility_report.csv` | 0 | Una fila per dataset de la mostra: `dataset_id, num_tags, num_branches, num_tabular_commits, eligible, eligibility_reason, status, error_category, error, num_data_files, tabular_file_share, created_at, license, downloads`. `eligibility_reason` diu el criteri que es compleix o el filtre on s'ha aturat. `status` = `classified`, `access_restricted` (403) o `error`. Els cinc últims camps només es tenen per als candidats (secció 7.2); `downloads` són els dels últims 30 dies, el dia de l'execució. |
-| `funnel_summary.json` | 0 | Resum de l'embut (secció 7.4): població recorreguda, quants passen cada filtre, elegibles per criteri, inaccessibles, errors, proporcions. |
+| `funnel_summary.json` | 0 | Resum de l'embut (secció 7.4): població recorreguda, quants passen cada filtre, elegibles per criteri, inaccessibles, errors, proporcions; i la durada de cada fase (`duration_*_s`, secció 6). |
 | `versions.csv` | 1 | Una fila per versió: `dataset_id, version_label, version_order, version_source, commit_sha, commit_date, authors, approx_size_bytes, session_commit_count, status`. |
 | `change_classification.csv` | 2 | Una fila per parell de versions i codi: `dataset_id, version_from, version_to, code, description, is_breaking`. `version_from`/`version_to` són SHA de commit (els `commit_sha` de `versions.csv`). |
 | `comparison_status.csv` | 2 | Una fila per parell de versions, també sense cap codi: `dataset_id, version_from, version_to, status, n_codes, format_from, format_to, n_files_from, n_files_to, n_files_dropped_from, n_files_dropped_to, size_bytes`. `status` és l'estat de la comparació (secció 9.1); `n_codes`, quants codis diferents té, que són les seves files a `change_classification.csv`. `format_*` i `n_files_*`: els formats (p.e. `csv+parquet`) i quants fitxers té el dataset a cada versió; `n_files_dropped_*`, quants no s'han llegit perquè repetien files d'un altre (decisió T-44). `size_bytes`: la mida de les dues versions, sumades, que és la que es compara amb `--max-dataset-mb`. |
