@@ -666,6 +666,31 @@ class TestClassifyDatasetFilters:
     def test_metadata_missing_in_the_api_is_empty(self):
         assert es.dataset_metadata(_FakeRepoInfo([])) == {"created_at": None, "license": None, "downloads": None}
 
+    def test_the_metadata_of_the_listing_is_kept_for_every_sampled_dataset(self):
+        """La mostra guarda les metadades del llistat; la llicència surt de les etiquetes `license:*`."""
+        from types import SimpleNamespace
+
+        listed = [SimpleNamespace(id=f"org/ds{i}", created_at=datetime(2025, 3, 1, tzinfo=timezone.utc),
+                                  downloads=i, tags=["task:qa", "license:mit", "license:cc-by-4.0"])
+                  for i in range(3)]
+        sample, n_seen = es.reservoir_sample_dataset_ids(iter(listed), 5, show_progress=False, keep=es.sample_entry)
+
+        assert n_seen == 3
+        assert sample[0] == ("org/ds0", {"created_at": "2025-03-01T00:00:00+00:00", "license": "mit,cc-by-4.0",
+                                         "downloads": 0})
+        assert es.listing_metadata(SimpleNamespace(id="x", tags=None)) == {
+            "created_at": None, "license": None, "downloads": None}
+
+    def test_the_metadata_of_the_listing_wins_over_dataset_info(self, monkeypatch, tmp_path):
+        """Un dataset restringit o no candidat també té les metadades del llistat."""
+        monkeypatch.setattr(es, "list_repo_refs", lambda **kw: _FakeRefs(tags=["v1"]))
+        listing = {"created_at": "2024-01-01T00:00:00+00:00", "license": "mit", "downloads": 7}
+
+        result = es.classify_dataset("org/ds", metadata=listing)
+
+        assert (result["created_at"], result["license"], result["downloads"]) == (
+            "2024-01-01T00:00:00+00:00", "mit", 7)
+
 
 class TestClassifyDatasetResultShape:
     def test_eligible_via_tags_requires_two_substantive_commits(self, monkeypatch, tmp_path):
@@ -1268,7 +1293,7 @@ class TestRunSamplingReturnValue:
     def test_returns_csv_path_json_path_summary_and_tabular_commits(self, monkeypatch, tmp_path):
         commits = [_FakeCommit("Add rows", commit_id="c1")]
         monkeypatch.setattr(es, "iter_all_dataset_ids", lambda: iter(["org/ds", "org/no"]))
-        monkeypatch.setattr(es, "reservoir_sample_dataset_ids", lambda ids, n, m: (["org/ds", "org/no"], 2))
+        monkeypatch.setattr(es, "reservoir_sample_dataset_ids", lambda ids, n, m, **kw: (["org/ds", "org/no"], 2))
         monkeypatch.setattr(
             es, "classify_dataset_safe",
             lambda item: {

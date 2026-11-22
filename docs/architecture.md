@@ -407,10 +407,11 @@ car. Si no en passa un, no és elegible, el motiu queda al report
    documentació, secció 7.3) i quina proporció són tabulars. Si no hi ha
    cap fitxer de dades tabular, el dataset no és elegible i no es llisten
    els commits ni es clona. Aquestes dues xifres queden al report
-   (`num_data_files`, `tabular_file_share`), amb les metadades que dona la
-   mateixa crida (`dataset_metadata`: `created_at`, `license` i `downloads`
-   dels últims 30 dies). Només es tenen per als candidats: la resta de la
-   mostra les té buides.
+   (`num_data_files`, `tabular_file_share`); només es tenen per als
+   candidats. Les metadades del dataset (`created_at`, `license` i
+   `downloads` dels últims 30 dies) surten del mateix llistat del mostreig
+   (`listing_metadata`, la llicència de les etiquetes `license:*`), sense cap
+   crida més: es tenen per a tota la mostra, també per als restringits.
 3. **Els commits toquen dades tabulars prou vegades?**
    `list_repo_commits` dona els commits, del més nou al més vell, i se'n
    revisen els 50 més recents. `bare_clone` fa el clon sense contingut
@@ -677,7 +678,7 @@ incremental, mai sobreescriu) i hi desa tot:
 
 | Fitxer | Fase | Contingut |
 |---|---|---|
-| `eligibility_report.csv` | 0 | Una fila per dataset de la mostra: `dataset_id, num_tags, num_branches, num_tabular_commits, eligible, eligibility_reason, status, error_category, error, num_data_files, tabular_file_share, created_at, license, downloads`. `eligibility_reason` diu el criteri que es compleix o el filtre on s'ha aturat. `status` = `classified`, `access_restricted` (403) o `error`. Els cinc últims camps només es tenen per als candidats (secció 7.2); `downloads` són els dels últims 30 dies, el dia de l'execució. |
+| `eligibility_report.csv` | 0 | Una fila per dataset de la mostra: `dataset_id, num_tags, num_branches, num_tabular_commits, eligible, eligibility_reason, status, error_category, error, num_data_files, tabular_file_share, created_at, license, downloads`. `eligibility_reason` diu el criteri que es compleix o el filtre on s'ha aturat. `status` = `classified`, `access_restricted` (403) o `error`. `num_data_files` i `tabular_file_share` només es tenen per als candidats; `created_at`, `license` i `downloads` (els dels últims 30 dies, el dia de l'execució), per a tota la mostra (secció 7.2). |
 | `funnel_summary.json` | 0 | Resum de l'embut (secció 7.4): població recorreguda, quants passen cada filtre, elegibles per criteri, inaccessibles, errors, proporcions; i la durada de cada fase (`duration_*_s`, secció 6). |
 | `versions.csv` | 1 | Una fila per versió: `dataset_id, version_label, version_order, version_source, commit_sha, commit_date, authors, approx_size_bytes, session_commit_count, status`. |
 | `change_classification.csv` | 2 | Una fila per parell de versions i codi: `dataset_id, version_from, version_to, code, description`. `version_from`/`version_to` són SHA de commit (els `commit_sha` de `versions.csv`). |

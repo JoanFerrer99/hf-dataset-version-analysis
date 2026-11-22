@@ -7,15 +7,16 @@ treballa sobre una mostra.
 
 1. **Mostreig** (`reservoir_sample_dataset_ids`): mostra aleatòria uniforme
    de tota la població amb l'algorisme de reservori, sense carregar-la mai
-   sencera a memòria.
+   sencera a memòria. Del mateix llistat surten les metadades de cada dataset
+   de la mostra (`listing_metadata`: data de creació, llicència i
+   descàrregues), que queden al report.
 2. **Elegibilitat** (`classify_dataset`), en tres filtres, del més barat al
    més car; un dataset que no passa un filtre ja no arriba al següent:
    1. Té >=2 tags o >=2 branques? Una crida a l'API (`list_repo_refs`).
    2. La versió actual té algun fitxer de dades tabular? Una crida a l'API
       (`read_current_version`) que dona la llista de fitxers, sense clonar
       res. D'aquí surten també quina part dels fitxers de dades són tabulars
-      (`tabular_file_share`) i les metadades del dataset (`dataset_metadata`:
-      data de creació, llicència i descàrregues), que queden al report.
+      (`tabular_file_share`).
    3. Els commits toquen dades tabulars prou vegades?
       - Criteri A: >=2 tags i >=2 commits que toquen dades tabulars; o
       - Criteri B: >=2 branques i commits que toquen dades tabulars
@@ -220,21 +221,59 @@ api = HfApi(token=HF_TOKEN)
 log.info("Token HF carregat correctament.")
 
 
+LISTING_FIELDS = ["disabled", "createdAt", "downloads", "tags"]
+"""Camps que es demanen al llistat de datasets: els mínims per a la mostra i les seves metadades."""
+
+
 def iter_all_dataset_ids():
     """
-    Genera l'id de cada dataset habilitat de HF, sense ordenar.
-    `expand=["disabled"]` redueix el payload per dataset al mínim.
+    Genera cada dataset habilitat de HF, sense ordenar. Només es demanen els
+    camps de `LISTING_FIELDS`: així la mostra ja té les metadades de cada
+    dataset (`listing_metadata`) sense cap crida més.
 
-    :return: generador de `str` (`owner/name`). Si la paginació falla, es
-        registra l'error i el generador s'atura (no es propaga).
+    :return: generador d'objectes del llistat (`.id`, `.created_at`,
+        `.downloads`, `.tags`). Si la paginació falla, es registra l'error i el
+        generador s'atura (no es propaga).
     """
     try:
-        for dataset in api.list_datasets(limit=None, expand=["disabled"]):
+        for dataset in api.list_datasets(limit=None, expand=LISTING_FIELDS):
             if dataset.disabled:
                 continue
-            yield dataset.id
+            yield dataset
     except Exception as exc:
         log.error(f"Error iterant datasets: {exc}")
+
+
+def listing_metadata(dataset) -> dict:
+    """
+    Les metadades d'un dataset del llistat de la Fase 0, les mateixes per a
+    tota la mostra (també els restringits).
+
+    :param dataset: un element del llistat (`iter_all_dataset_ids`).
+    :return: `created_at` (ISO 8601), `license` (de les etiquetes `license:*`;
+        si n'hi ha diverses, unides per comes) i `downloads` (dels últims 30
+        dies, el dia de l'execució). `None` si el llistat no en dona.
+    """
+    created_at = getattr(dataset, "created_at", None)
+    licenses = [t.split(":", 1)[1] for t in (getattr(dataset, "tags", None) or []) if t.startswith("license:")]
+    return {
+        "created_at": created_at.isoformat() if created_at else None,
+        "license": ",".join(licenses) or None,
+        "downloads": getattr(dataset, "downloads", None),
+    }
+
+
+def sample_entry(item) -> tuple[str, dict | None]:
+    """
+    El que es guarda al reservori de cada dataset: l'id i, si és un element
+    del llistat, les seves metadades.
+
+    :param item: un id o un element del llistat.
+    :return: `(id, metadades o None)`.
+    """
+    if hasattr(item, "id"):
+        return item.id, listing_metadata(item)
+    return str(item), None
 
 
 def reservoir_sample_dataset_ids(
@@ -243,7 +282,8 @@ def reservoir_sample_dataset_ids(
     max_scanned: int | None = None,
     rng: random.Random | None = None,
     show_progress: bool = True,
-) -> tuple[list[str], int]:
+    keep=None,
+) -> tuple[list, int]:
     """
     Algorisme R de Vitter: cada dataset té probabilitat `sample_size / N`
     de ser seleccionat. Memòria O(sample_size), mai la població sencera.
@@ -253,10 +293,12 @@ def reservoir_sample_dataset_ids(
     :param max_scanned: límit d'elements a recórrer (només proves; esbiaixa).
     :param rng: font d'aleatorietat (per a tests deterministes).
     :param show_progress: barra `tqdm`.
-    :return: `(ids seleccionats, nombre d'elements vistos)`.
+    :param keep: què es guarda de cada element (p.e. `sample_entry`); per defecte, només l'id.
+    :return: `(elements seleccionats, nombre d'elements vistos)`.
     """
     rng = rng or random
-    reservoir: list[str] = []
+    keep = keep or (lambda item: item.id if hasattr(item, "id") else str(item))
+    reservoir: list = []
     n_seen = 0
 
     pbar = None
@@ -269,14 +311,12 @@ def reservoir_sample_dataset_ids(
     try:
         for item in dataset_iter:
             n_seen += 1
-            dataset_id = item.id if hasattr(item, "id") else str(item)
-
             if len(reservoir) < sample_size:
-                reservoir.append(dataset_id)
+                reservoir.append(keep(item))
             else:
                 j = rng.randint(0, n_seen - 1)
                 if j < sample_size:
-                    reservoir[j] = dataset_id
+                    reservoir[j] = keep(item)
 
             if pbar is not None:
                 pbar.update(1)
@@ -291,7 +331,7 @@ def reservoir_sample_dataset_ids(
     log.info(f"Escaneig completat: {n_seen} datasets vistos, {len(reservoir)} a la mostra.")
     return reservoir, n_seen
 
-def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
+def classify_dataset(dataset_id: str, tags_only: bool = False, metadata: dict | None = None) -> dict:
     """
     Decideix si un dataset és elegible (Fase 0).
 
@@ -310,6 +350,9 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
 
     :param dataset_id: dataset (`owner/name`).
     :param tags_only: només permet el Criteri A.
+    :param metadata: les metadades del llistat (`listing_metadata`). Si es
+        donen, són les del report per a tota la mostra; si no, es prenen de
+        `dataset_info` al pas 2, només per als candidats.
     :return: diccionari amb els camps del report + interns sobre els commits tabulars
     """
     result = {
@@ -328,6 +371,7 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
         "created_at": None,
         "license": None,
         "downloads": None,
+        **(metadata or {}),
     }
 
     try:
@@ -345,8 +389,9 @@ def classify_dataset(dataset_id: str, tags_only: bool = False) -> dict:
 
         # Pas 2: quins fitxers té la versió actual i quina part de les dades és tabular, més les
         # metadades del dataset. Sense cap fitxer de dades tabular, no cal llistar els commits ni clonar.
-        files, metadata = read_current_version(dataset_id)
-        result.update(metadata)
+        files, info_metadata = read_current_version(dataset_id)
+        if metadata is None:
+            result.update(info_metadata)
         result["num_data_files"], result["tabular_file_share"] = tabular_file_share(files)
         if not result["tabular_file_share"]:
             result["eligibility_reason"] = ELIGIBILITY_REASONS["no_tabular_files"]
@@ -701,12 +746,12 @@ def classify_dataset_safe(args: tuple) -> dict | None:
     `classify_dataset` per al pool de threads: captura qualsevol excepció
     no prevista perquè no aturi el pool.
 
-    :param args: `(idx, dataset_id, tags_only)`.
+    :param args: `(idx, dataset_id, tags_only)` o `(idx, dataset_id, tags_only, metadades del llistat)`.
     :return: la fila, o `None` si hi ha hagut una excepció inesperada.
     """
-    idx, dataset_id, tags_only = args
+    idx, dataset_id, tags_only, *rest = args
     try:
-        return classify_dataset(dataset_id, tags_only=tags_only)
+        return classify_dataset(dataset_id, tags_only=tags_only, metadata=rest[0] if rest else None)
     except Exception as exc:
         log.warning(f"[{idx}] Error inesperat classificant {dataset_id}: {exc}")
         return None
@@ -860,13 +905,14 @@ def run_sampling(
     clock = timing.PhaseClock()
     log.info(f"FASE 1: Reservoir sampling (objectiu={sample_size}, max_scanned={max_scanned})")
     with clock.phase("Mostreig"):
-        dataset_ids, total_scanned = reservoir_sample_dataset_ids(
-            iter_all_dataset_ids(), sample_size, max_scanned
+        sample, total_scanned = reservoir_sample_dataset_ids(
+            iter_all_dataset_ids(), sample_size, max_scanned, keep=sample_entry
         )
-    log.info(f"Mostra obtinguda: {len(dataset_ids)} datasets de {total_scanned} escanejats.")
+    log.info(f"Mostra obtinguda: {len(sample)} datasets de {total_scanned} escanejats.")
 
     log.info(f"FASE 2: Classificant elegibilitat ({num_threads} threads, tags_only={tags_only})...")
-    indexed = [(i, ds_id, tags_only) for i, ds_id in enumerate(dataset_ids)]
+    entries = [entry if isinstance(entry, tuple) else (entry, None) for entry in sample]
+    indexed = [(i, ds_id, tags_only, metadata) for i, (ds_id, metadata) in enumerate(entries)]
     rows: list[dict] = []
 
     with clock.phase("Elegibilitat"), ThreadPoolExecutor(max_workers=num_threads) as executor:
