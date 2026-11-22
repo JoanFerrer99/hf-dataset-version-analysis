@@ -57,7 +57,8 @@ def _query(sql: str, params: list | None = None) -> pd.DataFrame:
 
 
 HF = "https://huggingface.co/datasets/"
-SOURCE_LABELS = {"tag": "Tag", "commit_session": "Sessió de commits", "commit": "Commit"}
+SOURCE_LABELS = {"tag": "Tag", "commit": "Sessió de commits"}
+POSITION_LABELS = {"First": "Primera", "Intermediate": "Intermèdia", "Last": "Última"}
 UNIT_STATUS_LABELS = {
     "compared": "Comparada",
     "not_compared": "No comparada: massa gran, o no s'ha pogut baixar o llegir",
@@ -92,7 +93,7 @@ def dataset_ids() -> list[str]:
     """
     :return: els datasets elegibles, per ordre alfabètic.
     """
-    return _query("select dataset_id from dim_dataset order by dataset_id")["dataset_id"].tolist()
+    return _query("select dataset_id from dim_dataset where is_eligible order by dataset_id")["dataset_id"].tolist()
 
 
 def perspectives() -> dict[str, str]:
@@ -114,7 +115,7 @@ def run_info() -> dict:
     """
     row = _query("""
         select
-            (select any_value(run_id) from fact_change) as run_id,
+            (select any_value(run_id) from fact_version) as run_id,
             (select max(snapshot_date) from dim_dataset) as run_date
     """).iloc[0]
     return {"run_id": row["run_id"], "run_date": row["run_date"]}
@@ -136,8 +137,8 @@ def key_figures() -> dict:
         from mart_change_units
     """).iloc[0]
     changes = _query("""
-        select count(*) as n_changes, count(distinct kind_key) as n_codes
-        from fact_change
+        select count(*) as n_changes, count(distinct code) as n_codes
+        from mart_version_codes
     """).iloc[0]
     eligible = funnel.loc["eligible"]
     return {
@@ -182,7 +183,8 @@ def funnel() -> pd.DataFrame:
 def versions(filters=None) -> pd.DataFrame:
     """
     :param filters: filtres de dataset i criteri.
-    :return: una fila per versió, amb l'enllaç al commit a Hugging Face.
+    :return: una fila per versió (`fact_version`), amb les seves mesures, el tipus, la posició, les
+        diferències amb l'anterior i l'enllaç al commit a Hugging Face.
     """
     where, params = _conditions(filters, dataset="v.dataset_id", criterion="d.eligibility_criterion")
     df = _query(f"""
@@ -191,17 +193,35 @@ def versions(filters=None) -> pd.DataFrame:
             d.eligibility_criterion,
             v.version_label,
             v.version_order,
-            v.version_source,
+            k.version_kind as version_source,
+            o.version_position,
             v.commit_date,
             v.commit_sha,
+            x.differences,
+            v.lifespan_days,
+            v.conception_days,
+            v.data_size_bytes,
+            v.metadata_size_bytes,
+            v.n_data_files,
+            v.n_metadata_files,
+            v.session_commit_count,
+            v.n_rows,
+            v.n_columns,
             '{HF}' || v.dataset_id || '/commit/' || v.commit_sha as commit_url
-        from dim_version as v
+        from fact_version as v
         inner join dim_dataset as d
-            on d.dataset_id = v.dataset_id
+            on d.dataset_key = v.dataset_key
+        inner join dim_version_kind as k
+            on k.version_kind_key = v.version_kind_key
+        inner join dim_version_order as o
+            on o.version_order_key = v.version_order_key
+        inner join dim_differences as x
+            on x.differences_key = v.differences_key
         where {where}
         order by v.dataset_id, v.version_order
     """, params)
     df["source_label"] = df["version_source"].map(SOURCE_LABELS)
+    df["position_label"] = df["version_position"].map(POSITION_LABELS)
     return df
 
 
@@ -254,12 +274,12 @@ def code_frequency(filters=None) -> pd.DataFrame:
         ),
 
         changes as (
-            select f.kind_key, f.dataset_key, f.version_to_key, f.change_count
-            from fact_change as f
+            select c.code, c.dataset_key, c.version_key
+            from mart_version_codes as c
             inner join dim_dataset as d
-                on d.dataset_key = f.dataset_key
+                on d.dataset_key = c.dataset_key
             inner join dim_kind_of_change as k
-                on k.kind_key = f.kind_key
+                on k.code = c.code
             where {changes_where}
         )
 
@@ -268,16 +288,16 @@ def code_frequency(filters=None) -> pd.DataFrame:
             k.name,
             k.perspective,
             k.level_1,
-            cast(coalesce(sum(c.change_count), 0) as bigint) as n_changes,
-            count(distinct c.version_to_key) as n_units,
+            count(c.version_key) as n_changes,
+            count(distinct c.version_key) as n_units,
             count(distinct c.dataset_key) as n_datasets,
             any_value(compared.n_compared_units) as n_compared_units,
             case when any_value(compared.n_compared_units) > 0
-                then count(distinct c.version_to_key) / any_value(compared.n_compared_units) end
+                then count(distinct c.version_key) / any_value(compared.n_compared_units) end
                 as share_of_compared_units
         from dim_kind_of_change as k
         left join changes as c
-            on c.kind_key = k.kind_key
+            on c.code = k.code
         cross join compared
         where {kinds_where}
         group by k.code, k.name, k.perspective, k.level_1
@@ -307,28 +327,22 @@ def changes_by_quarter(filters=None) -> pd.DataFrame:
     :param filters: filtres de dataset, criteri i perspectiva.
     :return: canvis per trimestre (de la versió nova) i perspectiva, com `mart_changes_by_quarter`.
     """
-    where, params = _conditions(filters, dataset="d.dataset_id", criterion="d.eligibility_criterion",
-                                perspective="k.perspective")
+    where, params = _conditions(filters, dataset="dataset_id", criterion="eligibility_criterion",
+                                perspective="perspective")
     return _query(f"""
         select
-            t.year,
-            t.quarter,
-            t.year_quarter,
-            k.perspective,
-            k.level_1,
-            cast(sum(f.change_count) as bigint) as n_changes,
-            count(distinct f.version_to_key) as n_units,
-            count(distinct f.dataset_key) as n_datasets
-        from fact_change as f
-        inner join dim_date as t
-            on t.date_key = f.date_key
-        inner join dim_kind_of_change as k
-            on k.kind_key = f.kind_key
-        inner join dim_dataset as d
-            on d.dataset_key = f.dataset_key
-        where {where}
-        group by t.year, t.quarter, t.year_quarter, k.perspective, k.level_1
-        order by t.year, t.quarter, k.perspective
+            year,
+            quarter,
+            year_quarter,
+            perspective,
+            level_1,
+            count(*) as n_changes,
+            count(distinct version_key) as n_units,
+            count(distinct dataset_key) as n_datasets
+        from mart_version_codes
+        where year is not null and {where}
+        group by year, quarter, year_quarter, perspective, level_1
+        order by year, quarter, perspective
     """, params)
 
 
@@ -378,24 +392,13 @@ def explorer_changes(dataset_id: str, version_from: str, version_to: str, filter
     :param filters: filtres de perspectiva.
     :return: una fila per codi detectat entre les dues versions, amb la descripció del codi.
     """
-    where, params = _conditions(filters, perspective="k.perspective")
+    where, params = _conditions(filters, perspective="perspective")
     return _query(f"""
-        select
-            k.code,
-            k.name,
-            k.level_1
-        from fact_change as f
-        inner join dim_dataset as d
-            on d.dataset_key = f.dataset_key
-        inner join dim_version as vf
-            on vf.version_key = f.version_from_key
-        inner join dim_version as vt
-            on vt.version_key = f.version_to_key
-        inner join dim_kind_of_change as k
-            on k.kind_key = f.kind_key
-        where d.dataset_id = ? and vf.commit_sha = ? and vt.commit_sha = ? and {where}
-        order by k.code
-    """, [dataset_id, version_from, version_to] + params)
+        select code, name, level_1
+        from mart_version_codes
+        where dataset_id = ? and commit_sha = ? and {where}
+        order by code
+    """, [dataset_id, version_to] + params)
 
 
 UNIT_STATUSES = ["compared", "not_compared", "no_data", "failed", "not_run"]
@@ -475,23 +478,14 @@ def changes_by_dataset(filters=None) -> pd.DataFrame:
     :param filters: filtres de dataset, criteri i perspectiva.
     :return: per dataset i codi, les comparacions afectades.
     """
-    where, params = _conditions(filters, dataset="d.dataset_id", criterion="d.eligibility_criterion",
-                                perspective="k.perspective")
+    where, params = _conditions(filters, dataset="dataset_id", criterion="eligibility_criterion",
+                                perspective="perspective")
     return _query(f"""
-        select
-            d.dataset_id,
-            k.code,
-            k.name,
-            k.level_1,
-            count(distinct f.version_to_key) as n_units
-        from fact_change as f
-        inner join dim_dataset as d
-            on d.dataset_key = f.dataset_key
-        inner join dim_kind_of_change as k
-            on k.kind_key = f.kind_key
+        select dataset_id, code, name, level_1, count(distinct version_key) as n_units
+        from mart_version_codes
         where {where}
-        group by d.dataset_id, k.code, k.name, k.level_1
-        order by d.dataset_id, k.code
+        group by dataset_id, code, name, level_1
+        order by dataset_id, code
     """, params)
 
 

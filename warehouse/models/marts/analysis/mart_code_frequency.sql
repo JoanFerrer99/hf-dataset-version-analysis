@@ -1,11 +1,15 @@
--- Freqüència de cada codi de la taxonomia: en nombre de canvis (files de
--- fact_change) i de comparacions afectades (unitats de canvi), sobre les
--- comparacions fetes. Com que cada comparació és d'un dataset sencer (T-37),
--- un codi surt com a molt un cop per comparació: les dues xifres coincideixen. Una fila per codi, també els que no surten mai.
+-- Freqüència de cada codi de la taxonomia: les versions que el tenen respecte
+-- a l'anterior (fact_version × dim_differences), sobre les comparacions fetes.
+-- Cada comparació és d'un dataset sencer: un codi surt com a molt un cop per
+-- versió, i `n_changes` coincideix amb `n_units`. Una fila per codi, també els
+-- que no surten mai.
 
-with changes as (
-    select kind_key, dataset_key, version_to_key, change_count
-    from {{ ref('fact_change') }}
+with version_codes as (
+    select versions.version_key, versions.dataset_key, unnest(string_split(differences.differences, '+')) as code
+    from {{ ref('fact_version') }} as versions
+    inner join {{ ref('dim_differences') }} as differences
+        on differences.differences_key = versions.differences_key
+    where differences.differences_status = 'changed'
 ),
 
 compared_units as (
@@ -19,12 +23,12 @@ by_code as (
         kinds.name,
         kinds.perspective,
         kinds.level_1,
-        coalesce(sum(changes.change_count), 0) as n_changes,
-        count(distinct changes.version_to_key) as n_units,
-        count(distinct changes.dataset_key) as n_datasets
+        count(version_codes.version_key) as n_changes,
+        count(distinct version_codes.version_key) as n_units,
+        count(distinct version_codes.dataset_key) as n_datasets
     from {{ ref('dim_kind_of_change') }} as kinds
-    left join changes
-        on changes.kind_key = kinds.kind_key
+    left join version_codes
+        on version_codes.code = kinds.code
     group by kinds.code, kinds.name, kinds.perspective, kinds.level_1
 )
 

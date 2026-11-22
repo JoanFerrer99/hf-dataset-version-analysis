@@ -1,11 +1,16 @@
--- La freqüència de cada codi és el seu nombre de files a fact_change. Retorna els codis que no quadren.
+-- La freqüència de cada codi és el nombre de versions de fact_version que el
+-- tenen a dim_differences. Retorna els codis que no quadren.
 
 with facts as (
-    select kinds.code, count(*) as n_rows
-    from {{ ref('fact_change') }} as facts
-    inner join {{ ref('dim_kind_of_change') }} as kinds
-        on kinds.kind_key = facts.kind_key
-    group by kinds.code
+    select code, count(*) as n_rows
+    from (
+        select unnest(string_split(differences.differences, '+')) as code
+        from {{ ref('fact_version') }} as versions
+        inner join {{ ref('dim_differences') }} as differences
+            on differences.differences_key = versions.differences_key
+        where differences.differences_status = 'changed'
+    )
+    group by code
 )
 
 select frequency.code, frequency.n_changes, facts.n_rows

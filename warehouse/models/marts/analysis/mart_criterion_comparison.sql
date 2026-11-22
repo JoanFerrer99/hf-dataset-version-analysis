@@ -19,17 +19,25 @@ perspectives as (
     from {{ ref('dim_kind_of_change') }}
 ),
 
+version_codes as (
+    select versions.version_key, versions.dataset_key, unnest(string_split(differences.differences, '+')) as code
+    from {{ ref('fact_version') }} as versions
+    inner join {{ ref('dim_differences') }} as differences
+        on differences.differences_key = versions.differences_key
+    where differences.differences_status = 'changed'
+),
+
 changes as (
     select
         datasets.eligibility_criterion as criterion,
         kinds.perspective,
-        sum(facts.change_count) as n_changes,
-        count(distinct facts.version_to_key) as n_units
-    from {{ ref('fact_change') }} as facts
+        count(*) as n_changes,
+        count(distinct version_codes.version_key) as n_units
+    from version_codes
     inner join {{ ref('dim_dataset') }} as datasets
-        on datasets.dataset_key = facts.dataset_key
+        on datasets.dataset_key = version_codes.dataset_key
     inner join {{ ref('dim_kind_of_change') }} as kinds
-        on kinds.kind_key = facts.kind_key
+        on kinds.code = version_codes.code
     group by datasets.eligibility_criterion, kinds.perspective
 ),
 

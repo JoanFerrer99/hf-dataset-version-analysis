@@ -12,15 +12,16 @@ with datasets as (
         license,
         downloads
     from {{ ref('dim_dataset') }}
+    where is_eligible
 ),
 
 versions as (
     select
         dataset_id,
-        count(*) filter (where version_source <> 'commit') as n_versions,
+        count(*) as n_versions,
         min(commit_date) as first_version_at,
         max(commit_date) as last_version_at
-    from {{ ref('dim_version') }}
+    from {{ ref('fact_version') }}
     group by dataset_id
 ),
 
@@ -35,16 +36,22 @@ units as (
     group by dataset_id
 ),
 
+version_codes as (
+    select versions.dataset_key, unnest(string_split(differences.differences, '+')) as code
+    from {{ ref('fact_version') }} as versions
+    inner join {{ ref('dim_differences') }} as differences
+        on differences.differences_key = versions.differences_key
+    where differences.differences_status = 'changed'
+),
+
 changes as (
     select
-        facts.dataset_key,
-        sum(facts.change_count) as n_changes,
-        count(distinct kinds.code) as n_distinct_codes,
-        array_to_string(list_sort(list_distinct(list(kinds.code))), ', ') as codes
-    from {{ ref('fact_change') }} as facts
-    inner join {{ ref('dim_kind_of_change') }} as kinds
-        on kinds.kind_key = facts.kind_key
-    group by facts.dataset_key
+        dataset_key,
+        count(*) as n_changes,
+        count(distinct code) as n_distinct_codes,
+        array_to_string(list_sort(list_distinct(list(code))), ', ') as codes
+    from version_codes
+    group by dataset_key
 )
 
 select

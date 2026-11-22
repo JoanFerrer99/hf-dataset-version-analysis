@@ -9,7 +9,7 @@ taula; aquí, les dades són als marts.
 | Fitxer | Pregunta | Origen |
 |---|---|---|
 | `fig_funnel.png` | Quants datasets passen cada filtre de la Fase 0? | `mart_funnel` |
-| `fig_versions_timeline.png` | Quantes versions té cada dataset elegible, i quan es van publicar? | `dim_version`, `dim_dataset` |
+| `fig_versions_timeline.png` | Quantes versions té cada dataset elegible, i quan es van publicar? | `fact_version`, `dim_version_kind` |
 | `fig_code_frequency.png` | Amb quina freqüència surt cada codi i cada perspectiva? | `mart_code_frequency` |
 | `fig_changes_by_quarter.png` | Com evolucionen els canvis al llarg del temps, per perspectiva? | `mart_changes_by_quarter` |
 | `fig_criterion_comparison.png` | Els datasets del Criteri A (tags) i del B (sessions) canvien de manera diferent? | `mart_criterion_comparison` |

@@ -1,33 +1,32 @@
--- Evolució temporal dels canvis per perspectiva: una fila per trimestre i
--- perspectiva amb canvis. La data és la de la versió nova; els canvis d'una
--- versió sense data no hi surten.
+-- Evolució temporal dels canvis per perspectiva: una fila per trimestre (del
+-- commit de la versió nova) i perspectiva amb canvis. Les versions sense data
+-- no hi surten.
 
-with changes as (
+with version_codes as (
     select
-        facts.change_count,
-        facts.version_to_key,
-        facts.dataset_key,
-        dates.year,
-        dates.quarter,
-        dates.year_quarter,
-        kinds.perspective,
-        kinds.level_1
-    from {{ ref('fact_change') }} as facts
-    inner join {{ ref('dim_date') }} as dates
-        on dates.date_key = facts.date_key
-    inner join {{ ref('dim_kind_of_change') }} as kinds
-        on kinds.kind_key = facts.kind_key
+        versions.version_key,
+        versions.dataset_key,
+        versions.commit_time_key,
+        unnest(string_split(differences.differences, '+')) as code
+    from {{ ref('fact_version') }} as versions
+    inner join {{ ref('dim_differences') }} as differences
+        on differences.differences_key = versions.differences_key
+    where differences.differences_status = 'changed'
 )
 
 select
-    year,
-    quarter,
-    year_quarter,
-    perspective,
-    level_1,
-    sum(change_count) as n_changes,
-    count(distinct version_to_key) as n_units,
-    count(distinct dataset_key) as n_datasets
-from changes
-group by year, quarter, year_quarter, perspective, level_1
-order by year, quarter, perspective
+    times.year,
+    times.quarter,
+    times.year_quarter,
+    kinds.perspective,
+    kinds.level_1,
+    count(*) as n_changes,
+    count(distinct version_codes.version_key) as n_units,
+    count(distinct version_codes.dataset_key) as n_datasets
+from version_codes
+inner join {{ ref('dim_time') }} as times
+    on times.time_key = version_codes.commit_time_key
+inner join {{ ref('dim_kind_of_change') }} as kinds
+    on kinds.code = version_codes.code
+group by times.year, times.quarter, times.year_quarter, kinds.perspective, kinds.level_1
+order by times.year, times.quarter, kinds.perspective

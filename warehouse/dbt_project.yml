@@ -1,6 +1,7 @@
 # Magatzem de la Fase 3: DuckDB + dbt (docs/architecture.md, secció 10).
 # Bronze = una carpeta data/run_<id>/ (variable run_dir); silver = staging;
-# gold = l'esquema en estrella (marts/core) i els marts de consulta (marts/analysis).
+# intermediate = les mesures de cada versió i dataset, i els intervals k-means;
+# gold = les dues estrelles (marts/core) i els marts de consulta (marts/analysis).
 # S'executa des de l'arrel del repositori:
 #   dbt build --project-dir warehouse --profiles-dir warehouse --vars '{run_dir: data/run_9}'
 name: hf_changes
@@ -29,5 +30,7 @@ models:
   hf_changes:
     staging:
       +materialized: view
+    intermediate:
+      +materialized: table
     marts:
       +materialized: table

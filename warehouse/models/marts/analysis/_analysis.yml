@@ -80,7 +80,7 @@ models:
           - unique
           - not_null
       - name: n_changes
-        description: Files de fact_change (un per comparació amb el codi; igual que `n_units`).
+        description: Versions de fact_version amb el codi a dim_differences (igual que `n_units`).
       - name: n_units
         description: Comparacions (unitats de canvi) amb el codi.
       - name: share_of_compared_units
@@ -112,7 +112,7 @@ models:
       - name: year_quarter
         description: Any i trimestre (p.e. 2025-T1).
       - name: n_changes
-        description: Canvis (files de fact_change).
+        description: Canvis (parelles de versió i codi de mart_version_codes).
       - name: n_units
         description: Comparacions amb algun canvi de la perspectiva aquell trimestre.
 
@@ -166,3 +166,19 @@ models:
         description: tp / (tp + fn).
       - name: f1
         description: Mitjana harmònica de precisió i recall.
+
+  - name: mart_version_codes
+    description: >
+      Els codis de cada versió respecte a l'anterior (dim_differences
+      desplegada): una fila per versió i codi, amb el dataset, el criteri, la
+      perspectiva i el trimestre. La interfície hi aplica els filtres.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: ["version_key", "code"]
+    columns:
+      - name: version_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('fact_version'), field: version_key}
