@@ -1,0 +1,357 @@
+timestamp,source,dataset_id,error_category,error_message,retries_attempted
+2026-11-16T00:08:28.506324+00:00,sampling,itqpek91706/sEDl6FOEpeo70U5T64,access_restricted,"403 Client Error. (Request ID: Root=1-6afa497c-1dd60919568cb73e720da964;6728eb47-1201-4e78-8e6d-3801c4803b7f)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/itqpek91706/sEDl6FOEpeo70U5T64/refs.
+Access to dataset itqpek91706/sEDl6FOEpeo70U5T64 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/itqpek91706/sEDl6FOEpeo70U5T64 to ask for access.",0
+2026-11-16T00:08:29.655866+00:00,sampling,opensima05/dinkum_recordings_01,access_restricted,"403 Client Error. (Request ID: Root=1-6afa497d-7cc93c114cff746a55a80f16;2665b1f6-5ae7-4b31-a5b4-81e0ea243a4f)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/opensima05/dinkum_recordings_01/refs.
+Access to dataset opensima05/dinkum_recordings_01 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/opensima05/dinkum_recordings_01 to ask for access.",0
+2026-11-16T00:08:33.112631+00:00,sampling,WuJu0/hnjoqEW-b1zO84Wf43,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4981-390afb6336c0053319652ae0;01568016-115b-435a-b3eb-338878bc60f2)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/WuJu0/hnjoqEW-b1zO84Wf43/refs.
+Access to dataset WuJu0/hnjoqEW-b1zO84Wf43 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/WuJu0/hnjoqEW-b1zO84Wf43 to ask for access.",0
+2026-11-16T00:08:34.004451+00:00,sampling,BibbyResearch/sora-egocentric-videos-dataset,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4981-5136c5c14f0966e363810661;21793124-3762-441d-a808-68ea0f055389)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/BibbyResearch/sora-egocentric-videos-dataset/refs.
+Access to dataset BibbyResearch/sora-egocentric-videos-dataset is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/BibbyResearch/sora-egocentric-videos-dataset to ask for access.",0
+2026-11-16T00:08:34.307435+00:00,sampling,akritikmi/Final10,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4982-3d135c2d6b01e5a35899f26b;0c3f3222-4deb-47a5-af25-25204b856841)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/akritikmi/Final10/refs.
+Access to dataset akritikmi/Final10 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/akritikmi/Final10 to ask for access.",0
+2026-11-16T00:09:39.325246+00:00,sampling,itqpek91706/NXHHWSr-UZyLo6QL64,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49c3-756204b531bbeea168e5074c;aa214b01-cd86-4fbc-af9c-fc01e6bc8a5b)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/itqpek91706/NXHHWSr-UZyLo6QL64/refs.
+Access to dataset itqpek91706/NXHHWSr-UZyLo6QL64 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/itqpek91706/NXHHWSr-UZyLo6QL64 to ask for access.",0
+2026-11-16T00:09:41.683436+00:00,sampling,hab-swe/20261002-hab-think-medcli-v2-grpo-27b-tgold-strict-iter35-public,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49c5-5b2842c433f98e2b66287e03;00dcda61-7465-4f2a-aaf7-2a211d774dfb)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/hab-swe/20261002-hab-think-medcli-v2-grpo-27b-tgold-strict-iter35-public/refs.
+Access to dataset hab-swe/20261002-hab-think-medcli-v2-grpo-27b-tgold-strict-iter35-public is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/hab-swe/20261002-hab-think-medcli-v2-grpo-27b-tgold-strict",0
+2026-11-16T00:09:43.728479+00:00,sampling,mttfst/poland_dust_cosmo-muscat_dx0.0625,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49c7-2f89d7b908193b6864b0cda1;20008955-3a9c-4b13-8797-1bae6be03cd6)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/mttfst/poland_dust_cosmo-muscat_dx0.0625/refs.
+Access to dataset mttfst/poland_dust_cosmo-muscat_dx0.0625 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/mttfst/poland_dust_cosmo-muscat_dx0.0625 to ask for access.",0
+2026-11-16T00:09:46.822058+00:00,sampling,nate-rahn/0905_no_racism_filter_judgement_gen_judgements_train-raw-responses,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49ca-068a8152338854fc4acd0c1f;4e412219-9a48-4807-8f88-56d431d9cce4)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/nate-rahn/0905_no_racism_filter_judgement_gen_judgements_train-raw-responses/refs.
+Access to dataset nate-rahn/0905_no_racism_filter_judgement_gen_judgements_train-raw-responses is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/nate-rahn/0905_no_racism_filter_judgement_gen_judg",0
+2026-11-16T00:09:47.926285+00:00,sampling,paperswithbacktest/Stocks-Yearly-TransactionCostParams,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49cb-4991a6c146c287114e117bf7;a8ad2c71-2a95-4f87-a37f-dd5409135bed)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/paperswithbacktest/Stocks-Yearly-TransactionCostParams/refs.
+Access to dataset paperswithbacktest/Stocks-Yearly-TransactionCostParams is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/paperswithbacktest/Stocks-Yearly-TransactionCostParams to ask for access.",0
+2026-11-16T00:09:48.309823+00:00,sampling,ApplyDesign/autodesign-dataset,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49cc-2bc02d934a6fea5e5dff6f71;67d9f3c8-de61-447e-aa1f-164dfc92b7f1)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/ApplyDesign/autodesign-dataset/refs.
+Access to dataset ApplyDesign/autodesign-dataset is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/ApplyDesign/autodesign-dataset to ask for access.",0
+2026-11-16T00:09:48.587854+00:00,sampling,Dududuyu/Ag-0vBiWcmMsFpd964,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49cc-3642b9cb100de6c874658b5c;f33cea78-cd50-4d07-8dc5-cd1318e0e28a)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/Dududuyu/Ag-0vBiWcmMsFpd964/refs.
+Access to dataset Dududuyu/Ag-0vBiWcmMsFpd964 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/Dududuyu/Ag-0vBiWcmMsFpd964 to ask for access.",0
+2026-11-16T00:09:50.357993+00:00,sampling,open-llm-leaderboard/ehristoforu__fq2.5-7b-it-normalize_false-details,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49ce-7a0ea4a708d39e5c07d35585;5424b6e6-09ec-4067-9ba7-9d577519632b)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/open-llm-leaderboard/ehristoforu__fq2.5-7b-it-normalize_false-details/refs.
+Access to dataset open-llm-leaderboard/ehristoforu__fq2.5-7b-it-normalize_false-details is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/open-llm-leaderboard/ehristoforu__fq2.5-7b-it-normalize_false-de",0
+2026-11-16T00:09:51.585453+00:00,sampling,kevinqyh0827/so101_pick_yellow_cube_and_place_orange_box_low_light,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49cf-271a361e0aed86a1222e1745;ae4aac68-00b7-48a2-82b3-d7772e049369)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/kevinqyh0827/so101_pick_yellow_cube_and_place_orange_box_low_light/refs.
+Access to dataset kevinqyh0827/so101_pick_yellow_cube_and_place_orange_box_low_light is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/kevinqyh0827/so101_pick_yellow_cube_and_place_orange_box_low_light to ",0
+2026-11-16T00:09:53.054380+00:00,sampling,vla7kusv/kzUkIOuxex7XivY886,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49d0-2c72aaa34536adbf364de4a6;4fa157ee-c09f-46bd-83e3-c7bcca50cfef)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/vla7kusv/kzUkIOuxex7XivY886/refs.
+Access to dataset vla7kusv/kzUkIOuxex7XivY886 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/vla7kusv/kzUkIOuxex7XivY886 to ask for access.",0
+2026-11-16T00:09:53.259179+00:00,sampling,chakrabamartya/test_dataset,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49d1-5fceae6f571511db67f87eeb;4c3bd907-0251-4e2d-8823-0edbb254dd5d)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/chakrabamartya/test_dataset/refs.
+Access to dataset chakrabamartya/test_dataset is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/chakrabamartya/test_dataset to ask for access.",0
+2026-11-16T00:09:53.822398+00:00,sampling,sajalmadan0909/hindi_and_english_stt_tts_master_data,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49d1-2aef8f2a33be693c0a7f4c0e;7ad7971c-f5bf-4b2e-a053-4de1add8fbfb)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/sajalmadan0909/hindi_and_english_stt_tts_master_data/refs.
+Access to dataset sajalmadan0909/hindi_and_english_stt_tts_master_data is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/sajalmadan0909/hindi_and_english_stt_tts_master_data to ask for access.",0
+2026-11-16T00:09:53.963949+00:00,sampling,AI4Manufacturing/QIT-CEMC-FLUTE-PHOTOS-annotated,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49d1-4d8c38ba18e8e7d950e2a14c;e58f777a-234b-437b-b04e-df2abb8e73fe)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/AI4Manufacturing/QIT-CEMC-FLUTE-PHOTOS-annotated/refs.
+Access to dataset AI4Manufacturing/QIT-CEMC-FLUTE-PHOTOS-annotated is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/AI4Manufacturing/QIT-CEMC-FLUTE-PHOTOS-annotated to ask for access.",0
+2026-11-16T00:09:55.212984+00:00,sampling,rafiulbiswas/t1,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49d3-5f56dc937b5d81602858fc4d;89a8c1b1-c9d5-4023-9005-402316f297f4)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/rafiulbiswas/t1/refs.
+Access to dataset rafiulbiswas/t1 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/rafiulbiswas/t1 to ask for access.",0
+2026-11-16T00:09:55.822331+00:00,sampling,TheFinAI/corpus-shard-02,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49d3-63f0358b73e3558a77529ee0;d59ce9c9-8da8-4c8c-97c5-199080f6fd80)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/TheFinAI/corpus-shard-02/refs.
+Access to dataset TheFinAI/corpus-shard-02 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/TheFinAI/corpus-shard-02 to ask for access.",0
+2026-11-16T00:09:56.336148+00:00,sampling,carseng/EmailBot,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49d4-2580bb891535fca26adad6c3;8e7b710a-f052-4d5b-9b49-614d5a5c711d)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/carseng/EmailBot/refs.
+Access to dataset carseng/EmailBot is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/carseng/EmailBot to ask for access.",0
+2026-11-16T00:09:57.772624+00:00,sampling,karthikj30/CyberQore,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49d5-67854d66462f882f2413cf38;1ed9e1b4-67a9-40ef-99c8-797fb4040138)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/karthikj30/CyberQore/refs.
+Access to dataset karthikj30/CyberQore is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/karthikj30/CyberQore to ask for access.",0
+2026-11-16T00:09:58.277428+00:00,sampling,chaiting/pk-6830-L3,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49d6-418332c62f81e40062787cb6;d115f311-04a5-4238-93ce-c581a233a993)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/chaiting/pk-6830-L3/refs.
+Access to dataset chaiting/pk-6830-L3 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/chaiting/pk-6830-L3 to ask for access.",0
+2026-11-16T00:09:58.662454+00:00,sampling,SchlossKafka/warehouse,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49d6-09f067ac30f7d5e63e94d247;f6ab4109-2626-42fb-8a09-10c41cb8aebf)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/SchlossKafka/warehouse/refs.
+Access to dataset SchlossKafka/warehouse is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/SchlossKafka/warehouse to ask for access.",0
+2026-11-16T00:09:59.598971+00:00,sampling,dfggsuanaz/vcHEkaWFoVOTQsB443,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49d7-1663f44975d5b624791011ef;f0540b28-9e20-4456-93b7-e5bde34c1bb4)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/dfggsuanaz/vcHEkaWFoVOTQsB443/refs.
+Access to dataset dfggsuanaz/vcHEkaWFoVOTQsB443 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/dfggsuanaz/vcHEkaWFoVOTQsB443 to ask for access.",0
+2026-11-16T00:10:00.544753+00:00,sampling,rlorlou/HUI360-Videos-SSUP,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49d8-5a748fcb71d1f8424c991d73;89af70b3-d726-4a69-bb22-730c62fae981)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/rlorlou/HUI360-Videos-SSUP/refs.
+Access to dataset rlorlou/HUI360-Videos-SSUP is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/rlorlou/HUI360-Videos-SSUP to ask for access.",0
+2026-11-16T00:10:01.586232+00:00,sampling,nrcaisafety/canbench,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49d9-7338292141152083097e15f3;d8fed9b2-2fe4-4c77-9daf-5b44fe325e4b)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/nrcaisafety/canbench/refs.
+Access to dataset nrcaisafety/canbench is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/nrcaisafety/canbench to ask for access.",0
+2026-11-16T00:10:03.087804+00:00,sampling,GanitLLM/GANIT-v2,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49da-1d0ba9794f754f3333035041;76d958ae-885f-4cd2-a566-06634accfabf)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/GanitLLM/GANIT-v2/refs.
+Access to dataset GanitLLM/GANIT-v2 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/GanitLLM/GANIT-v2 to ask for access.",0
+2026-11-16T00:10:04.369316+00:00,sampling,Hebrish/English-Hebrew-Mixed-Sentences,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49dc-5d6f29f82534c8037642be40;5aeb8abc-c28e-4d64-92a6-97f9d093ae84)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/Hebrish/English-Hebrew-Mixed-Sentences/refs.
+Access to dataset Hebrish/English-Hebrew-Mixed-Sentences is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/Hebrish/English-Hebrew-Mixed-Sentences to ask for access.",0
+2026-11-16T00:10:05.388054+00:00,sampling,CoderBak/anagram-corpus-nc,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49dd-6fff0d504196c9ca3db7a7db;52055b63-abc6-449e-8891-6faf2cf545ed)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/CoderBak/anagram-corpus-nc/refs.
+Access to dataset CoderBak/anagram-corpus-nc is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/CoderBak/anagram-corpus-nc to ask for access.",0
+2026-11-16T00:10:06.231022+00:00,sampling,Udev-miam/Chaufour-les-Bonnieres,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49de-185d8b4b3613ad9a4111565c;6371b845-6bc8-4bb7-9738-7d9ccad878d4)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/Udev-miam/Chaufour-les-Bonnieres/refs.
+Access to dataset Udev-miam/Chaufour-les-Bonnieres is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/Udev-miam/Chaufour-les-Bonnieres to ask for access.",0
+2026-11-16T00:10:06.340589+00:00,sampling,RoboCOIN/Agilex_Cobot_Magic_wipe_the_table,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49de-215f1da36e99ec053d8d7504;66f3a7dd-50bc-4fa9-bace-22a26f968c4c)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/RoboCOIN/Agilex_Cobot_Magic_wipe_the_table/refs.
+Access to dataset RoboCOIN/Agilex_Cobot_Magic_wipe_the_table is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/RoboCOIN/Agilex_Cobot_Magic_wipe_the_table to ask for access.",0
+2026-11-16T00:10:06.364906+00:00,sampling,bigscience-data/roots_zh_wikivoyage,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49de-3722fa1b20fb03ec32d00749;afaccb0a-f5df-4b6d-b097-60a6a59fe577)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/bigscience-data/roots_zh_wikivoyage/refs.
+Access to dataset bigscience-data/roots_zh_wikivoyage is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/bigscience-data/roots_zh_wikivoyage to ask for access.",0
+2026-11-16T00:10:06.667260+00:00,sampling,ggoglodze/tesla,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49de-0109fd3a738d56962a0ee339;084570d3-be89-4899-a2cf-ae61ba41725d)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/ggoglodze/tesla/refs.
+Access to dataset ggoglodze/tesla is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/ggoglodze/tesla to ask for access.",0
+2026-11-16T00:10:06.992324+00:00,sampling,rookieSJTU/weights_1015,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49de-1f58127249e13e98567db16e;f1583f54-ee40-4594-a93a-264292cd0311)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/rookieSJTU/weights_1015/refs.
+Access to dataset rookieSJTU/weights_1015 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/rookieSJTU/weights_1015 to ask for access.",0
+2026-11-16T00:10:08.057489+00:00,sampling,doublecringe123/parsed-vacancies-from-headhunter-tashkent,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49df-38a8b8fe1b293cab11bd53c0;0b530dfb-20c5-4ef9-8d66-fadc934e17ef)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/doublecringe123/parsed-vacancies-from-headhunter-tashkent/refs.
+Access to dataset doublecringe123/parsed-vacancies-from-headhunter-tashkent is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/doublecringe123/parsed-vacancies-from-headhunter-tashkent to ask for access.",0
+2026-11-16T00:10:09.447447+00:00,sampling,Mohamedfadil369/medlinc,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49e1-47488c6617a0284745f7aa3b;89d72f3d-d455-4e3a-9c50-89626e620d91)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/Mohamedfadil369/medlinc/refs.
+Access to dataset Mohamedfadil369/medlinc is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/Mohamedfadil369/medlinc to ask for access.",0
+2026-11-16T00:10:09.647187+00:00,sampling,shayekh/red-mantis,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49e1-610e19d861857fab6994ad67;6125248d-308d-4915-a2d5-b454b9e7deff)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/shayekh/red-mantis/refs.
+Access to dataset shayekh/red-mantis is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/shayekh/red-mantis to ask for access.",0
+2026-11-16T00:10:10.085058+00:00,sampling,nate-rahn/0907_no_torture_cruelty_rm_pipeline_02_responses,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49e2-5970599a4caeb5380f8eca92;936af6ec-0dd1-48f7-93c8-84accc576cde)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/nate-rahn/0907_no_torture_cruelty_rm_pipeline_02_responses/refs.
+Access to dataset nate-rahn/0907_no_torture_cruelty_rm_pipeline_02_responses is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/nate-rahn/0907_no_torture_cruelty_rm_pipeline_02_responses to ask for access.",0
+2026-11-16T00:10:12.346714+00:00,sampling,fw407/vtab-1k_flowers102,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49e4-492d89a125b6369857c32e17;a9aca204-e1d8-44b0-a83d-a09bbfcc57b3)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/fw407/vtab-1k_flowers102/refs.
+Access to dataset fw407/vtab-1k_flowers102 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/fw407/vtab-1k_flowers102 to ask for access.",0
+2026-11-16T00:10:13.122949+00:00,sampling,banko/U6sMW8-eYWTOohrr64,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49e4-73f1940a4151e7705c6ae775;75afa16b-c503-441e-a0c2-e04404385ec4)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/banko/U6sMW8-eYWTOohrr64/refs.
+Access to dataset banko/U6sMW8-eYWTOohrr64 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/banko/U6sMW8-eYWTOohrr64 to ask for access.",0
+2026-11-16T00:10:13.355738+00:00,sampling,mariatriantafyllou/dei-pdf-binary-test,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49e5-60507c75644591175f727ffb;aebd8308-c325-4001-9bea-1d4e11d10b58)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/mariatriantafyllou/dei-pdf-binary-test/refs.
+Access to dataset mariatriantafyllou/dei-pdf-binary-test is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/mariatriantafyllou/dei-pdf-binary-test to ask for access.",0
+2026-11-16T00:10:13.829229+00:00,sampling,gabrielsunhyuck/navigation_aid,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49e5-64c41db82db85ac8232069a2;ebd6c667-6840-460d-bb5e-8601d2d73cad)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/gabrielsunhyuck/navigation_aid/refs.
+Access to dataset gabrielsunhyuck/navigation_aid is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/gabrielsunhyuck/navigation_aid to ask for access.",0
+2026-11-16T00:10:16.267732+00:00,sampling,InfoBayAI/Tamil_Stem_Textbook_Dataset,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49e8-6c33f2283164e89261e20ff0;3a06d0ce-53ca-4014-b823-de527d80cd65)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/InfoBayAI/Tamil_Stem_Textbook_Dataset/refs.
+Access to dataset InfoBayAI/Tamil_Stem_Textbook_Dataset is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/InfoBayAI/Tamil_Stem_Textbook_Dataset to ask for access.",0
+2026-11-16T00:10:20.102240+00:00,sampling,trend-cybertron/Primus-Nemotron-CC,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49eb-58ef6d3a52115d656456e607;cfdb06ff-fc2e-402b-97e6-389e694be254)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/trend-cybertron/Primus-Nemotron-CC/refs.
+Access to dataset trend-cybertron/Primus-Nemotron-CC is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/trend-cybertron/Primus-Nemotron-CC to ask for access.",0
+2026-11-16T00:10:23.815589+00:00,sampling,russ7/oab_exams_2018_2025_fixed,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49ef-0903ca3a180c81305eb578af;117084a4-4b82-4f17-bc43-bc2120da3e21)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/russ7/oab_exams_2018_2025_fixed/refs.
+Access to dataset russ7/oab_exams_2018_2025_fixed is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/russ7/oab_exams_2018_2025_fixed to ask for access.",0
+2026-11-16T00:10:25.669439+00:00,sampling,chaiting/pk-5216-L0,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49f1-32ee2ef600aa176c02413291;a1ed0ac7-c379-4ad8-a658-72027c3eb290)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/chaiting/pk-5216-L0/refs.
+Access to dataset chaiting/pk-5216-L0 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/chaiting/pk-5216-L0 to ask for access.",0
+2026-11-16T00:10:25.985105+00:00,sampling,useKled/delivery-drop-off-locations,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49f1-7787be74367b6bb0061d94b1;c23170b7-a69b-4027-9f18-20b2491aadfc)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/useKled/delivery-drop-off-locations/refs.
+Access to dataset useKled/delivery-drop-off-locations is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/useKled/delivery-drop-off-locations to ask for access.",0
+2026-11-16T00:10:27.723250+00:00,sampling,alien-lab/RTIBench,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49f3-655d06893aed2027607342d2;e25578a5-41bf-4985-b685-da4d04765e2a)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/alien-lab/RTIBench/refs.
+Access to dataset alien-lab/RTIBench is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/alien-lab/RTIBench to ask for access.",0
+2026-11-16T00:10:27.765482+00:00,sampling,Arthurcccccc/images,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49f3-1681533e611edb9e39394c0a;595cfa16-23c6-4059-b737-1513f79975a5)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/Arthurcccccc/images/refs.
+Access to dataset Arthurcccccc/images is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/Arthurcccccc/images to ask for access.",0
+2026-11-16T00:10:27.867168+00:00,sampling,solidarnosti/2026.06.23,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49f3-4d4fee3a5205864072b204e7;05aca251-4301-4fbf-b979-448bec3da68d)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/solidarnosti/2026.06.23/refs.
+Access to dataset solidarnosti/2026.06.23 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/solidarnosti/2026.06.23 to ask for access.",0
+2026-11-16T00:10:31.161544+00:00,sampling,princhernwang/mathlib-refactor-history,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49f7-3fa49c0d522b150720a16816;aa759bab-1b90-4abb-9930-b4aa6041b4ef)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/princhernwang/mathlib-refactor-history/refs.
+Access to dataset princhernwang/mathlib-refactor-history is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/princhernwang/mathlib-refactor-history to ask for access.",0
+2026-11-16T00:10:32.138100+00:00,sampling,soda-research/emilia-mm-pretrain,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49f8-34196eed040bd4bc25e32893;abb9f24a-2381-4b86-8b0c-d671fa864a87)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/soda-research/emilia-mm-pretrain/refs.
+Access to dataset soda-research/emilia-mm-pretrain is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/soda-research/emilia-mm-pretrain to ask for access.",0
+2026-11-16T00:10:34.974920+00:00,sampling,pregH/molcraft-zoo-data,access_restricted,"403 Client Error. (Request ID: Root=1-6afa49fa-3c94cb227073473a273e4ab8;1e3879af-e4db-40db-ab72-b791d17251f4)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/pregH/molcraft-zoo-data/refs.
+Access to dataset pregH/molcraft-zoo-data is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/pregH/molcraft-zoo-data to ask for access.",0
+2026-11-16T00:13:07.598307+00:00,sampling,pfnet/amb-hmeg,rate_limited,"(Request ID: Root=1-6afa4a93-1a0e41be63c16ff14373c879;872a6e88-cc8c-4694-ac90-17ac7a71ba47)
+
+429 Too Many Requests: you have reached your 'api' rate limit.
+Retry after 88 seconds (0/1000 requests remaining in current 300s window).
+Url: https://huggingface.co/api/datasets/pfnet/amb-hmeg/refs.
+We had to rate limit you, you hit the quota of 1000 api requests per 5 minutes period. Upgrade to a PRO user or Team/Enterprise organization account (https://hf.co/pricing) to get higher limits. See https://",5
+2026-11-16T00:13:07.810567+00:00,sampling,vetri2007/MSMARCO-XI,rate_limited,"(Request ID: Root=1-6afa4a93-01e22ed17e8e8d874b401e60;56769f04-85f7-45a1-99e0-8395aeaf8454)
+
+429 Too Many Requests: you have reached your 'api' rate limit.
+Retry after 88 seconds (0/1000 requests remaining in current 300s window).
+Url: https://huggingface.co/api/datasets/vetri2007/MSMARCO-XI/refs.
+We had to rate limit you, you hit the quota of 1000 api requests per 5 minutes period. Upgrade to a PRO user or Team/Enterprise organization account (https://hf.co/pricing) to get higher limits. See ht",5
+2026-11-16T00:13:08.110817+00:00,sampling,lemonhat/t2_25k_v2_tag4,rate_limited,"(Request ID: Root=1-6afa4a94-0bd3f7612f743bd91b9b2b37;66f38627-38e9-4e59-a192-6b62d375d805)
+
+429 Too Many Requests: you have reached your 'api' rate limit.
+Retry after 87 seconds (0/1000 requests remaining in current 300s window).
+Url: https://huggingface.co/api/datasets/lemonhat/t2_25k_v2_tag4/refs.
+We had to rate limit you, you hit the quota of 1000 api requests per 5 minutes period. Upgrade to a PRO user or Team/Enterprise organization account (https://hf.co/pricing) to get higher limits. See",5
+2026-11-16T00:13:08.327409+00:00,sampling,SauravMaheshkar/arXivCS,rate_limited,"(Request ID: Root=1-6afa4a94-49c802010c54e2f72056e11a;49c20b76-5efd-4923-b79a-72aef8f98bed)
+
+429 Too Many Requests: you have reached your 'api' rate limit.
+Retry after 87 seconds (0/1000 requests remaining in current 300s window).
+Url: https://huggingface.co/api/datasets/SauravMaheshkar/arXivCS/refs.
+We had to rate limit you, you hit the quota of 1000 api requests per 5 minutes period. Upgrade to a PRO user or Team/Enterprise organization account (https://hf.co/pricing) to get higher limits. See",5
+2026-11-16T00:15:43.205057+00:00,sampling,tijiang13/FIFA-Skeletal-Tracking-Light-2026,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b2f-7ee8397a05b218a078fff6c4;f3150a8c-67c2-4745-8173-59411ea1c0cc)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/tijiang13/FIFA-Skeletal-Tracking-Light-2026/refs.
+Access to dataset tijiang13/FIFA-Skeletal-Tracking-Light-2026 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/tijiang13/FIFA-Skeletal-Tracking-Light-2026 to ask for access.",0
+2026-11-16T00:15:44.491984+00:00,sampling,MMFact/MMFact,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b30-558f9703191da4c322fdff28;3aaa968e-f135-45a0-9473-18426ce4db8f)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/MMFact/MMFact/refs.
+Access to dataset MMFact/MMFact is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/MMFact/MMFact to ask for access.",0
+2026-11-16T00:15:46.880030+00:00,sampling,aitianci/j2Kr47ey-EmXNKcM86,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b32-25cacc7b6411cc246b4280e0;23c54c0c-3031-47c6-979a-b6d81b7abc53)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/aitianci/j2Kr47ey-EmXNKcM86/refs.
+Access to dataset aitianci/j2Kr47ey-EmXNKcM86 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/aitianci/j2Kr47ey-EmXNKcM86 to ask for access.",0
+2026-11-16T00:15:49.047987+00:00,sampling,stukenov/kzcalm-tts-kk-v1,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b34-5d97930b49752ff81cc249e1;b991a755-8210-41c2-9bbf-4d5c49819443)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/stukenov/kzcalm-tts-kk-v1/refs.
+Access to dataset stukenov/kzcalm-tts-kk-v1 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/stukenov/kzcalm-tts-kk-v1 to ask for access.",0
+2026-11-16T00:15:50.231244+00:00,sampling,justincnn/MqLWjb-nY_XiSCGe64,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b36-57d53f746b440e722279aed8;5a96a2c3-4c0d-4108-a11e-172dab2c8494)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/justincnn/MqLWjb-nY_XiSCGe64/refs.
+Access to dataset justincnn/MqLWjb-nY_XiSCGe64 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/justincnn/MqLWjb-nY_XiSCGe64 to ask for access.",0
+2026-11-16T00:15:51.161838+00:00,sampling,AI4Manufacturing/179-mcq,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b37-23db4189554053383084171f;4962ade1-1137-4035-a1e1-b34f1c7d098f)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/AI4Manufacturing/179-mcq/refs.
+Access to dataset AI4Manufacturing/179-mcq is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/AI4Manufacturing/179-mcq to ask for access.",0
+2026-11-16T00:15:52.479584+00:00,sampling,open-llm-leaderboard/allknowingroger__QwenSlerp5-14B-details,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b38-3b77ad872e3d75120ca1aba4;94ba0b67-063c-419c-a802-2222b5bd870b)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/open-llm-leaderboard/allknowingroger__QwenSlerp5-14B-details/refs.
+Access to dataset open-llm-leaderboard/allknowingroger__QwenSlerp5-14B-details is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/open-llm-leaderboard/allknowingroger__QwenSlerp5-14B-details to ask for access.",0
+2026-11-16T00:15:52.948910+00:00,sampling,Ananthu01/7000_invoice_images_with_json,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b38-4fecbcfe13c5af1c668637b8;d5319422-8fd3-45f9-bd23-c4ed42a3a04d)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/Ananthu01/7000_invoice_images_with_json/refs.
+Access to dataset Ananthu01/7000_invoice_images_with_json is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/Ananthu01/7000_invoice_images_with_json to ask for access.",0
+2026-11-16T00:15:53.783677+00:00,sampling,chencaixia/CFS_2p,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b39-56d47c46451de62a1aaa0236;1253f4ca-0e23-4680-ba08-a863e507890f)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/chencaixia/CFS_2p/refs.
+Access to dataset chencaixia/CFS_2p is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/chencaixia/CFS_2p to ask for access.",0
+2026-11-16T00:15:54.059614+00:00,sampling,JerryWu/TW-JusticeBench,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b39-1d90e7720bcdbfc477529348;0b21181c-dcf2-499d-a893-f9eb6fd9c559)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/JerryWu/TW-JusticeBench/refs.
+Access to dataset JerryWu/TW-JusticeBench is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/JerryWu/TW-JusticeBench to ask for access.",0
+2026-11-16T00:15:58.559054+00:00,sampling,chaiting/pk-7163-L2,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b3e-087b782f5474a6cd6925dad2;6f5ecee0-da37-4888-988d-99ad949a455f)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/chaiting/pk-7163-L2/refs.
+Access to dataset chaiting/pk-7163-L2 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/chaiting/pk-7163-L2 to ask for access.",0
+2026-11-16T00:15:59.181992+00:00,sampling,SushantGautam/Kvasir-VQA-x1-20gens-v2-tmp,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b3f-535c871461afd0bc76644deb;f33e2c1d-e891-4981-8c74-c7d084ee5ba6)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/SushantGautam/Kvasir-VQA-x1-20gens-v2-tmp/refs.
+Access to dataset SushantGautam/Kvasir-VQA-x1-20gens-v2-tmp is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/SushantGautam/Kvasir-VQA-x1-20gens-v2-tmp to ask for access.",0
+2026-11-16T00:16:02.878976+00:00,sampling,anhdt-dsai-02/test_image_dataset,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b42-7500b06f0e9d78873860f3ad;9a3bb0ef-c903-45e5-86d3-ff1cf1a555a6)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/anhdt-dsai-02/test_image_dataset/refs.
+Access to dataset anhdt-dsai-02/test_image_dataset is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/anhdt-dsai-02/test_image_dataset to ask for access.",0
+2026-11-16T00:16:03.783011+00:00,sampling,KMayanja/backup_uganda,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b43-72a9024c058b624f635f648c;81fdd17d-86c6-4ef8-af67-b8e32e2c6ee0)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/KMayanja/backup_uganda/refs.
+Access to dataset KMayanja/backup_uganda is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/KMayanja/backup_uganda to ask for access.",0
+2026-11-16T00:16:05.112065+00:00,sampling,reply-area42/cl1-reply-unimi-vimm-v3,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b45-0590439427f4d3bf3e81fd8e;436a63a9-7d06-4d61-b091-f5f24a6cebf3)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/reply-area42/cl1-reply-unimi-vimm-v3/refs.
+Access to dataset reply-area42/cl1-reply-unimi-vimm-v3 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/reply-area42/cl1-reply-unimi-vimm-v3 to ask for access.",0
+2026-11-16T00:16:05.465596+00:00,sampling,hhhjjjzzz111/000,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b45-1b8a08a92e188abc1ceb1087;8661e0a8-cefb-4778-ab1a-7aadd3920b65)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/hhhjjjzzz111/000/refs.
+Access to dataset hhhjjjzzz111/000 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/hhhjjjzzz111/000 to ask for access.",0
+2026-11-16T00:16:10.226309+00:00,sampling,pharaouk/gp_aug_v1.2,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b4a-261c7592306b75107140280d;f08f3126-5b8d-4bfe-890f-82b8647d7f9a)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/pharaouk/gp_aug_v1.2/refs.
+Access to dataset pharaouk/gp_aug_v1.2 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/pharaouk/gp_aug_v1.2 to ask for access.",0
+2026-11-16T00:16:11.813584+00:00,sampling,cs23s036/full_native_script,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b4b-5007cf0d7f14143d6a908a84;7a0ed1b1-39c5-464a-b442-68308c483ed0)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/cs23s036/full_native_script/refs.
+Access to dataset cs23s036/full_native_script is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/cs23s036/full_native_script to ask for access.",0
+2026-11-16T00:16:12.272023+00:00,sampling,VINAY-UMRETHE/Dataset-SigMamba-V1-Large,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b4c-4a94cb3e7814dec319bb7671;61c6324c-df29-4a04-9c3c-564e970b9a30)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/VINAY-UMRETHE/Dataset-SigMamba-V1-Large/refs.
+Access to dataset VINAY-UMRETHE/Dataset-SigMamba-V1-Large is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/VINAY-UMRETHE/Dataset-SigMamba-V1-Large to ask for access.",0
+2026-11-16T00:16:14.467620+00:00,sampling,LidongYang/Generative_Motion,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b4e-1af7d8d462a4405d72d2d83f;b946ed80-6062-4e2d-9efc-8c0da61cb281)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/LidongYang/Generative_Motion/refs.
+Access to dataset LidongYang/Generative_Motion is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/LidongYang/Generative_Motion to ask for access.",0
+2026-11-16T00:16:14.856558+00:00,sampling,kormo-lm/GeneralThought-430K,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b4e-5a791fe2290f262b4aec1a2c;12790e7b-b700-4750-acc5-d9dec4526b68)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/kormo-lm/GeneralThought-430K/refs.
+Access to dataset kormo-lm/GeneralThought-430K is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/kormo-lm/GeneralThought-430K to ask for access.",0
+2026-11-16T00:16:15.176047+00:00,sampling,fragom/full,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b4f-0cc4df662b17addd27dea4f3;8401fde5-a7d2-41e2-bf05-3dc132f3df6f)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/fragom/full/refs.
+Access to dataset fragom/full is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/fragom/full to ask for access.",0
+2026-11-16T00:16:16.246922+00:00,sampling,Agents-X/lmms_math_8k_verified,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b50-38b6697f2b4a720f1763668f;61bb7fe7-ba89-4adf-b302-22064446ba08)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/Agents-X/lmms_math_8k_verified/refs.
+Access to dataset Agents-X/lmms_math_8k_verified is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/Agents-X/lmms_math_8k_verified to ask for access.",0
+2026-11-16T00:16:16.708281+00:00,sampling,lianghsun/tw-celebrity-chat,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b50-27ac1900282ca9c74fe8da4f;c09bb5ee-b457-4c60-b170-0b09c4627efd)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/lianghsun/tw-celebrity-chat/refs.
+Access to dataset lianghsun/tw-celebrity-chat is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/lianghsun/tw-celebrity-chat to ask for access.",0
+2026-11-16T00:16:17.674282+00:00,sampling,tusharbasrur/product-review-sentiment-dataset,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b51-0d78ac456ff3b3d72b222e87;8188aa6e-a765-4659-b043-3e244c26e3d6)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/tusharbasrur/product-review-sentiment-dataset/refs.
+Access to dataset tusharbasrur/product-review-sentiment-dataset is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/tusharbasrur/product-review-sentiment-dataset to ask for access.",0
+2026-11-16T00:16:18.615734+00:00,sampling,gaydmi/tat-umlaut,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b52-634896696cac61f71dc01df3;6a6593a9-566c-44a0-9948-29b10b1fddef)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/gaydmi/tat-umlaut/refs.
+Access to dataset gaydmi/tat-umlaut is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/gaydmi/tat-umlaut to ask for access.",0
+2026-11-16T00:16:19.157001+00:00,sampling,wannaphong/fineweb2-thai-cleaned,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b53-4ae2158973a7691601f7cc67;8ea41ffc-4b3b-4f3f-9b59-51f2c8ee0f5e)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/wannaphong/fineweb2-thai-cleaned/refs.
+Access to dataset wannaphong/fineweb2-thai-cleaned is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/wannaphong/fineweb2-thai-cleaned to ask for access.",0
+2026-11-16T00:16:20.764614+00:00,sampling,animetimm/danbooru-wdtagger-v4-w640-ws-full,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b54-6e6de72558a359e843efa065;1bbe4dc4-1063-4c9d-9952-a5a7a24098b4)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/animetimm/danbooru-wdtagger-v4-w640-ws-full/refs.
+Access to dataset animetimm/danbooru-wdtagger-v4-w640-ws-full is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/animetimm/danbooru-wdtagger-v4-w640-ws-full to ask for access.",0
+2026-11-16T00:16:21.712445+00:00,sampling,jp1924/Laion400m-4,access_restricted,"403 Client Error. (Request ID: Root=1-6afa4b55-7238f60c5f69db5c391c9583;3c872722-fe82-45ae-919c-03df4d7fd87b)
+
+Cannot access gated repo for url https://huggingface.co/api/datasets/jp1924/Laion400m-4/refs.
+Access to dataset jp1924/Laion400m-4 is restricted and you are not in the authorized list. Visit https://huggingface.co/datasets/jp1924/Laion400m-4 to ask for access.",0
