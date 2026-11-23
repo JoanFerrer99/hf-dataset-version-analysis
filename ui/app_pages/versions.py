@@ -36,6 +36,32 @@ st.dataframe(
     },
 )
 
+st.subheader("Mesures de cada versió")
+st.dataframe(
+    versions[["dataset_id", "version_label", "position_label", "differences", "conception_days", "lifespan_days",
+              "data_size_bytes", "metadata_size_bytes", "n_data_files", "n_metadata_files", "session_commit_count",
+              "n_rows", "n_columns"]],
+    hide_index=True,
+    column_config={
+        "dataset_id": "Dataset",
+        "version_label": "Versió",
+        "position_label": "Posició",
+        "differences": "Canvis respecte a l'anterior",
+        "conception_days": st.column_config.NumberColumn("Dies des de l'anterior", format="%d"),
+        "lifespan_days": st.column_config.NumberColumn("Dies fins a la següent", format="%d"),
+        "data_size_bytes": st.column_config.NumberColumn("Dades (bytes)", format="%d"),
+        "metadata_size_bytes": st.column_config.NumberColumn("Metadades (bytes)", format="%d"),
+        "n_data_files": "Fitxers de dades",
+        "n_metadata_files": "Fitxers de metadades",
+        "session_commit_count": "Commits de la sessió",
+        "n_rows": st.column_config.NumberColumn("Files", format="%d"),
+        "n_columns": "Columnes",
+    },
+)
+st.caption("Canvis: els codis respecte a la versió anterior; `first_version` és la primera, `no_changes` una "
+           "comparació sense canvis i `not_compared` una que no s'ha pogut fer. Les files i columnes són buides si "
+           "el dataset no s'ha llegit (p.e. massa gran).")
+
 st.subheader("Resum per dataset")
 profiles = data.dataset_profiles(selected)
 st.dataframe(
@@ -58,3 +84,20 @@ st.dataframe(
 )
 st.caption("Comparacions: cada versió contra la següent. Fetes: les que s'han pogut comparar (vegeu la pàgina de "
            "cobertura per saber per què no les altres).")
+
+st.subheader("Intervals de cada dataset")
+st.dataframe(
+    data.dataset_bands(selected),
+    hide_index=True,
+    column_config={
+        "dataset_id": "Dataset",
+        "downloads_band": "Descàrregues",
+        "initial_size_band": "Mida inicial",
+        "initial_rows_band": "Files inicials",
+        "initial_columns_band": "Columnes inicials",
+        "n_versions_band": "Versions",
+        "n_tabular_commits_band": "Commits tabulars",
+    },
+)
+st.caption("Intervals calculats amb k-means (3 clústers sobre el logaritme del valor): Few, Medium i Many per a "
+           "les descàrregues, de tota la mostra; Low, Medium i High per a la resta, entre els elegibles.")

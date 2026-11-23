@@ -5,7 +5,11 @@ with optional_columns as (
     -- columnes que els runs anteriors a T-44 no tenen: hi queden buides
     select
         null::varchar as n_files_dropped_from,
-        null::varchar as n_files_dropped_to
+        null::varchar as n_files_dropped_to,
+        null::varchar as n_rows_from,
+        null::varchar as n_rows_to,
+        null::varchar as n_columns_from,
+        null::varchar as n_columns_to
     where false
 ),
 
@@ -28,6 +32,10 @@ typed as (
         cast(n_files_to as integer) as n_files_to,
         coalesce(cast(nullif(n_files_dropped_from, '') as integer), 0) as n_files_dropped_from,
         coalesce(cast(nullif(n_files_dropped_to, '') as integer), 0) as n_files_dropped_to,
+        cast(nullif(n_rows_from, '') as bigint) as n_rows_from,
+        cast(nullif(n_rows_to, '') as bigint) as n_rows_to,
+        cast(nullif(n_columns_from, '') as integer) as n_columns_from,
+        cast(nullif(n_columns_to, '') as integer) as n_columns_to,
         cast(size_bytes as bigint) as size_bytes
     from comparisons
 )

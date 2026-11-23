@@ -139,7 +139,8 @@ class TestCompareRevisions:
         assert pairs.status_row("org/ds", "a", "b", comparison) == {
             "dataset_id": "org/ds", "version_from": "a", "version_to": "b", "status": "ok", "n_codes": 1,
             "format_from": "csv", "format_to": "csv", "n_files_from": 1, "n_files_to": 2,
-            "n_files_dropped_from": 0, "n_files_dropped_to": 0, "size_bytes": len(years[2019]) * 2 + len(years[2020])}
+            "n_files_dropped_from": 0, "n_files_dropped_to": 0, "n_rows_from": 30, "n_rows_to": 60,
+            "n_columns_from": 2, "n_columns_to": 2, "size_bytes": len(years[2019]) * 2 + len(years[2020])}
         assert pairs.revision_rows("org/ds", "a", "b", comparison) == [
             {"dataset_id": "org/ds", "version_from": "a", "version_to": "b", "code": "C421"}]
 
@@ -190,5 +191,6 @@ def test_status_row_of_a_comparison_that_was_not_made():
     assert pairs.status_row("org/ds", "a", "b", comparison) == {
         "dataset_id": "org/ds", "version_from": "a", "version_to": "b", "status": "absent_old", "n_codes": 0,
         "format_from": None, "format_to": "csv", "n_files_from": 0, "n_files_to": 2, "n_files_dropped_from": 0,
-        "n_files_dropped_to": 0, "size_bytes": 200}
+        "n_files_dropped_to": 0, "n_rows_from": None, "n_rows_to": None, "n_columns_from": None,
+        "n_columns_to": None, "size_bytes": 200}
     assert pairs.revision_rows("org/ds", "a", "b", comparison) == []

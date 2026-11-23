@@ -1,7 +1,7 @@
 """
 Figura: les versions de cada dataset elegible al llarg del temps.
 Pregunta: quantes versions té cada dataset elegible, i quan es van publicar?
-Mart: dim_version (amb dim_dataset), de l'esquema en estrella.
+Mart: fact_version (amb dim_version_kind), de l'estrella de les versions.
 """
 
 import matplotlib.pyplot as plt
@@ -10,7 +10,7 @@ from matplotlib.lines import Line2D
 from figures import common
 
 NAME = "fig_versions_timeline"
-STYLES = {"tag": ("Tag", "o", 0), "commit_session": ("Sessió de commits", "s", 1), "commit": ("Commit", "^", 2)}
+STYLES = {"tag": ("Tag", "o", 0), "commit": ("Sessió de commits", "s", 1)}
 
 
 def draw(con) -> plt.Figure:
@@ -21,10 +21,10 @@ def draw(con) -> plt.Figure:
     :param con: connexió al magatzem.
     """
     df = common.query(con, """
-        select v.dataset_id, v.version_source, v.commit_date
-        from dim_version as v
-        inner join dim_dataset as d
-            on d.dataset_id = v.dataset_id
+        select v.dataset_id, k.version_kind as version_source, v.commit_date
+        from fact_version as v
+        inner join dim_version_kind as k
+            on k.version_kind_key = v.version_kind_key
         where v.commit_date is not null
         order by v.dataset_id, v.commit_date
     """)

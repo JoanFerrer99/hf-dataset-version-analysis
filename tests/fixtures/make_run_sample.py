@@ -60,7 +60,10 @@ REPORT = [
                created_at="2025-01-20T12:30:00+00:00", license_="cc-by-4.0", downloads=35),
     report_row("org/tags-c", 2, 1, 2, REASONS["A"], files=1, share=1.0,
                created_at="2025-04-01T08:00:00+00:00", license_=None, downloads=0),
-    *[report_row(f"org/single-{i}", 0, 1, 0, REASONS["no_version_marks"]) for i in range(1, 5)],
+    # les metadades surten del llistat del mostreig: tota la mostra les té, també els restringits
+    *[report_row(f"org/single-{i}", 0, 1, 0, REASONS["no_version_marks"],
+                 created_at=f"2025-0{i}-15T1{i}:00:00+00:00", license_="mit" if i % 2 else None, downloads=i * 3)
+      for i in range(1, 5)],
     report_row("org/videos", 2, 1, 0, REASONS["no_tabular_files"], files=6, share=0.0,
                created_at="2025-02-11T10:00:00+00:00", license_="apache-2.0", downloads=7),
     report_row("org/images", 0, 3, 0, REASONS["no_tabular_files"], files=10, share=0.0,
@@ -68,8 +71,9 @@ REPORT = [
     report_row("org/one-session", 0, 2, 3, REASONS["no_tabular_commits"], files=2, share=1.0,
                created_at="2025-05-05T10:00:00+00:00", license_="mit", downloads=11),
     report_row("org/gated", 0, 0, 0, "", status="access_restricted", error_category="access_restricted",
-               error="403 Client Error"),
-    report_row("org/busy", 0, 0, 0, "", status="error", error_category="rate_limited", error="429 Client Error"),
+               error="403 Client Error", created_at="2025-06-01T07:00:00+00:00", license_="other", downloads=950),
+    report_row("org/busy", 0, 0, 0, "", status="error", error_category="rate_limited", error="429 Client Error",
+               created_at="2025-06-02T07:00:00+00:00", downloads=4),
 ]
 
 VERSIONS = [
@@ -93,6 +97,13 @@ COMPARISONS = {
 
 # Fitxers que no es llegeixen perquè repeteixen files d'un altre més gran (T-44): (versió antiga, versió nova)
 DROPPED = {("org/sessions-b", "session-1", "session-2"): (1, 1)}
+
+# (files, columnes) del dataset llegit a cada versió; les comparacions no fetes no en tenen
+SHAPES = {
+    ("org/tags-a", "v1.0", "v1.1"): ((100, 5), (120, 6)),
+    ("org/tags-a", "v1.1", "v2.0"): ((120, 6), (120, 5)),
+    ("org/sessions-b", "session-1", "session-2"): ((500, 8), (500, 8)),
+}
 
 FAILURES = [
     ("2026-01-15T09:10:00+00:00", "sampling", "org/gated", "access_restricted", "403 Client Error", 0),
@@ -118,18 +129,23 @@ def main(out: str = OUT) -> None:
 
     versions = [VersionRow(dataset_id=ds, version_label=label, version_order=order, version_source=source,
                            commit_sha=sha(f"{ds}@{label}"), commit_date=date, authors=authors,
-                           approx_size_bytes=size, session_commit_count=count, status="ok")
+                           approx_size_bytes=size, session_commit_count=count, status="ok",
+                           # 9 de cada 10 bytes són dades; dos fitxers de dades i un README (`split_tree`)
+                           data_size_bytes=size * 9 // 10, metadata_size_bytes=size - size * 9 // 10,
+                           n_data_files=2, n_metadata_files=1)
                 for ds, label, order, source, date, authors, size, count in VERSIONS]
     pd.DataFrame([asdict(v) for v in versions]).to_csv(os.path.join(out, "versions.csv"), index=False)
 
     changes, statuses = [], []
     for (ds, old, new), (status, codes, fmt, (files_from, files_to), size) in COMPARISONS.items():
         dropped_from, dropped_to = DROPPED.get((ds, old, new), (0, 0))
+        (rows_from, cols_from), (rows_to, cols_to) = SHAPES.get((ds, old, new), ((None, None), (None, None)))
         pair = {"dataset_id": ds, "version_from": sha(f"{ds}@{old}"), "version_to": sha(f"{ds}@{new}")}
         changes += [{**pair, "code": code} for code in codes]
         statuses.append({**pair, "status": status, "n_codes": len(codes), "format_from": fmt, "format_to": fmt,
                          "n_files_from": files_from, "n_files_to": files_to, "n_files_dropped_from": dropped_from,
-                         "n_files_dropped_to": dropped_to, "size_bytes": size})
+                         "n_files_dropped_to": dropped_to, "n_rows_from": rows_from, "n_rows_to": rows_to,
+                         "n_columns_from": cols_from, "n_columns_to": cols_to, "size_bytes": size})
     classification_frame(changes).to_csv(os.path.join(out, "change_classification.csv"), index=False)
     status_frame(statuses).to_csv(os.path.join(out, "comparison_status.csv"), index=False)
 

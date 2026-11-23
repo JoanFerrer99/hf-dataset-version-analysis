@@ -1,6 +1,8 @@
 """
 Fase 1: la llista ordenada de versions de cada dataset elegible, amb data,
-autors i mida aproximada.
+autors i mida: la total, la de les dades (els fitxers del dataset, els mateixos
+que compara la Fase 2) i la de les metadades (la resta), amb quants fitxers
+té cada part.
 
 Què és una versió depèn del criteri que va fer elegible el dataset (columna
 `eligibility_reason`, no es recalcula):
@@ -37,6 +39,7 @@ from huggingface_hub import list_repo_commits, list_repo_refs, list_repo_tree
 
 import errors
 import eligibility_scan as es
+from diffengine import datafiles
 from eligibility_scan import cluster_commit_times
 
 log = logging.getLogger(__name__)
@@ -61,6 +64,10 @@ class VersionRow:
     :ivar authors: noms d'usuari units per coma, sense duplicats.
     :ivar approx_size_bytes: mida total de l'arbre en aquesta revisió, o `None`.
     :ivar session_commit_count: commits de la sessió (1 per a un tag).
+    :ivar data_size_bytes: mida dels fitxers de dades (`datafiles.dataset_files`), o `None`.
+    :ivar metadata_size_bytes: mida de la resta de fitxers (README, metadades...), o `None`.
+    :ivar n_data_files: fitxers de dades, o `None`.
+    :ivar n_metadata_files: la resta de fitxers, o `None`.
     :ivar status: `ok`, `ok_no_size`, `commit_error` o `size_error`.
     """
 
@@ -74,6 +81,10 @@ class VersionRow:
     approx_size_bytes: int | None
     session_commit_count: int
     status: str
+    data_size_bytes: int | None = None
+    metadata_size_bytes: int | None = None
+    n_data_files: int | None = None
+    n_metadata_files: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +106,23 @@ def order_versions_by_date(versions: list[dict]) -> list[dict]:
 def sum_tree_size(entries: Iterable) -> int:
     """Suma `.size` de les entrades de `list_repo_tree` (les carpetes no en tenen)."""
     return sum(getattr(e, "size", 0) or 0 for e in entries)
+
+
+def split_tree(entries: Iterable, formats: tuple[str, ...]) -> dict:
+    """
+    Reparteix els fitxers d'una revisió entre dades i metadades.
+
+    :param entries: entrades de `list_repo_tree` (les carpetes no tenen `.size` i no compten).
+    :param formats: formats tabulars de l'execució.
+    :return: `approx_size_bytes` (tot), `data_size_bytes` i `n_data_files` (els fitxers del
+        dataset, `datafiles.dataset_files`), `metadata_size_bytes` i `n_metadata_files` (la resta).
+    """
+    files = {e.path: e.size or 0 for e in entries if getattr(e, "size", None) is not None}
+    data = set(datafiles.dataset_files(list(files), formats).files)
+    data_size = sum(size for path, size in files.items() if path in data)
+    total = sum(files.values())
+    return {"approx_size_bytes": total, "data_size_bytes": data_size, "metadata_size_bytes": total - data_size,
+            "n_data_files": len(data), "n_metadata_files": len(files) - len(data)}
 
 
 def format_authors(authors: list[str] | None) -> str:
@@ -178,16 +206,16 @@ def fetch_commit_metadata(dataset_id: str, revision: str, hf_token: str | None, 
     return commits[0] if commits else None
 
 
-def fetch_tree_size_bytes(dataset_id: str, commit_sha: str, hf_token: str | None, retry_config: dict) -> int:
+def fetch_tree_entries(dataset_id: str, commit_sha: str, hf_token: str | None, retry_config: dict) -> list:
     """
-    Mida real (LFS resolt) de tot l'arbre del repositori en una revisió.
+    Tots els fitxers del repositori en una revisió, amb la mida real (LFS resolt).
 
     `list_repo_tree` és un generador: es consumeix sencer DINS de
     `with_retry` perquè els errors HTTP, que surten en iterar, es reintentin.
 
-    :return: bytes totals.
+    :return: les entrades de `list_repo_tree`.
     """
-    entries = errors.with_retry(
+    return errors.with_retry(
         lambda: list(
             list_repo_tree(
                 repo_id=dataset_id, repo_type="dataset", revision=commit_sha,
@@ -196,7 +224,13 @@ def fetch_tree_size_bytes(dataset_id: str, commit_sha: str, hf_token: str | None
         ),
         **retry_config,
     )
-    return sum_tree_size(entries)
+
+
+def fetch_tree_size_bytes(dataset_id: str, commit_sha: str, hf_token: str | None, retry_config: dict) -> int:
+    """
+    :return: la mida total de l'arbre del repositori en una revisió (`fetch_tree_entries`).
+    """
+    return sum_tree_size(fetch_tree_entries(dataset_id, commit_sha, hf_token, retry_config))
 
 
 def _extract_tag_versions(dataset_id: str, hf_token: str | None, retry_config: dict) -> list[dict]:
@@ -265,7 +299,7 @@ def extract_versions_for_dataset(
     Versions d'un dataset elegible: per tag si `eligibility_reason` comença
     per "Criteri A", per sessió en qualsevol altre cas.
 
-    :param compute_size: calcula `approx_size_bytes` (1 crida per versió).
+    :param compute_size: calcula la mida de cada versió, total, de dades i de metadades (1 crida per versió).
     :param tabular_commits: commits tabulars que va trobar la Fase 0 (Criteri B).
         Si no es donen (la Fase 1 s'executa sola), es tornen a buscar.
     :return: `VersionRow` en ordre cronològic.
@@ -284,10 +318,11 @@ def extract_versions_for_dataset(
     rows = []
     for v in versions:
         status = v["status"]
-        approx_size_bytes = None
+        sizes: dict = {}
         if compute_size:
             try:
-                approx_size_bytes = fetch_tree_size_bytes(dataset_id, v["commit_sha"], hf_token, retry_config)
+                entries = fetch_tree_entries(dataset_id, v["commit_sha"], hf_token, retry_config)
+                sizes = split_tree(entries, es.tabular_formats())
             except Exception as exc:
                 if status == "ok":
                     status = "size_error"
@@ -303,9 +338,13 @@ def extract_versions_for_dataset(
             commit_sha=v["commit_sha"],
             commit_date=v["commit_date"],
             authors=format_authors(v["authors"]),
-            approx_size_bytes=approx_size_bytes,
+            approx_size_bytes=sizes.get("approx_size_bytes"),
             session_commit_count=v["session_commit_count"],
             status=status,
+            data_size_bytes=sizes.get("data_size_bytes"),
+            metadata_size_bytes=sizes.get("metadata_size_bytes"),
+            n_data_files=sizes.get("n_data_files"),
+            n_metadata_files=sizes.get("n_metadata_files"),
         ))
     return rows
 

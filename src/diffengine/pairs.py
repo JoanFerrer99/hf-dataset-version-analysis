@@ -68,6 +68,8 @@ class Comparison:
     :ivar dropped_old: fitxers de la revisió antiga que no s'han llegit: no són taules o repetien files d'un
         altre (T-44).
     :ivar dropped_new: el mateix, de la revisió nova.
+    :ivar shape_old: `(files, columnes)` del dataset de la revisió antiga, si s'ha llegit.
+    :ivar shape_new: el mateix, de la revisió nova.
     """
 
     old: DatasetFiles
@@ -77,6 +79,8 @@ class Comparison:
     result: DiffResult | None = None
     dropped_old: int = 0
     dropped_new: int = 0
+    shape_old: tuple[int, int] | None = None
+    shape_new: tuple[int, int] | None = None
 
 
 def list_revision(repo_id: str, revision: str, token: str | None, call: Call = direct_call,
@@ -184,6 +188,8 @@ def compare_datasets(repo_id: str, comparison: Comparison, old: Revision, new: R
         comparison.status = "mixed_columns"
         return comparison
     comparison.dropped_old, comparison.dropped_new = len(old_table.dropped_files), len(new_table.dropped_files)
+    comparison.shape_old = (old_table.n_rows, len(old_table.columns))
+    comparison.shape_new = (new_table.n_rows, len(new_table.columns))
     comparison.result = diff_tables(old_table, new_table, config)
     comparison.status = "ok"
     return comparison
@@ -217,14 +223,19 @@ def status_row(repo_id: str, old_rev: str, new_rev: str, comparison: Comparison)
         (codis diferents), `format_from`/`format_to` i `n_files_from`/`n_files_to`
         (els formats i el nombre de fitxers del dataset a cada versió),
         `n_files_dropped_from`/`n_files_dropped_to` (els que no s'han llegit
-        perquè no són taules o repetien files d'un altre, T-44) i `size_bytes` (la mida de les
-        dues versions, sumades).
+        perquè no són taules o repetien files d'un altre, T-44), `n_rows_from`/`n_rows_to` i
+        `n_columns_from`/`n_columns_to` (la mida del dataset llegit a cada versió; buides si no
+        s'ha llegit) i `size_bytes` (la mida de les dues versions, sumades).
     """
     return {"dataset_id": repo_id, "version_from": old_rev, "version_to": new_rev, "status": comparison.status,
             "n_codes": len(comparison.result.codes) if comparison.result is not None else 0,
             "format_from": comparison.old.fmt, "format_to": comparison.new.fmt,
             "n_files_from": len(comparison.old.files), "n_files_to": len(comparison.new.files),
             "n_files_dropped_from": comparison.dropped_old, "n_files_dropped_to": comparison.dropped_new,
+            "n_rows_from": comparison.shape_old[0] if comparison.shape_old else None,
+            "n_rows_to": comparison.shape_new[0] if comparison.shape_new else None,
+            "n_columns_from": comparison.shape_old[1] if comparison.shape_old else None,
+            "n_columns_to": comparison.shape_new[1] if comparison.shape_new else None,
             "size_bytes": comparison.size_bytes}
 
 

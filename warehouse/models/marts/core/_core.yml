@@ -2,129 +2,189 @@ version: 2
 
 models:
   - name: dim_kind_of_change
-    description: Els 14 tipus de canvi de la taxonomia (de la seed `taxonomy`).
+    description: Els 15 tipus de canvi de la taxonomia (de la seed `taxonomy`). Dona els noms i els nivells.
     columns:
       - name: kind_key
         description: Clau subrogada (md5 del codi).
-        data_tests:
-          - unique
-          - not_null
+        data_tests: [unique, not_null]
       - name: code
         description: Codi de la taxonomia.
-        data_tests:
-          - unique
-          - not_null
+        data_tests: [unique, not_null]
       - name: perspective
         description: Categoria del paper.
 
   - name: dim_dataset
-    description: Els datasets elegibles de l'execució.
+    description: >
+      Tota la mostra de la Fase 0. Porta l'autor, la creació, l'elegibilitat, la
+      llicència i els intervals k-means (`int_dataset_bands`).
     columns:
       - name: dataset_key
         description: Clau subrogada (md5 de `dataset_id`).
-        data_tests:
-          - unique
-          - not_null
+        data_tests: [unique, not_null]
       - name: dataset_id
         description: Dataset de Hugging Face (`propietari/nom`).
+        data_tests: [unique, not_null]
+      - name: eligibility
+        description: "`Si`, `Restringit` (403) o `NoElegible` (també els que van fallar)."
         data_tests:
-          - unique
           - not_null
+          - accepted_values:
+              arguments:
+                values: ["Si", "Restringit", "NoElegible"]
       - name: eligibility_criterion
-        description: El criteri que el fa elegible.
+        description: El criteri que el fa elegible (`A` o `B`); buit si no ho és.
         data_tests:
-          - not_null
           - accepted_values:
               arguments:
                 values: ["A", "B"]
-      - name: snapshot_date
-        description: Dia de l'execució (el de `downloads`).
-
-  - name: dim_version
-    description: >
-      Una fila per commit (dataset, SHA). Fa dos rols a fact_change:
-      `version_from_key` i `version_to_key`.
-    data_tests:
-      - unique_combination:
-          arguments:
-            columns: ["dataset_id", "commit_sha"]
-    columns:
-      - name: version_key
-        description: Clau subrogada (md5 de `dataset_id` i `commit_sha`).
-        data_tests:
-          - unique
-          - not_null
-      - name: version_source
-        description: "`tag`, `commit_session`, o `commit` si només surt a les comparacions."
+      - name: downloads_band
+        description: Interval de descàrregues sobre tota la mostra (`Few`, `Medium`, `Many`).
         data_tests:
           - accepted_values:
               arguments:
-                values: ["tag", "commit_session", "commit"]
-
-  - name: dim_date
-    description: Els dies en què hi ha alguna versió.
-    columns:
-      - name: date_key
-        description: Data com a enter AAAAMMDD.
+                values: ["Few", "Medium", "Many"]
+      - name: initial_size_band
+        description: >
+          Interval de la mida de dades de la primera versió (`Low`, `Medium`,
+          `High`), sobre els elegibles. També `initial_rows_band`,
+          `initial_columns_band`, `n_versions_band` i `n_tabular_commits_band`.
         data_tests:
-          - unique
+          - accepted_values:
+              arguments:
+                values: ["Low", "Medium", "High"]
+      - name: snapshot_date
+        description: Dia de l'execució (el de `downloads`).
+
+  - name: dim_differences
+    description: >
+      Dimensió brossa (junk): les diferències d'una versió respecte a
+      l'anterior. Una fila per combinació de codis de l'execució, més
+      `first_version`, `no_changes` i `not_compared`. Indicadors per nivell:
+      `has_c2` (perspectiva), `has_c22` (grup) i `has_c221` (codi).
+    columns:
+      - name: differences_key
+        description: Clau subrogada (md5 de `differences`).
+        data_tests: [unique, not_null]
+      - name: differences
+        description: Els codis units amb `+` (p.e. `C221+C421`) o l'estat.
+        data_tests: [unique, not_null]
+      - name: differences_status
+        description: "`changed`, `first_version`, `no_changes` o `not_compared`."
+        data_tests:
           - not_null
+          - accepted_values:
+              arguments:
+                values: ["changed", "first_version", "no_changes", "not_compared"]
+
+  - name: dim_time
+    description: >
+      Les hores (`time_key` AAAAMMDDHH) amb alguna versió o creació d'un
+      dataset. Rols: el commit a fact_version i la creació a fact_dataset.
+    columns:
+      - name: time_key
+        data_tests: [unique, not_null]
       - name: year_quarter
         description: Any i trimestre (p.e. 2025-T1).
 
-  - name: fact_change
-    description: >
-      Gra: un codi de la taxonomia detectat entre dues versions consecutives
-      d'un dataset (una fila de change_classification.csv). Un repositori és un
-      dataset, encara que les dades siguin en diversos fitxers (T-37).
+  - name: dim_version_kind
+    description: "`tag` o `commit`."
     columns:
-      - name: change_key
-        description: Clau subrogada de la fila (md5 de dataset, versions i codi).
-        data_tests:
-          - unique
-          - not_null
+      - name: version_kind_key
+        data_tests: [unique, not_null]
+
+  - name: dim_version_order
+    description: "`First`, `Intermediate` o `Last`."
+    columns:
+      - name: version_order_key
+        data_tests: [unique, not_null]
+
+  - name: dim_owner
+    columns:
+      - name: owner_key
+        data_tests: [unique, not_null]
+
+  - name: dim_eligibility
+    columns:
+      - name: eligibility_key
+        data_tests: [unique, not_null]
+
+  - name: dim_license
+    columns:
+      - name: license_key
+        data_tests: [unique, not_null]
+
+  - name: dim_downloads_band
+    columns:
+      - name: downloads_band_key
+        data_tests: [unique, not_null]
+
+  - name: fact_version
+    description: >
+      Star_Versions. Gra: una versió d'un dataset elegible. Mesures:
+      `lifespan_days` (fins a la versió següent), `conception_days` (des de
+      l'anterior), mida i fitxers de dades i de metadades, commits de la
+      sessió, files i columnes (buides si no s'ha llegit el dataset).
+    columns:
+      - name: version_key
+        description: Clau subrogada (md5 de `dataset_id` i `commit_sha`).
+        data_tests: [unique, not_null]
       - name: dataset_key
         data_tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_dataset')
-                field: dataset_key
-      - name: kind_key
+              arguments: {to: ref('dim_dataset'), field: dataset_key}
+      - name: differences_key
         data_tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_kind_of_change')
-                field: kind_key
-      - name: version_from_key
-        description: La versió antiga (rol *from* de dim_version).
+              arguments: {to: ref('dim_differences'), field: differences_key}
+      - name: commit_time_key
+        description: Hora del commit; buida si no se sap.
+        data_tests:
+          - relationships:
+              arguments: {to: ref('dim_time'), field: time_key}
+      - name: version_kind_key
         data_tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_version')
-                field: version_key
-      - name: version_to_key
-        description: La versió nova (rol *to* de dim_version).
+              arguments: {to: ref('dim_version_kind'), field: version_kind_key}
+      - name: version_order_key
         data_tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('dim_version')
-                field: version_key
-      - name: date_key
-        description: Dia de la versió nova; buit si no se sap.
+              arguments: {to: ref('dim_version_order'), field: version_order_key}
+
+  - name: fact_dataset
+    description: >
+      Star_Dataset. Gra: un dataset de la mostra. Les mesures de les versions
+      (versions, mida, fitxers, files i columnes, inicials i finals) només es
+      tenen per als elegibles.
+    columns:
+      - name: dataset_key
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_dataset'), field: dataset_key}
+      - name: owner_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_owner'), field: owner_key}
+      - name: creation_time_key
         data_tests:
           - relationships:
-              arguments:
-                to: ref('dim_date')
-                field: date_key
-      - name: run_id
-        description: Dimensió degenerada, la carpeta de l'execució (p.e. run_9).
-      - name: description
-        description: Dimensió degenerada, el nom del codi tal com surt a change_classification.csv.
-      - name: change_count
-        description: Mesura additiva, sempre 1.
-      - name: age_days
-        description: Dies entre la creació del dataset i la versió nova (buit si no se sap la creació).
+              arguments: {to: ref('dim_time'), field: time_key}
+      - name: eligibility_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_eligibility'), field: eligibility_key}
+      - name: license_key
+        data_tests:
+          - relationships:
+              arguments: {to: ref('dim_license'), field: license_key}
+      - name: downloads_band_key
+        data_tests:
+          - relationships:
+              arguments: {to: ref('dim_downloads_band'), field: downloads_band_key}

@@ -1,5 +1,5 @@
 -- Conciliació 3: cada dataset amb canvis (change_classification.csv, i per tant
--- fact_change, conciliació 1) és elegible a eligibility_report.csv. Retorna els
+-- fact_version, conciliació 1) és elegible a eligibility_report.csv. Retorna els
 -- que no ho són o no hi surten.
 
 with changed as (
