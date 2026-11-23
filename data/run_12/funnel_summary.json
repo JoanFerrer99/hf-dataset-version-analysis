@@ -1,0 +1,21 @@
+{
+  "timestamp": "2026-11-23T01:10:03.073515",
+  "sampling_method": "reservoir_sampling_R_Vitter_uniform_no_bias",
+  "sample_size": 2000,
+  "population_scanned": 1143898,
+  "eligible_Criteri_A": 4,
+  "eligible_Criteri_B": 7,
+  "eligible": 11,
+  "ineligible": 1889,
+  "access_restricted": 93,
+  "errors": 7,
+  "eligible_proportion": 0.0058,
+  "eligible_proportion_of_attempts": 0.0055,
+  "estimated_eligible_in_scanned_population": 6291,
+  "attempts_per_eligible": 181.8,
+  "duration_sampling_s": 338.3,
+  "duration_eligibility_s": 561.6,
+  "duration_versions_s": 21.4,
+  "duration_classification_s": 239.6,
+  "duration_total_s": 1161.0
+}

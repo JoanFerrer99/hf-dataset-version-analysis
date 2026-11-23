@@ -1977,7 +1977,7 @@ Estat: Fet (substitueix el punt de C510 de T-20)
 DECISIÓ T-44: repositoris amb diversos fitxers (diagrama del director)
 Data: novembre 2026
 Responsable: Joan (acordat amb el director per correu)
-Estat: Fet (revisa T-36, T-37 i T-42)
+Estat: Fet (revisa T-36, T-37 i T-42; els documents JSON, revisats a T-45)
 
   MOTIU: T-37 unia tots els fitxers del format preferit. Amb les dades
   reals, això falla de dues maneres:
@@ -2104,6 +2104,71 @@ Estat: Fet (revisa T-36, T-37 i T-42)
   (tots els formats) i, a `tests/test_diffengine_regressions.py`, `test_31`
   (un CSV per any amb una columna nova ja no es compara) i `test_42`
   (PDL-Bench: clau ID i cap C422 `duplicate_removed`).
+
+
+DECISIÓ T-45: un `.json` només és dades si és una llista de registres
+Data: novembre 2026
+Responsable: Joan
+Estat: Fet (revisa T-44, documents JSON)
+
+  MOTIU: T-44 considerava document un `.json` que pandas no podia llegir.
+  Però `pd.read_json` fa una taula de molts documents: un objecte amb un
+  objecte o llistes a dins es converteix en files i columnes. Al run_12,
+  `sambodhan/misclassified_urgency_dataset` té a cada versió tres parquet
+  (`grievance`, `label`) i `dataset_metadata.json` (nom, tag, data, mida i
+  un objecte `splits`). Pandas en feia 3 files, una per split, i 9
+  columnes, i les 5 comparacions del dataset quedaven `mixed_columns`
+  sense codis, tot i que els parquet canvien a cada versió. Al run_11,
+  `National-Digital/qld-coastal-waves-townsville` (`data.parquet` i
+  `publicdata.json`, amb objectes `publisher`, `licence` i `manifest`)
+  tenia el mateix problema. És el risc que ja apuntava T-44 ("un JSON de
+  configuració que no és a la llista de metadades").
+
+  DECISIÓ (`load._read_json_records`): es decideix per l'estructura, no
+  pel nom ni per si pandas el pot llegir.
+  - Un `.json` és una taula només si és una llista no buida d'objectes
+    (`[{...}, {...}]`): cada objecte és una fila. Es llegeix amb
+    `pd.read_json`, com abans, perquè els tipus no canviïn.
+  - Qualsevol altra cosa (un objecte, una llista de valors, una llista
+    buida o un JSON no vàlid) és un document: no es llegeix i compta a
+    `n_files_dropped_*`. Si és l'únic fitxer, la versió és `parse_failed`.
+  - Els `.jsonl` no canvien: són sempre registres.
+
+  DADES (amb els fitxers reals descarregats del Hub, una revisió de cada
+  dataset): els dos JSON passen a ser documents. A misclassified_urgency,
+  el primer i l'últim tag (amb el parquet `eval`) donen C312 `relabel` i
+  C422. Cal una execució nova de la Fase 2 per tenir els codis de les 5
+  comparacions (run_12 no es modifica).
+
+  ALTERNATIVES DESCARTADES:
+  - Afegir els noms a la llista de metadades (`METADATA_FILES`): arregla
+    aquests dos fitxers però no el següent, amb un altre nom.
+  - Quan hi ha `mixed_columns`, ignorar els JSON amb columnes diferents de
+    les dels altres formats. Als dos casos reals ja n'hi ha prou amb
+    l'estructura, i aquesta regla amagaria un JSON que sí és dades (p.e.
+    un split amb una columna de més): passaria de "no es compara" a
+    comparar una part del dataset sense avisar-ne.
+
+  RISCOS:
+  - Una taula en un `.json` amb una altra forma (per columnes,
+    `{"col": [...]}`, o dins d'una clau, `{"data": [...]}`) es tracta com a
+    document i no es compara. No s'ha vist a les dades i es veu a
+    `n_files_dropped_*`.
+  - Una llista de registres que són metadades (p.e. una llista
+    d'etiquetes) continua sent dades: si no té les columnes dels altres
+    fitxers, la versió és `mixed_columns`.
+  - La Fase 1 reparteix la mida entre dades i metadades pel nom dels
+    fitxers, sense contingut: un document JSON hi compta com a dades.
+
+  COST: cada `.json` es descodifica dues vegades (`json.loads` per mirar
+  l'estructura i `pd.read_json` per llegir-lo). Els fitxers ja són a
+  memòria i tenen el límit de `--max-dataset-mb`.
+
+  TESTS: `tests/test_diffengine_load.py` (cinc formes de document, una
+  llista de registres amb BOM, una llista amb altres columnes continua
+  sent `mixed_columns`) i, a `tests/test_diffengine_regressions.py`,
+  `test_45` (el cas de misclassified_urgency: es comparen els parquet i
+  surt C422).
 
 
 ================================================================================

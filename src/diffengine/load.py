@@ -317,6 +317,36 @@ def _from_csv(raw: pd.DataFrame, dialect: dict, config: EngineConfig) -> Table:
     return Table("csv", pd.DataFrame(values, columns=list(raw.columns)), columns, raw=raw_view, dialect=dialect)
 
 
+def _is_records(document: object) -> bool:
+    """
+    :param document: el contingut d'un `.json`, ja descodificat.
+    :return: si és una llista de registres (`[{...}, {...}]`), l'única forma d'un `.json` que és una taula.
+    """
+    return isinstance(document, list) and bool(document) and all(isinstance(r, dict) for r in document)
+
+
+def _read_json_records(data: bytes) -> pd.DataFrame:
+    """
+    Llegeix un `.json` com a taula, si és una llista de registres (decisió T-45).
+
+    Qualsevol altra forma (un objecte, encara que tingui llistes o objectes a
+    dins, o una llista de valors) és un document: pandas en podria fer una
+    taula, però no serien files de dades.
+
+    :param data: contingut del fitxer, en bytes.
+    :return: la taula, sense decidir-ne encara els tipus.
+    :raises ParseError: si no és JSON o és un document.
+    """
+    try:
+        text = data.decode("utf-8-sig")
+        document = json.loads(text)
+    except ValueError as exc:
+        raise ParseError(f"{type(exc).__name__}: {exc}") from exc
+    if not _is_records(document):
+        raise ParseError(f"document JSON ({type(document).__name__}), no una llista de registres")
+    return pd.read_json(io.StringIO(text))
+
+
 def _read(data: bytes, ext: str) -> tuple[pd.DataFrame, dict]:
     """
     Llegeix un fitxer tabular, sense decidir-ne encara els tipus.
@@ -331,8 +361,10 @@ def _read(data: bytes, ext: str) -> tuple[pd.DataFrame, dict]:
             return _read_csv(data, ext)
         if ext == ".parquet":
             return pd.read_parquet(io.BytesIO(data)), {}
-        if ext in (".json", ".jsonl"):
-            return pd.read_json(io.BytesIO(data), lines=(ext == ".jsonl")), {}
+        if ext == ".json":
+            return _read_json_records(data), {}
+        if ext == ".jsonl":
+            return pd.read_json(io.BytesIO(data), lines=True), {}
     except ParseError:
         raise
     except Exception as exc:
@@ -514,9 +546,10 @@ def load_files(paths: list[str], config: EngineConfig = DEFAULT_CONFIG) -> Table
     Llegeix els fitxers d'un dataset (`datafiles.dataset_files`) com una sola
     taula, amb les regles de la decisió T-44:
 
-    - Un fitxer `.json` que no es pot llegir com a taula (és un document, p.e.
-      `croissant.json` o `metadata.json`, i no una llista de registres) no és
-      dades i no es llegeix. Si és l'únic fitxer, la versió no es pot llegir.
+    - Un fitxer `.json` que no és una llista de registres (`[{...}, {...}]`)
+      és un document (p.e. `croissant.json` o `dataset_metadata.json`), no
+      dades, i no es llegeix (`_read_json_records`, decisió T-45). Si és
+      l'únic fitxer, la versió no es pot llegir.
     - Tots els fitxers han de tenir les mateixes columnes (el mateix conjunt de
       noms, en qualsevol ordre); si no, no es comparen (`MixedColumns`).
     - Si un fitxer repeteix files d'un altre de més gran, no es llegeix
