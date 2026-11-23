@@ -180,6 +180,38 @@ def test_a_json_document_next_to_the_data_is_not_read(tmp_path):
     assert [os.path.basename(p) for p in table.dropped_files] == ["metadata.json"]
 
 
+@pytest.mark.parametrize("document", [
+    # run_12, sambodhan/misclassified_urgency_dataset: valors i un objecte (pandas en feia 3 files, una per split)
+    b'{"version_tag": "v1", "num_samples": 8426, "splits": {"train": 6740, "eval": 843, "test": 843}}',
+    # run_11, qld-coastal-waves-townsville: objectes dins d'un objecte
+    b'{"dataset": "waves", "publisher": {"name": "DETSI", "url": "u"}, "licence": {"id": "CC-BY-4.0", "url": "l"}}',
+    # llistes de la mateixa llargada (pandas en feia una columna per clau)
+    b'{"labels": ["low", "high"], "counts": [3, 4]}',
+    b'["train", "test"]',  # una llista de valors, no de registres
+    b'[]',
+])
+def test_a_json_that_is_not_a_list_of_records_is_a_document(tmp_path, document):
+    """T-45: un `.json` només és una taula si és una llista de registres, encara que pandas en pugui fer una taula."""
+    parts = {"data/train.parquet": parquet(pd.DataFrame({"grievance": ["a", "b"], "label": [0, 1]})),
+             "dataset_metadata.json": document}
+    table = load_files(_files(tmp_path, parts))
+    assert list(table.values.columns) == ["grievance", "label"] and table.n_rows == 2
+    assert [os.path.basename(p) for p in table.dropped_files] == ["dataset_metadata.json"]
+
+
+def test_a_json_list_of_records_is_data(tmp_path):
+    parts = {"a.csv": b"id,name\n1,x\n", "b.json": '\ufeff[{"id": 2, "name": "y"}, {"id": 3, "name": "z"}]'.encode()}
+    table = load_files(_files(tmp_path, parts))
+    assert table.values["id"].tolist() == [1.0, 2.0, 3.0] and table.dropped_files == ()
+
+
+def test_a_json_list_of_records_with_other_columns_is_still_mixed(tmp_path):
+    """Una llista de registres és dades: si les columnes no coincideixen amb les dels altres fitxers, no es compara."""
+    parts = {"a.csv": b"id,name\n1,x\n", "labels.json": b'[{"label": 0, "meaning": "low"}]'}
+    with pytest.raises(MixedColumns):
+        load_files(_files(tmp_path, parts))
+
+
 def test_a_json_document_alone_cannot_be_read(tmp_path):
     with pytest.raises(ParseError):
         load_files(_files(tmp_path, {"metadata.json": b'{"name": "opera", "splits": ["train", "test"], "files": ["a", "b", "c"]}'}))

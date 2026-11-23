@@ -506,3 +506,36 @@ def test_42_a_file_that_repeats_the_others_does_not_hide_the_key(tmp_path):
     assert (rows.method, rows.key_columns) == ("key", ["ID"])
     got = {(c.code, c.subtype) for c in diff_tables(a, b).changes}
     assert ("C422", "duplicate_removed") not in got and {"C421", "C422"} <= {code for code, _ in got}
+
+
+def test_45_a_metadata_json_next_to_the_parquet_does_not_stop_the_comparison(tmp_path):
+    """run_12, `sambodhan/misclassified_urgency_dataset` (T-45): cada versió té tres parquet i
+    `dataset_metadata.json`, un objecte que pandas llegia com una taula de 3 files i 9 columnes. Les 5 comparacions
+    eren `mixed_columns`; ara el JSON és un document i es comparen els parquet."""
+    import json
+    import os
+
+    from diffengine.engine import diff_tables
+    from diffengine.load import load_files
+
+    def version(name, n):
+        folder = tmp_path / name
+        (folder / "data").mkdir(parents=True)
+        paths = []
+        for split, share in (("eval", 0.1), ("test", 0.1), ("train", 0.8)):
+            k = int(n * share)
+            rows = pd.DataFrame({"grievance": [f"{split} grievance number {i}" for i in range(k)],
+                                 "label": [i % 3 for i in range(k)]})
+            path = folder / "data" / f"{split}-00000-of-00001.parquet"
+            rows.to_parquet(path, index=False)
+            paths.append(str(path))
+        meta = {"dataset_name": "sambodhan/misclassified_urgency_dataset", "version_tag": name, "num_samples": n,
+                "splits": {"train": int(n * 0.8), "eval": int(n * 0.1), "test": int(n * 0.1)}, "author": "mr-kush"}
+        path = folder / "dataset_metadata.json"
+        path.write_text(json.dumps(meta, indent=4))
+        return paths + [str(path)]
+
+    a, b = load_files(version("v20251028_013035", 1000)), load_files(version("v20251030_115250", 200))
+    assert (a.n_rows, b.n_rows) == (1000, 200) and list(a.values.columns) == ["grievance", "label"]
+    assert [os.path.basename(p) for p in a.dropped_files + b.dropped_files] == ["dataset_metadata.json"] * 2
+    assert "C422" in {c.code for c in diff_tables(a, b).changes}

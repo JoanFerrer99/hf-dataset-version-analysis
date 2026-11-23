@@ -73,8 +73,10 @@ del repositori, de qualsevol dels formats de la llista, s'uneixen en ordre i
 es comparen com un sol dataset: si la versió nova reparteix les mateixes
 files en més o menys fitxers, no surt cap canvi. Per a cada versió:
 
-- **Documents JSON.** Un `.json` que no és una taula (p.e. `croissant.json`,
-  `metadata.json`) no és dades: no es llegeix i compta com a fitxer ignorat.
+- **Documents JSON.** Un `.json` només és dades si és una llista de
+  registres (`[{...}, {...}]`). Qualsevol altre (p.e. `croissant.json` o
+  `dataset_metadata.json`) és un document: no es llegeix i compta com a
+  fitxer ignorat (secció 9.2).
 - **Columnes diferents.** Si els fitxers no tenen tots el mateix conjunt de
   columnes (taules diferents, o camps opcionals), la versió no es compara:
   la comparació queda amb l'estat `mixed_columns`.
@@ -568,10 +570,8 @@ mostra baixaria centenars de GB).
      formats de la llista (`config/formats.toml` o `--formats`);
    - si els fitxers són els mateixos i tenen el mateix contingut, no es
      descarrega res;
-   - si no, es descarreguen tots; els documents JSON que no són taules no es
-     llegeixen; si tenen les mateixes columnes, s'ignoren
-     els que repeteixen files d'un altre més gran, s'uneixen en ordre en un
-     sol dataset per revisió i es comparen
+   - si no, es descarreguen tots i es llegeixen com un sol dataset per
+     revisió (secció 9.2, "Com es llegeix el dataset"), i es comparen.
 3. Cada comparació acaba amb un **estat** (`ok`, `identical_content`,
    `absent_old`/`absent_new` si una de les versions no té cap fitxer de
    dades, `no_data` si no en té cap de les dues, `download_failed`,
@@ -598,6 +598,78 @@ Compara dues versions d'un dataset en 5 passos. `engine.py` n'és l'índex.
 | 5 | Escriure el resultat | `output.py` |
 
 `config.py` té tots els llindars, agrupats pels mateixos passos.
+
+#### Com es llegeix el dataset (pas 2, `load.load_files`)
+
+Un repositori pot tenir diversos fitxers de dades, de formats diferents, i
+també fitxers que tenen un format de dades però no ho són. `load_files` en fa
+una sola taula per revisió seguint aquest arbre (decisions T-44 i T-45),
+cada revisió pel seu compte:
+
+```
+fitxers del dataset (pas 1)
+  │
+  ├─ 1. llegir cada fitxer en un DataFrame
+  │      ├─ .csv/.tsv/.parquet/.jsonl que no es pot llegir → parse_failed (tota la versió)
+  │      └─ .json que no és una llista de registres       → document: s'ignora
+  │                                                         (si és l'únic fitxer → parse_failed)
+  ├─ 2. un sol fitxer llegit → és el dataset
+  ├─ 3. columnes diferents entre fitxers (el conjunt de noms) → mixed_columns, no es compara
+  ├─ 4. mateixes columnes: s'ignora cada fitxer que repeteix files d'un altre més gran
+  └─ 5. s'uneixen en ordre; si hi ha formats diferents, cada format es prepara
+        pel seu compte i després s'uneixen (el format ja no importa)
+```
+
+**Quan un `.json` és dades (pas 1).** El JSON serveix tant per a dades com
+per a metadades, i l'extensió no ho diu. Es decideix per l'estructura del
+fitxer, sense mirar-ne el nom (`_read_json_records`):
+
+| Contingut del `.json` | Exemple | Què és |
+|---|---|---|
+| Una llista d'objectes | `[{"id": 1, "text": "a"}, {"id": 2, "text": "b"}]` | **Dades**: cada objecte és una fila |
+| Un objecte, tingui el que tingui a dins | `{"version": "v1", "splits": {"train": 6740, "test": 843}}` | Document |
+| Una llista de valors, o buida | `["train", "test"]`, `[]` | Document |
+| No és JSON vàlid | | Document |
+
+- Un document no es llegeix: es compta a `n_files_dropped_*` de
+  `comparison_status.csv`, i la resta de fitxers es comparen sense ell. Si
+  és l'únic fitxer de la versió, la comparació queda `parse_failed`.
+- Els `.jsonl` (una línia per registre) són sempre dades.
+- No n'hi ha prou que pandas el pugui llegir: `pd.read_json` converteix en
+  taula un objecte amb objectes o llistes a dins. Per exemple,
+  `dataset_metadata.json` de `sambodhan/misclassified_urgency_dataset`
+  (run_12) té valors i un objecte `splits`, i pandas en feia 3 files (una per
+  split) i 9 columnes. Com que no tenien les columnes dels parquet, les 5
+  comparacions del dataset quedaven `mixed_columns`. Passava el mateix amb
+  `publicdata.json` de `qld-coastal-waves-townsville` (run_11).
+- Una llista de registres que no té les columnes de la resta de fitxers (p.e.
+  una llista d'etiquetes al costat dels parquet) sí que és dades, i la versió
+  queda `mixed_columns` (pas 3): no es pot saber pel contingut si és una taula
+  auxiliar o una part del dataset.
+- **Limitació:** una taula en un `.json` amb una altra forma (per columnes,
+  `{"id": [1, 2], "text": ["a", "b"]}`, o dins d'una clau,
+  `{"data": [...]}`) es tracta com a document. Es veu a `n_files_dropped_*`.
+- **Diferència amb la Fase 1:** el repartiment de la mida entre dades i
+  metadades de `versions.csv` (`split_tree`) es fa amb el llistat de fitxers,
+  sense contingut. Un document JSON que no és a la llista de metadades
+  (secció 7.3) hi compta com a dades.
+
+**Columnes diferents (pas 3).** Si els fitxers llegits no tenen tots el
+mateix conjunt de columnes (taules diferents al mateix repositori, o la
+mateixa taula amb camps opcionals), la versió no es compara: l'estat és
+`mixed_columns`.
+
+**Files repetides entre fitxers (pas 4).** Es fa un hash de cada fila amb
+els valors normalitzats, que és el mateix en qualsevol format. Els fitxers es
+recorren de més files a menys i es conserva cada fitxer que no comparteix
+cap fila amb els ja conservats (`files_to_keep`): així un fitxer que agrega
+els altres (p.e. `overall`) no duplica les files. Les repeticions dins d'un
+mateix fitxer són dades.
+
+**Formats diferents (pas 5).** El CSV decideix el tipus de cada columna pels
+valors; parquet i JSON ja el porten. Una columna numèrica en un format és
+numèrica a la taula unida si tots els seus valors, de tots els formats, són
+números (p.e. `"3"` en un JSON); si no, passa a text.
 
 ---
 
